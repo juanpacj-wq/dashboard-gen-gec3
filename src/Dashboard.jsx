@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import plantNamesRaw from "../Nombre unidades y su código.json";
 
 const FONT = "system-ui, -apple-system, sans-serif";
 const MONO = "ui-monospace, 'Cascadia Code', 'Courier New', monospace";
@@ -41,73 +42,82 @@ function calcStats(vals) {
   return { mean: +(m.toFixed(2)), ucl: 5, lcl: -5, uwl: +((m + 2 * s).toFixed(2)), lwl: +((m - 2 * s).toFixed(2)), std: +(s.toFixed(2)) };
 }
 
-/* ═══ Top 10 Colombia Plants Config ═══ */
-const TOP_PLANTS = [
-  { code: "GUAV", name: "Guavio", cap: 1213, type: "hydro" },
-  { code: "SANC", name: "San Carlos", cap: 1240, type: "hydro" },
-  { code: "CHVR", name: "Chivor", cap: 1000, type: "hydro" },
-  { code: "SOGA", name: "Sogamoso", cap: 820, type: "hydro" },
-  { code: "POR3", name: "Porce III", cap: 660, type: "hydro" },
-  { code: "BETA", name: "Betania", cap: 540, type: "hydro" },
-  { code: "QUIM", name: "El Quimbo", cap: 400, type: "hydro" },
-  { code: "TBST", name: "Termobarranquilla", cap: 800, type: "thermal" },
-  { code: "TEBSA", name: "TEBSA", cap: 791, type: "thermal" },
-  { code: "EPFV", name: "El Paso Solar", cap: 86, type: "solar" },
-];
-
-const PLANT_ICONS = { hydro: "💧", thermal: "🔥", solar: "☀️", wind: "🌬️" };
+/* ═══ Plant name lookup from DB export ═══ */
+const _plantNamesArr = plantNamesRaw[Object.keys(plantNamesRaw)[0]] || [];
+const PLANT_NAME_MAP = Object.fromEntries(
+  _plantNamesArr
+    .filter(e => e.codsic_planta != null && e.recurso_ofei != null)
+    .map(e => [e.codsic_planta.trim(), e.recurso_ofei.trim()])
+);
 
 function useXmGeneration(intervalMs = 300000) {
   const [plants, setPlants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [isSimulated, setIsSimulated] = useState(false);
 
   const fetchData = useCallback(async () => {
     const today = new Date();
     const dateStr = today.toISOString().split("T")[0];
-    const currentHour = today.getHours();
+    // XM usa Hour01–Hour24; getHours() es 0-23, Hour01 = periodo 1 (00:00-01:00)
+    const hourKey = `Hour${String(today.getHours() + 1).padStart(2, "0")}`;
 
     try {
-      const res = await fetch("https://servapibi.xm.com.co/hourly", {
+      const res = await fetch("/api/xm/hourly", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          MetricId: "Gene",
+          MetricId: "GeneProgDesp",
           StartDate: dateStr,
           EndDate: dateStr,
           Entity: "Recurso",
+          Filter: [], // Sin filtro: traer todas las centrales
         }),
       });
 
-      if (!res.ok) throw new Error("API error");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
 
       const records = json?.Items || [];
-      const mapped = TOP_PLANTS.map(p => {
-        const rec = records.find(r => r?.Code === p.code);
-        let gen = 0;
-        if (rec?.HourlyEntities) {
-          const hourEntry = rec.HourlyEntities.find(h => h?.Hour === currentHour) || rec.HourlyEntities[rec.HourlyEntities.length - 1];
-          gen = hourEntry?.Value ?? 0;
-        }
-        return { ...p, gen: Math.round(gen * 10) / 10, pct: Math.round((gen / p.cap) * 100) };
+      if (records.length === 0) throw new Error("Sin datos para hoy");
+
+      // Mapear cada registro a { code, name, gen } y ordenar por despacho descendente
+      const all = records.map(item => {
+        const vals = item.HourlyEntities[0].Values;
+        const code = vals.code?.trim() || "";
+        const name = PLANT_NAME_MAP[code] || code;
+        const raw = vals[hourKey] ?? "";
+        // kWh → MW
+        const gen = raw !== "" ? Math.round(parseFloat(raw) / 1000 * 10) / 10 : 0;
+        return { code, name, gen };
       });
+
+      // Top 10 por mayor despacho en la hora actual
+      const top10 = all
+        .sort((a, b) => b.gen - a.gen)
+        .slice(0, 10);
+
+      // pct relativo al mayor del top 10
+      const maxGen = top10[0]?.gen || 1;
+      const mapped = top10.map(p => ({ ...p, pct: Math.round((p.gen / maxGen) * 100) }));
 
       setPlants(mapped);
       setLastUpdate(new Date());
+      setIsSimulated(false);
       setLoading(false);
     } catch {
-      // Fallback: simulated realistic data
+      // Fallback simulado usando los primeros nombres del mapa
       const rng = seedRng(today.getHours() * 1000 + today.getMinutes());
-      const simulated = TOP_PLANTS.map(p => {
-        const factor = p.type === "hydro" ? 0.5 + rng() * 0.45
-          : p.type === "thermal" ? 0.3 + rng() * 0.55
-          : 0.1 + rng() * 0.7;
-        const gen = Math.round(p.cap * factor * 10) / 10;
-        return { ...p, gen, pct: Math.round((gen / p.cap) * 100) };
+      const fallbackCodes = Object.keys(PLANT_NAME_MAP).slice(0, 10);
+      const simulated = fallbackCodes.map(code => {
+        const gen = Math.round((200 + rng() * 1000) * 10) / 10;
+        return { code, name: PLANT_NAME_MAP[code], gen, pct: 0 };
       });
+      const maxGen = simulated[0]?.gen || 1;
+      simulated.forEach(p => { p.pct = Math.round((p.gen / maxGen) * 100); });
       setPlants(simulated);
       setLastUpdate(new Date());
+      setIsSimulated(true);
       setLoading(false);
     }
   }, []);
@@ -118,12 +128,12 @@ function useXmGeneration(intervalMs = 300000) {
     return () => clearInterval(id);
   }, [fetchData, intervalMs]);
 
-  return { plants, loading, lastUpdate };
+  return { plants, loading, lastUpdate, isSimulated };
 }
 
 /* ═══ Generation Ticker ═══ */
 function GenerationTicker({ height }) {
-  const { plants, loading, lastUpdate } = useXmGeneration();
+  const { plants, loading, lastUpdate, isSimulated } = useXmGeneration();
   const scrollRef = useRef(null);
   const [paused, setPaused] = useState(false);
 
@@ -154,15 +164,18 @@ function GenerationTicker({ height }) {
   const totalGen = plants.reduce((s, p) => s + p.gen, 0);
   const items = [...plants, ...plants]; // duplicate for seamless loop
 
-  const typeColor = t => t === "hydro" ? C.cyan : t === "thermal" ? C.red : t === "solar" ? C.amber : C.green;
-
   return (
     <div style={{ height, display: "flex", alignItems: "center", gap: 8, background: C.bg2, borderRadius: 10, border: `1px solid ${C.border}`, overflow: "hidden", position: "relative" }}>
       {/* Left label */}
       <div style={{ flexShrink: 0, padding: "0 12px", borderRight: `1px solid ${C.border}`, height: "100%", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", background: `linear-gradient(135deg, ${C.bg2}, ${C.card})`, zIndex: 2, minWidth: 110 }}>
-        <div style={{ fontSize: 8, color: C.textMuted, fontFamily: MONO, letterSpacing: 1, textTransform: "uppercase" }}>Gen. Nacional</div>
+        <div style={{ fontSize: 8, color: C.textMuted, fontFamily: MONO, letterSpacing: 1, textTransform: "uppercase" }}>Top 10 Despacho</div>
         <div style={{ fontSize: 15, fontWeight: 900, color: C.green, fontFamily: MONO }}>{totalGen.toFixed(0)} MW</div>
         <div style={{ fontSize: 7, color: C.textDark, fontFamily: MONO }}>{lastUpdate ? lastUpdate.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : ""}</div>
+        {isSimulated && (
+          <div style={{ fontSize: 7, color: C.amber, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 4, padding: "1px 5px", marginTop: 2, fontFamily: MONO, letterSpacing: 0.5, whiteSpace: "nowrap" }}>
+            SIMULADO
+          </div>
+        )}
       </div>
 
       {/* Scrolling area */}
@@ -173,11 +186,11 @@ function GenerationTicker({ height }) {
         style={{ flex: 1, overflow: "hidden", display: "flex", alignItems: "center", whiteSpace: "nowrap", gap: 0 }}
       >
         {items.map((p, i) => {
-          const col = typeColor(p.type);
+          const col = C.cyan;
           const pctBar = Math.min(100, Math.max(0, p.pct));
           return (
             <div key={i} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "4px 16px 4px 12px", borderRight: `1px solid ${C.border}22`, flexShrink: 0, cursor: "default" }}>
-              <span style={{ fontSize: 13 }}>{PLANT_ICONS[p.type]}</span>
+              <span style={{ fontSize: 13 }}>⚡</span>
               <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 10, fontWeight: 800, color: col, fontFamily: MONO, letterSpacing: 0.5 }}>{p.code}</span>
@@ -309,6 +322,7 @@ function Chart({ unitId, width, height }) {
 
   const st = useMemo(() => calcStats(chartData.map(d=>d.y)), [chartData]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setProg(0); setTip(null); let s=null; const dur=800;
     const t=ts=>{if(!s)s=ts;const p=Math.min(1,(ts-s)/dur);setProg(p<1?p*p*(3-2*p):1);if(p<1)requestAnimationFrame(t);};
     requestAnimationFrame(t);
@@ -329,14 +343,14 @@ function Chart({ unitId, width, height }) {
   const yStep = Math.max(0.5, Math.ceil(((yMax-yMin)/4)*10)/10);
   for (let v=Math.floor(yMin*2)/2; v<=Math.ceil(yMax*2)/2; v+=yStep) yTicks.push(Math.round(v*10)/10);
 
-  const handleMove = useCallback(e => {
+  const handleMove = e => {
     const rect = e.currentTarget.getBoundingClientRect();
     const mx = e.clientX-rect.left, my = e.clientY-rect.top;
     let cl=null, md=22;
     chartData.forEach(d=>{const dist=Math.hypot(tX(d.x)-mx,tY(d.y)-my);if(dist<md){md=dist;cl=d;}});
     if(cl) setTip({x:tX(cl.x),y:tY(cl.y),v:cl.y,i:cl.x,s:cl.y>st.ucl?"hi":cl.y<st.lcl?"lo":"ok"});
     else setTip(null);
-  }, [chartData, st, W, H]);
+  };
 
   return (
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"8px 10px 6px",height:"100%",display:"flex",flexDirection:"column"}}>
@@ -483,7 +497,7 @@ export default function Dashboard() {
       {/* Nav */}
       <nav style={{height:navH,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10 "+px+"px",borderBottom:`1px solid ${C.border}`,background:C.bg2}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <img src="/logo-gecelca3.png" alt="Gecelca" style={{height:40,objectFit:"contain",marginLeft: px}}/>
+          <img src="/G3 blanco.png" alt="Gecelca" style={{height:40,objectFit:"contain",marginLeft: px}}/>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:14}}>
           {[{l:"Gen Total",v:totalGen.toFixed(0)+" MW",c:C.green},{l:"Despacho",v:totalDesp.toFixed(0)+" MW",c:C.cyan},{l:"Desv Global",v:(gDev>=0?"+":"")+gDev.toFixed(2)+"%",c:Math.abs(gDev)>2?C.red:C.green}].map((s,i)=>(

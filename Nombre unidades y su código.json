@@ -1,0 +1,1359 @@
+{
+"select distinct mra.codsic_planta ,mra.recurso_ofei  from modelo_energia.maestra_recurso_all mra ": [
+	{
+		"codsic_planta" : "INS1",
+		"recurso_ofei" : "INSULA"
+	},
+	{
+		"codsic_planta" : "3J85",
+		"recurso_ofei" : "NUMBANA"
+	},
+	{
+		"codsic_planta" : "RPD1",
+		"recurso_ofei" : "RIOPIEDRAS"
+	},
+	{
+		"codsic_planta" : "3CSH",
+		"recurso_ofei" : "PETALODECORDOBAI1"
+	},
+	{
+		"codsic_planta" : "3AQP",
+		"recurso_ofei" : "CAUYA1"
+	},
+	{
+		"codsic_planta" : "SOG1",
+		"recurso_ofei" : "SOGAMOSO"
+	},
+	{
+		"codsic_planta" : "2TUT",
+		"recurso_ofei" : "MLUZMA1"
+	},
+	{
+		"codsic_planta" : "3GSF",
+		"recurso_ofei" : "AUTOGBUGAIGRASAS"
+	},
+	{
+		"codsic_planta" : "PMR1",
+		"recurso_ofei" : "REMEDIOS"
+	},
+	{
+		"codsic_planta" : "TPD1",
+		"recurso_ofei" : "TPIEDRAS"
+	},
+	{
+		"codsic_planta" : "2WC5",
+		"recurso_ofei" : "MMULATOSII"
+	},
+	{
+		"codsic_planta" : "3ED1",
+		"recurso_ofei" : "AUTOGGRANCOLOMBIAGOLD1 "
+	},
+	{
+		"codsic_planta" : "3HBN",
+		"recurso_ofei" : "TIERRALINDA1 "
+	},
+	{
+		"codsic_planta" : "2QEK",
+		"recurso_ofei" : "SALTOII"
+	},
+	{
+		"codsic_planta" : "2SS2",
+		"recurso_ofei" : "MAGALLO"
+	},
+	{
+		"codsic_planta" : "3DXJ",
+		"recurso_ofei" : "LASVIOLETAS1"
+	},
+	{
+		"codsic_planta" : "CGM1",
+		"recurso_ofei" : "MAYAGUEZ1"
+	},
+	{
+		"codsic_planta" : "SBA1",
+		"recurso_ofei" : "SUBA"
+	},
+	{
+		"codsic_planta" : "TGJ2",
+		"recurso_ofei" : "GUAJIRA2"
+	},
+	{
+		"codsic_planta" : "SFC1",
+		"recurso_ofei" : "SANFRANCISCO(PUTUMAYO)"
+	},
+	{
+		"codsic_planta" : "GTPE",
+		"recurso_ofei" : "GUATAPE"
+	},
+	{
+		"codsic_planta" : "TUJ1",
+		"recurso_ofei" : "TUNJITA1"
+	},
+	{
+		"codsic_planta" : "PRG2",
+		"recurso_ofei" : "PROELECTRICA"
+	},
+	{
+		"codsic_planta" : "2V5G",
+		"recurso_ofei" : "MJUANGAR"
+	},
+	{
+		"codsic_planta" : "PST1",
+		"recurso_ofei" : "PASTALES"
+	},
+	{
+		"codsic_planta" : "SNT1",
+		"recurso_ofei" : "SANTAANA"
+	},
+	{
+		"codsic_planta" : "CHBG",
+		"recurso_ofei" : "BETANIA"
+	},
+	{
+		"codsic_planta" : "3ADA",
+		"recurso_ofei" : "AUTOGPTARBELLO7"
+	},
+	{
+		"codsic_planta" : "PPA3",
+		"recurso_ofei" : "PAIPA3"
+	},
+	{
+		"codsic_planta" : "PLYS",
+		"recurso_ofei" : "PLAYAS"
+	},
+	{
+		"codsic_planta" : "3GVI",
+		"recurso_ofei" : "GRANJASOLARFLANDES1"
+	},
+	{
+		"codsic_planta" : "3HWM",
+		"recurso_ofei" : "PETALODELMAGDALENA"
+	},
+	{
+		"codsic_planta" : "RUB1",
+		"recurso_ofei" : "TERMOEBR"
+	},
+	{
+		"codsic_planta" : "ZPA3",
+		"recurso_ofei" : "ZIPAEMG3"
+	},
+	{
+		"codsic_planta" : "3BZB",
+		"recurso_ofei" : "CELSIASOLARLAPAILA1"
+	},
+	{
+		"codsic_planta" : "3EP6",
+		"recurso_ofei" : "AUTOGCELSIASOLARHARINAS1"
+	},
+	{
+		"codsic_planta" : "2S6Q",
+		"recurso_ofei" : "AUTOGYAGUARITO"
+	},
+	{
+		"codsic_planta" : "3HDE",
+		"recurso_ofei" : "SANBARTOLOME"
+	},
+	{
+		"codsic_planta" : "3HF9",
+		"recurso_ofei" : "CELSIASOLARLAVICTORIAI"
+	},
+	{
+		"codsic_planta" : "3F5L",
+		"recurso_ofei" : "AUTOGCIJEANS"
+	},
+	{
+		"codsic_planta" : "SNCR",
+		"recurso_ofei" : "SANCARLOS"
+	},
+	{
+		"codsic_planta" : "TSJ1",
+		"recurso_ofei" : "TASAJERO1"
+	},
+	{
+		"codsic_planta" : "IRG1",
+		"recurso_ofei" : "INGENIORISARALDA1"
+	},
+	{
+		"codsic_planta" : "3EE4",
+		"recurso_ofei" : "PARQUEEOLICOGUAJIRAI1"
+	},
+	{
+		"codsic_planta" : "2U5P",
+		"recurso_ofei" : "PROENCA"
+	},
+	{
+		"codsic_planta" : "GQA1",
+		"recurso_ofei" : "GUANAQUITAS"
+	},
+	{
+		"codsic_planta" : "BYN1",
+		"recurso_ofei" : "BAYONA"
+	},
+	{
+		"codsic_planta" : "3IJF",
+		"recurso_ofei" : "AUTOGCOSTAYACO"
+	},
+	{
+		"codsic_planta" : "PRV1",
+		"recurso_ofei" : "PROVIDENCIA"
+	},
+	{
+		"codsic_planta" : "NIM1",
+		"recurso_ofei" : "NIMA"
+	},
+	{
+		"codsic_planta" : "3DDT",
+		"recurso_ofei" : "LATAMSOLARLALOMA1"
+	},
+	{
+		"codsic_planta" : "2R22",
+		"recurso_ofei" : "MLAGUNETA"
+	},
+	{
+		"codsic_planta" : "SRA1",
+		"recurso_ofei" : "SANTARITA"
+	},
+	{
+		"codsic_planta" : "3IQA",
+		"recurso_ofei" : "SUNNORTE1"
+	},
+	{
+		"codsic_planta" : "INC1",
+		"recurso_ofei" : "INCAUCA1"
+	},
+	{
+		"codsic_planta" : "BLL3",
+		"recurso_ofei" : "BELLO"
+	},
+	{
+		"codsic_planta" : "TGJ1",
+		"recurso_ofei" : "GUAJIRA1"
+	},
+	{
+		"codsic_planta" : "2U93",
+		"recurso_ofei" : "TERMOMECHERO4"
+	},
+	{
+		"codsic_planta" : "PNC1",
+		"recurso_ofei" : "COGENERADORPROENCA"
+	},
+	{
+		"codsic_planta" : "3GRD",
+		"recurso_ofei" : "GRANJASOLARSANFELIPE1"
+	},
+	{
+		"codsic_planta" : "BAR1",
+		"recurso_ofei" : "BARROSO"
+	},
+	{
+		"codsic_planta" : "TSR1",
+		"recurso_ofei" : "TERMOSIERRACC"
+	},
+	{
+		"codsic_planta" : "3ADA",
+		"recurso_ofei" : "AUTOGPTARBELLO3"
+	},
+	{
+		"codsic_planta" : "CUC1",
+		"recurso_ofei" : "CUCUANA"
+	},
+	{
+		"codsic_planta" : "2YWY",
+		"recurso_ofei" : "AUTOGTURGAS"
+	},
+	{
+		"codsic_planta" : "RPL1",
+		"recurso_ofei" : "CRIOPAILA"
+	},
+	{
+		"codsic_planta" : "2U1G",
+		"recurso_ofei" : "PALMASSANGIL"
+	},
+	{
+		"codsic_planta" : "SUV1",
+		"recurso_ofei" : "SUEVA2"
+	},
+	{
+		"codsic_planta" : "3HDG",
+		"recurso_ofei" : "OIBITA1 "
+	},
+	{
+		"codsic_planta" : "ZPA5",
+		"recurso_ofei" : "ZIPAEMG5"
+	},
+	{
+		"codsic_planta" : "IQU2",
+		"recurso_ofei" : "IQUIRAII"
+	},
+	{
+		"codsic_planta" : "TFL1",
+		"recurso_ofei" : "FLORESICC"
+	},
+	{
+		"codsic_planta" : "3J4V",
+		"recurso_ofei" : "PARQUESOLARLAMENA"
+	},
+	{
+		"codsic_planta" : "MENR",
+		"recurso_ofei" : "COROZO1"
+	},
+	{
+		"codsic_planta" : "MENR",
+		"recurso_ofei" : "PIEDRASBLANCAS"
+	},
+	{
+		"codsic_planta" : "CMN1",
+		"recurso_ofei" : "AUTGCEMENTOSDELNARE"
+	},
+	{
+		"codsic_planta" : "AMR1",
+		"recurso_ofei" : "AMERICA"
+	},
+	{
+		"codsic_planta" : "LMR1",
+		"recurso_ofei" : "ELLIMONAR"
+	},
+	{
+		"codsic_planta" : "SMI1",
+		"recurso_ofei" : "SANMIGUEL"
+	},
+	{
+		"codsic_planta" : "NTB1",
+		"recurso_ofei" : "NUTIBARA"
+	},
+	{
+		"codsic_planta" : "3AL8",
+		"recurso_ofei" : "INGENIOMARIALUISA"
+	},
+	{
+		"codsic_planta" : "GCA1",
+		"recurso_ofei" : "CARUQUIA"
+	},
+	{
+		"codsic_planta" : "3ADA",
+		"recurso_ofei" : "AUTOGPTARBELLO2"
+	},
+	{
+		"codsic_planta" : "3ADA",
+		"recurso_ofei" : "AUTOGPTARBELLO5"
+	},
+	{
+		"codsic_planta" : "2ZCF",
+		"recurso_ofei" : "MSNANDRESC"
+	},
+	{
+		"codsic_planta" : "SJM1",
+		"recurso_ofei" : "SANJOSEDELAMONTAÑA"
+	},
+	{
+		"codsic_planta" : "VNTB",
+		"recurso_ofei" : "VENTANAB"
+	},
+	{
+		"codsic_planta" : "2S9L",
+		"recurso_ofei" : "MCOCUYO"
+	},
+	{
+		"codsic_planta" : "2UR5",
+		"recurso_ofei" : "SANJOSEDELAMONTAÑAII1"
+	},
+	{
+		"codsic_planta" : "3HS9",
+		"recurso_ofei" : "AUTOGBUGAISOLLA"
+	},
+	{
+		"codsic_planta" : "QUI1",
+		"recurso_ofei" : "ELQUIMBO"
+	},
+	{
+		"codsic_planta" : "3IRX",
+		"recurso_ofei" : "PORTONDELSOL1"
+	},
+	{
+		"codsic_planta" : "3C4V",
+		"recurso_ofei" : "AUTOGTERMOTAME3"
+	},
+	{
+		"codsic_planta" : "LPLO",
+		"recurso_ofei" : "RIOPALO"
+	},
+	{
+		"codsic_planta" : "TDR1",
+		"recurso_ofei" : "TERMODORADA1"
+	},
+	{
+		"codsic_planta" : "2WFN",
+		"recurso_ofei" : "TERMOCAPACHOS"
+	},
+	{
+		"codsic_planta" : "AMA1",
+		"recurso_ofei" : "M_AMAIME"
+	},
+	{
+		"codsic_planta" : "3C4V",
+		"recurso_ofei" : "AUTOGTERMOTAME2"
+	},
+	{
+		"codsic_planta" : "3B4L",
+		"recurso_ofei" : "RN_GRBELMON"
+	},
+	{
+		"codsic_planta" : "3E9I",
+		"recurso_ofei" : "ZEUS1"
+	},
+	{
+		"codsic_planta" : "MATA",
+		"recurso_ofei" : "LAMATA1"
+	},
+	{
+		"codsic_planta" : "SNFR",
+		"recurso_ofei" : "SANFRANCISCO"
+	},
+	{
+		"codsic_planta" : "2TUV",
+		"recurso_ofei" : "MLUZMA2"
+	},
+	{
+		"codsic_planta" : "CRC1",
+		"recurso_ofei" : "CARACOLI"
+	},
+	{
+		"codsic_planta" : "TR2G",
+		"recurso_ofei" : "TRINA-VATIABSLI1"
+	},
+	{
+		"codsic_planta" : "2YB9",
+		"recurso_ofei" : null
+	},
+	{
+		"codsic_planta" : "3AFQ",
+		"recurso_ofei" : "POCUNE1"
+	},
+	{
+		"codsic_planta" : "UNN1",
+		"recurso_ofei" : "UNION"
+	},
+	{
+		"codsic_planta" : "AYR1",
+		"recurso_ofei" : "AUTOGAYURA"
+	},
+	{
+		"codsic_planta" : "3A44",
+		"recurso_ofei" : "PLANTASOLARBAYUNCAI1"
+	},
+	{
+		"codsic_planta" : "STG1",
+		"recurso_ofei" : "SANTIAGO"
+	},
+	{
+		"codsic_planta" : "TBQ4",
+		"recurso_ofei" : "BARRANQUILLA4"
+	},
+	{
+		"codsic_planta" : "2SXQ",
+		"recurso_ofei" : "BIOENERGY"
+	},
+	{
+		"codsic_planta" : "2V27",
+		"recurso_ofei" : "AUTOGCOCA-COLAFEMSA"
+	},
+	{
+		"codsic_planta" : "PGUG",
+		"recurso_ofei" : "PAGUA"
+	},
+	{
+		"codsic_planta" : "2S6S",
+		"recurso_ofei" : "AUTOGARGOSYUMBO"
+	},
+	{
+		"codsic_planta" : "RGRN",
+		"recurso_ofei" : "RIOGRANDE"
+	},
+	{
+		"codsic_planta" : "LTSJ",
+		"recurso_ofei" : "LATASAJERA"
+	},
+	{
+		"codsic_planta" : "2YIR",
+		"recurso_ofei" : "PCHLALIBERTAD1"
+	},
+	{
+		"codsic_planta" : "MAN1",
+		"recurso_ofei" : "INGENIOMANUELITA"
+	},
+	{
+		"codsic_planta" : "TSJ2",
+		"recurso_ofei" : "TASAJERO2"
+	},
+	{
+		"codsic_planta" : "2S78",
+		"recurso_ofei" : "LAFRISOLERA"
+	},
+	{
+		"codsic_planta" : "USQ1",
+		"recurso_ofei" : "USAQUEN"
+	},
+	{
+		"codsic_planta" : "2UP2",
+		"recurso_ofei" : "COGENERADORMANUELITA2"
+	},
+	{
+		"codsic_planta" : "PTC1",
+		"recurso_ofei" : "PATICO-LACABRERA"
+	},
+	{
+		"codsic_planta" : "CLDR",
+		"recurso_ofei" : "MCALDERAS"
+	},
+	{
+		"codsic_planta" : "TYP1",
+		"recurso_ofei" : "TERMOYOPAL1"
+	},
+	{
+		"codsic_planta" : "3GJU",
+		"recurso_ofei" : "AUTOGINGENIOCARMELITA"
+	},
+	{
+		"codsic_planta" : "2UPJ",
+		"recurso_ofei" : "TEQUENDAMAI"
+	},
+	{
+		"codsic_planta" : "2QV2",
+		"recurso_ofei" : "BAJOTULUA"
+	},
+	{
+		"codsic_planta" : "TYP4",
+		"recurso_ofei" : "TERMOYOPALG4"
+	},
+	{
+		"codsic_planta" : "3C3Z",
+		"recurso_ofei" : "LASIERPE1"
+	},
+	{
+		"codsic_planta" : "PRG1",
+		"recurso_ofei" : "PROELECTRICA"
+	},
+	{
+		"codsic_planta" : "3EV3",
+		"recurso_ofei" : "LAMEDINA1"
+	},
+	{
+		"codsic_planta" : "GE32",
+		"recurso_ofei" : "GECELCA32"
+	},
+	{
+		"codsic_planta" : "2ZHY",
+		"recurso_ofei" : "CELSIASOLARESPINAL1"
+	},
+	{
+		"codsic_planta" : "GTRG",
+		"recurso_ofei" : "GUATRON"
+	},
+	{
+		"codsic_planta" : "3EXH",
+		"recurso_ofei" : "PARQUEEOLICOWESP011"
+	},
+	{
+		"codsic_planta" : "PES1",
+		"recurso_ofei" : "ITUANGO"
+	},
+	{
+		"codsic_planta" : "3AQP",
+		"recurso_ofei" : "CAUYA2"
+	},
+	{
+		"codsic_planta" : "CMP2",
+		"recurso_ofei" : "CAMPESTRE(EPM)"
+	},
+	{
+		"codsic_planta" : "PTA1",
+		"recurso_ofei" : "LAPITA"
+	},
+	{
+		"codsic_planta" : "TEC1",
+		"recurso_ofei" : "TERMOEMCALICC"
+	},
+	{
+		"codsic_planta" : "3ADA",
+		"recurso_ofei" : "AUTOGPTARBELLO4"
+	},
+	{
+		"codsic_planta" : "AFR1",
+		"recurso_ofei" : "AGUAFRESCA"
+	},
+	{
+		"codsic_planta" : "PRC3",
+		"recurso_ofei" : "PORCEIII"
+	},
+	{
+		"codsic_planta" : "3E98",
+		"recurso_ofei" : "AUTOGCOLOMBINADELCAUCA1"
+	},
+	{
+		"codsic_planta" : "PJR1",
+		"recurso_ofei" : "PAJARITO"
+	},
+	{
+		"codsic_planta" : "2ZP9",
+		"recurso_ofei" : "TRINA-VATIABSLIII1"
+	},
+	{
+		"codsic_planta" : "3HYG",
+		"recurso_ofei" : "URUACO1"
+	},
+	{
+		"codsic_planta" : "3IRZ",
+		"recurso_ofei" : "LACASCADADEGRANADA"
+	},
+	{
+		"codsic_planta" : "2V25",
+		"recurso_ofei" : "AUTOGARGOSSOGAMOSO"
+	},
+	{
+		"codsic_planta" : "RCIO",
+		"recurso_ofei" : "RIORECIO"
+	},
+	{
+		"codsic_planta" : "HMO1",
+		"recurso_ofei" : "HIDROMONTAÑITAS2"
+	},
+	{
+		"codsic_planta" : "JAG1",
+		"recurso_ofei" : "TERMOPROYECTOS"
+	},
+	{
+		"codsic_planta" : "SLVJ",
+		"recurso_ofei" : "SALVAJINA"
+	},
+	{
+		"codsic_planta" : "2T7D",
+		"recurso_ofei" : "AUTOGCANTAYUS1"
+	},
+	{
+		"codsic_planta" : "3EFY",
+		"recurso_ofei" : "BOSQUESSOLARESDELOSLLANOS41"
+	},
+	{
+		"codsic_planta" : "DVS1",
+		"recurso_ofei" : "DARIOVALENCIASAMPER"
+	},
+	{
+		"codsic_planta" : "2YNA",
+		"recurso_ofei" : "MHBARRANCAS"
+	},
+	{
+		"codsic_planta" : "COE1",
+		"recurso_ofei" : "COELLO"
+	},
+	{
+		"codsic_planta" : "2T7D",
+		"recurso_ofei" : "AUTOGCANTAYUS2"
+	},
+	{
+		"codsic_planta" : "3ACC",
+		"recurso_ofei" : "CELSIASOLARCARMELO1"
+	},
+	{
+		"codsic_planta" : "MNT1",
+		"recurso_ofei" : "MANANTIALES"
+	},
+	{
+		"codsic_planta" : "RFR2",
+		"recurso_ofei" : "RIOFRIOII"
+	},
+	{
+		"codsic_planta" : "SPY1",
+		"recurso_ofei" : "RIOSAPUYES"
+	},
+	{
+		"codsic_planta" : "3JBP",
+		"recurso_ofei" : "LANENERA"
+	},
+	{
+		"codsic_planta" : "PTG1",
+		"recurso_ofei" : "PUENTEGUILLERMO"
+	},
+	{
+		"codsic_planta" : "3EBN",
+		"recurso_ofei" : "GRPARQUESOLARTUCANES1"
+	},
+	{
+		"codsic_planta" : "PRD4",
+		"recurso_ofei" : "PRADO4"
+	},
+	{
+		"codsic_planta" : "CLMG",
+		"recurso_ofei" : "CALIMA"
+	},
+	{
+		"codsic_planta" : "3FCD",
+		"recurso_ofei" : "AUTOGCELSIASOLARPALMIRA3"
+	},
+	{
+		"codsic_planta" : "2W4Y",
+		"recurso_ofei" : "AUTOGFAMILIA"
+	},
+	{
+		"codsic_planta" : "MND1",
+		"recurso_ofei" : "MONDOMO"
+	},
+	{
+		"codsic_planta" : "FLRD",
+		"recurso_ofei" : "FLORIDA2"
+	},
+	{
+		"codsic_planta" : "CTG2",
+		"recurso_ofei" : "CARTAGENA2"
+	},
+	{
+		"codsic_planta" : "CQT1",
+		"recurso_ofei" : "CHARQUITO"
+	},
+	{
+		"codsic_planta" : "3CG9",
+		"recurso_ofei" : "LACHORRERA2"
+	},
+	{
+		"codsic_planta" : "BLM1",
+		"recurso_ofei" : "GRANJASOLARBELMONTE1"
+	},
+	{
+		"codsic_planta" : "SNC1",
+		"recurso_ofei" : "SANCANCIO"
+	},
+	{
+		"codsic_planta" : "HRD1",
+		"recurso_ofei" : "LAHERRADURA"
+	},
+	{
+		"codsic_planta" : "TMB1",
+		"recurso_ofei" : "TERMOBOLIVAR1"
+	},
+	{
+		"codsic_planta" : "2SI1",
+		"recurso_ofei" : "M_MORROAZUL"
+	},
+	{
+		"codsic_planta" : "RNG1",
+		"recurso_ofei" : "RIONEGRO"
+	},
+	{
+		"codsic_planta" : "2UPH",
+		"recurso_ofei" : "TEQUENDAMAIV"
+	},
+	{
+		"codsic_planta" : "MNC1",
+		"recurso_ofei" : "MUNICIPAL"
+	},
+	{
+		"codsic_planta" : "CAS1",
+		"recurso_ofei" : "CENTRALCASTILLA1"
+	},
+	{
+		"codsic_planta" : "2T7D",
+		"recurso_ofei" : null
+	},
+	{
+		"codsic_planta" : "HMLG",
+		"recurso_ofei" : "MIELI"
+	},
+	{
+		"codsic_planta" : "RFR1",
+		"recurso_ofei" : "RIOFRIOI"
+	},
+	{
+		"codsic_planta" : "3J4T",
+		"recurso_ofei" : "PARQUESOLARVERSALLES1"
+	},
+	{
+		"codsic_planta" : "3INX",
+		"recurso_ofei" : "CARACOLI1"
+	},
+	{
+		"codsic_planta" : "INT1",
+		"recurso_ofei" : "INTERMEDIA1"
+	},
+	{
+		"codsic_planta" : "2SDR",
+		"recurso_ofei" : "ALEJANDRÍA"
+	},
+	{
+		"codsic_planta" : "INZ1",
+		"recurso_ofei" : "INZA"
+	},
+	{
+		"codsic_planta" : "CIP1",
+		"recurso_ofei" : "CPROVIDEN"
+	},
+	{
+		"codsic_planta" : "TVL1",
+		"recurso_ofei" : "TERMOVALLECC"
+	},
+	{
+		"codsic_planta" : "MENR",
+		"recurso_ofei" : "CUATRICENTENARIO1"
+	},
+	{
+		"codsic_planta" : "3HLD",
+		"recurso_ofei" : "LOSGIRASOLES1"
+	},
+	{
+		"codsic_planta" : "3GPZ",
+		"recurso_ofei" : "MONTELIBANO1"
+	},
+	{
+		"codsic_planta" : "IQU1",
+		"recurso_ofei" : "IQUIRAI"
+	},
+	{
+		"codsic_planta" : "AMF1",
+		"recurso_ofei" : "AMALFI"
+	},
+	{
+		"codsic_planta" : "3J1J",
+		"recurso_ofei" : "PARQUESOLARHONDAI1"
+	},
+	{
+		"codsic_planta" : "BSQ1",
+		"recurso_ofei" : "ELBOSQUE"
+	},
+	{
+		"codsic_planta" : "TMS1",
+		"recurso_ofei" : "RIOFRIO(TAMESIS)1"
+	},
+	{
+		"codsic_planta" : "SNS1",
+		"recurso_ofei" : "SONSON"
+	},
+	{
+		"codsic_planta" : "3GVM",
+		"recurso_ofei" : "CELSIASOLARYUMA1"
+	},
+	{
+		"codsic_planta" : "RMR1",
+		"recurso_ofei" : "RUMOR"
+	},
+	{
+		"codsic_planta" : "3GJQ",
+		"recurso_ofei" : "TERMOTASAJERODOSSOLAR1"
+	},
+	{
+		"codsic_planta" : "HMIN",
+		"recurso_ofei" : "ESCUELADEMINAS"
+	},
+	{
+		"codsic_planta" : "3DSO",
+		"recurso_ofei" : "HELIOSI1"
+	},
+	{
+		"codsic_planta" : "ALTG",
+		"recurso_ofei" : "ALTOTULUA"
+	},
+	{
+		"codsic_planta" : "CTG3",
+		"recurso_ofei" : "CARTAGENA3"
+	},
+	{
+		"codsic_planta" : "JAGS",
+		"recurso_ofei" : "JAGUAS"
+	},
+	{
+		"codsic_planta" : "2YB9",
+		"recurso_ofei" : "AUTOGECOPETROLORITO"
+	},
+	{
+		"codsic_planta" : "GCC1",
+		"recurso_ofei" : "GUACAICA"
+	},
+	{
+		"codsic_planta" : "TFL4",
+		"recurso_ofei" : "FLORES4CC"
+	},
+	{
+		"codsic_planta" : "GYPO",
+		"recurso_ofei" : "GUAYEPO1"
+	},
+	{
+		"codsic_planta" : "ZPA4",
+		"recurso_ofei" : "ZIPAEMG4"
+	},
+	{
+		"codsic_planta" : "3EDL",
+		"recurso_ofei" : "BOSQUESSOLARESDELOSLLANOS51"
+	},
+	{
+		"codsic_planta" : "CTG1",
+		"recurso_ofei" : "CARTAGENA1"
+	},
+	{
+		"codsic_planta" : "ALBG",
+		"recurso_ofei" : "ALBAN"
+	},
+	{
+		"codsic_planta" : "3HBP",
+		"recurso_ofei" : "LATOLUA1 "
+	},
+	{
+		"codsic_planta" : "3E9I",
+		"recurso_ofei" : "ZEUS2"
+	},
+	{
+		"codsic_planta" : "3J2H",
+		"recurso_ofei" : "PETALODECORDOBAII"
+	},
+	{
+		"codsic_planta" : "SLV1",
+		"recurso_ofei" : "SILVIA"
+	},
+	{
+		"codsic_planta" : "3HG9",
+		"recurso_ofei" : "COMUNIDADELSALVADORII"
+	},
+	{
+		"codsic_planta" : "TRN1",
+		"recurso_ofei" : "TERMONORTE"
+	},
+	{
+		"codsic_planta" : "2U8Y",
+		"recurso_ofei" : "TERMOMECHERO5"
+	},
+	{
+		"codsic_planta" : "3F5N",
+		"recurso_ofei" : "AUTOGPINTUCO"
+	},
+	{
+		"codsic_planta" : "UNIB",
+		"recurso_ofei" : "AUTOGUNIBOL"
+	},
+	{
+		"codsic_planta" : "MRL1",
+		"recurso_ofei" : "MERILECTRICA1"
+	},
+	{
+		"codsic_planta" : "JBV1",
+		"recurso_ofei" : "JULIOBRAVO"
+	},
+	{
+		"codsic_planta" : "LCS1",
+		"recurso_ofei" : "LACASCADA(ANTIOQUIA)"
+	},
+	{
+		"codsic_planta" : "3HE8",
+		"recurso_ofei" : "AUTOGCELSIASOLARPALMIRA3ZONAFRANCA"
+	},
+	{
+		"codsic_planta" : "CIMR",
+		"recurso_ofei" : "CIMARRON"
+	},
+	{
+		"codsic_planta" : "TYP3",
+		"recurso_ofei" : "TERMOYOPALG3"
+	},
+	{
+		"codsic_planta" : "3HF5",
+		"recurso_ofei" : "FUNDACION1"
+	},
+	{
+		"codsic_planta" : "3HF7",
+		"recurso_ofei" : "CELSIASOLARLAVICTORIAII"
+	},
+	{
+		"codsic_planta" : "3J83",
+		"recurso_ofei" : "GUAMO"
+	},
+	{
+		"codsic_planta" : "LBR1",
+		"recurso_ofei" : "NUEVOLIBARE"
+	},
+	{
+		"codsic_planta" : "2S8I",
+		"recurso_ofei" : null
+	},
+	{
+		"codsic_planta" : "2S8U",
+		"recurso_ofei" : "PORCEIIIMENOR"
+	},
+	{
+		"codsic_planta" : "3HG7",
+		"recurso_ofei" : "COMUNIDADELSALVADORI"
+	},
+	{
+		"codsic_planta" : "3ENA",
+		"recurso_ofei" : "TESORITO"
+	},
+	{
+		"codsic_planta" : "3ADA",
+		"recurso_ofei" : "AUTOGPTARBELLO6"
+	},
+	{
+		"codsic_planta" : "2TYI",
+		"recurso_ofei" : "AUTOGCELSIASOLARYUMBO"
+	},
+	{
+		"codsic_planta" : "2XXR",
+		"recurso_ofei" : null
+	},
+	{
+		"codsic_planta" : "2YQO",
+		"recurso_ofei" : "AUTOGFERTICOL"
+	},
+	{
+		"codsic_planta" : "3FCF",
+		"recurso_ofei" : "GRANJASOLARLANCEROS1"
+	},
+	{
+		"codsic_planta" : "VNTA",
+		"recurso_ofei" : "VENTANAA"
+	},
+	{
+		"codsic_planta" : "CUR1",
+		"recurso_ofei" : "CURRUCUCUES"
+	},
+	{
+		"codsic_planta" : "2S8S",
+		"recurso_ofei" : "DONAJUANA"
+	},
+	{
+		"codsic_planta" : "MOY1",
+		"recurso_ofei" : "AMOYALAESPERANZA"
+	},
+	{
+		"codsic_planta" : "PLM1",
+		"recurso_ofei" : "MLASPALMAS"
+	},
+	{
+		"codsic_planta" : "TBST",
+		"recurso_ofei" : "TEBSABCC"
+	},
+	{
+		"codsic_planta" : "CLL1",
+		"recurso_ofei" : "CARLOSLLERAS"
+	},
+	{
+		"codsic_planta" : "2QBW",
+		"recurso_ofei" : "ELPOPAL"
+	},
+	{
+		"codsic_planta" : "3ADA",
+		"recurso_ofei" : "AUTOGPTARBELLO"
+	},
+	{
+		"codsic_planta" : "TCDT",
+		"recurso_ofei" : "TERMOCANDELARIACC"
+	},
+	{
+		"codsic_planta" : "SJOG",
+		"recurso_ofei" : "SANJOSE"
+	},
+	{
+		"codsic_planta" : "CCN1",
+		"recurso_ofei" : "COCONUCO"
+	},
+	{
+		"codsic_planta" : "PRDO",
+		"recurso_ofei" : "PRADO"
+	},
+	{
+		"codsic_planta" : "TRM1",
+		"recurso_ofei" : "TERMOCENTROCC"
+	},
+	{
+		"codsic_planta" : "TBQ3",
+		"recurso_ofei" : "BARRANQUILLA3"
+	},
+	{
+		"codsic_planta" : "3GVK",
+		"recurso_ofei" : "CELSIASOLARDULIMA1"
+	},
+	{
+		"codsic_planta" : "CHVR",
+		"recurso_ofei" : "CHIVOR"
+	},
+	{
+		"codsic_planta" : "NQU1",
+		"recurso_ofei" : "NIQUIA"
+	},
+	{
+		"codsic_planta" : "2XXR",
+		"recurso_ofei" : "AG_ECHORMIG"
+	},
+	{
+		"codsic_planta" : "2QRL",
+		"recurso_ofei" : "LAREBUSCA"
+	},
+	{
+		"codsic_planta" : "ARG1",
+		"recurso_ofei" : "AUTOGARGOSCARTAGENA"
+	},
+	{
+		"codsic_planta" : "EPFV",
+		"recurso_ofei" : "ELPASOPANELES"
+	},
+	{
+		"codsic_planta" : "CPT1",
+		"recurso_ofei" : "CAMPESTRE(CALARCA)"
+	},
+	{
+		"codsic_planta" : "ZPA2",
+		"recurso_ofei" : "ZIPAEMG2"
+	},
+	{
+		"codsic_planta" : "2UPF",
+		"recurso_ofei" : "TEQUENDAMAIII"
+	},
+	{
+		"codsic_planta" : "RCL1",
+		"recurso_ofei" : "MRIO_CALI"
+	},
+	{
+		"codsic_planta" : "2XXX",
+		"recurso_ofei" : "AUTOGTERMOSURIA"
+	},
+	{
+		"codsic_planta" : "RMYO",
+		"recurso_ofei" : "RIOMAYO"
+	},
+	{
+		"codsic_planta" : "2S8N",
+		"recurso_ofei" : "MGUAVIO"
+	},
+	{
+		"codsic_planta" : "CLTJ",
+		"recurso_ofei" : "COGENERADORCOLTEJER1"
+	},
+	{
+		"codsic_planta" : "HMO1",
+		"recurso_ofei" : "HIDROMONTAÑITAS1"
+	},
+	{
+		"codsic_planta" : "3GI6",
+		"recurso_ofei" : "GRANJASOLARELSALADO"
+	},
+	{
+		"codsic_planta" : "3E7C",
+		"recurso_ofei" : "AUTOGCELSIASOLARLEVAPAN1"
+	},
+	{
+		"codsic_planta" : "3C4V",
+		"recurso_ofei" : "AUTOGTERMOTAME1"
+	},
+	{
+		"codsic_planta" : "ABJ1",
+		"recurso_ofei" : "LACASCADA(ABEJORRAL)"
+	},
+	{
+		"codsic_planta" : "2S9Q",
+		"recurso_ofei" : "TEQUENDAMA"
+	},
+	{
+		"codsic_planta" : "2T4P",
+		"recurso_ofei" : "SANMATIAS"
+	},
+	{
+		"codsic_planta" : "3J2B",
+		"recurso_ofei" : "SOLARPLANETARICA"
+	},
+	{
+		"codsic_planta" : "TYP2",
+		"recurso_ofei" : "TERMOYOPAL2"
+	},
+	{
+		"codsic_planta" : "2SW1",
+		"recurso_ofei" : "ELEDEN"
+	},
+	{
+		"codsic_planta" : "RGR1",
+		"recurso_ofei" : "RIOGRANDEI"
+	},
+	{
+		"codsic_planta" : "3C3X",
+		"recurso_ofei" : "AUTOGINGENIOMARIALUISA"
+	},
+	{
+		"codsic_planta" : "3J4R",
+		"recurso_ofei" : "PARQUESOLARDINAMARCA"
+	},
+	{
+		"codsic_planta" : "VLT1",
+		"recurso_ofei" : "LAVUELTA"
+	},
+	{
+		"codsic_planta" : "JPR1",
+		"recurso_ofei" : "JEPIRACHI1-15"
+	},
+	{
+		"codsic_planta" : "3CSH",
+		"recurso_ofei" : "GYSOLARAURORA1"
+	},
+	{
+		"codsic_planta" : "CTM1",
+		"recurso_ofei" : "ELMORRO1"
+	},
+	{
+		"codsic_planta" : "3ENE",
+		"recurso_ofei" : "SINCE1 "
+	},
+	{
+		"codsic_planta" : "ESMR",
+		"recurso_ofei" : "ESMERALDA"
+	},
+	{
+		"codsic_planta" : "TR3G",
+		"recurso_ofei" : "TRINA-VATIABSLII1"
+	},
+	{
+		"codsic_planta" : "CTM2",
+		"recurso_ofei" : "ELMORRO2"
+	},
+	{
+		"codsic_planta" : "TCD1",
+		"recurso_ofei" : "TERMOCANDELARIA1"
+	},
+	{
+		"codsic_planta" : "SJN1",
+		"recurso_ofei" : "SAJANDI"
+	},
+	{
+		"codsic_planta" : "TCD2",
+		"recurso_ofei" : "TERMOCANDELARIA2"
+	},
+	{
+		"codsic_planta" : "PPA4",
+		"recurso_ofei" : "PAIPA4"
+	},
+	{
+		"codsic_planta" : "2UPD",
+		"recurso_ofei" : "TEQUENDAMAII"
+	},
+	{
+		"codsic_planta" : "3IS2",
+		"recurso_ofei" : "PARQUESOLARARENAL1"
+	},
+	{
+		"codsic_planta" : "TYP5",
+		"recurso_ofei" : "TERMOYOPALG5"
+	},
+	{
+		"codsic_planta" : "RBB1",
+		"recurso_ofei" : "RIOBOBO"
+	},
+	{
+		"codsic_planta" : "PRC2",
+		"recurso_ofei" : "PORCEII"
+	},
+	{
+		"codsic_planta" : "3CG9",
+		"recurso_ofei" : "LACHORRERA1"
+	},
+	{
+		"codsic_planta" : "2VJS",
+		"recurso_ofei" : "CELSIASOLARBOLIVAR"
+	},
+	{
+		"codsic_planta" : "PTG1",
+		"recurso_ofei" : "PUENTEGUILLERMO1"
+	},
+	{
+		"codsic_planta" : "MIR1",
+		"recurso_ofei" : "MIROLINDO"
+	},
+	{
+		"codsic_planta" : "ASN1",
+		"recurso_ofei" : "ASNAZU"
+	},
+	{
+		"codsic_planta" : "2UX3",
+		"recurso_ofei" : "M_AURESBAJO"
+	},
+	{
+		"codsic_planta" : "2Y2T",
+		"recurso_ofei" : "AUTOGCDSTM2500"
+	},
+	{
+		"codsic_planta" : "PPA2",
+		"recurso_ofei" : "PAIPA2"
+	},
+	{
+		"codsic_planta" : "3EXB",
+		"recurso_ofei" : "CERRITOS1"
+	},
+	{
+		"codsic_planta" : "URA1",
+		"recurso_ofei" : "URRA"
+	},
+	{
+		"codsic_planta" : "2S8I",
+		"recurso_ofei" : "AUTOGREFICAR"
+	},
+	{
+		"codsic_planta" : "3EV1",
+		"recurso_ofei" : "LOSCABALLEROS1"
+	},
+	{
+		"codsic_planta" : "2S6U",
+		"recurso_ofei" : "AUTOGARGOSELCAIRO"
+	},
+	{
+		"codsic_planta" : "PPA1",
+		"recurso_ofei" : "PAIPA1"
+	},
+	{
+		"codsic_planta" : "3J4D",
+		"recurso_ofei" : "CAIMANCIENAGUERO1"
+	},
+	{
+		"codsic_planta" : "PTG1",
+		"recurso_ofei" : "PUENTEGUILLERMO3"
+	},
+	{
+		"codsic_planta" : "OVJ1",
+		"recurso_ofei" : "OVEJAS"
+	},
+	{
+		"codsic_planta" : "2U91",
+		"recurso_ofei" : "TERMOMECHERO6"
+	},
+	{
+		"codsic_planta" : "NAV1",
+		"recurso_ofei" : "LANAVETA"
+	},
+	{
+		"codsic_planta" : "CSC1",
+		"recurso_ofei" : "CASCADA"
+	},
+	{
+		"codsic_planta" : "3IZ6",
+		"recurso_ofei" : "PARQUESOLARLAUNION1"
+	},
+	{
+		"codsic_planta" : "3AQP",
+		"recurso_ofei" : "CAUYA"
+	},
+	{
+		"codsic_planta" : "3HDG",
+		"recurso_ofei" : "OIBITA2"
+	},
+	{
+		"codsic_planta" : "GVIO",
+		"recurso_ofei" : "GUAVIO"
+	},
+	{
+		"codsic_planta" : "PLU1",
+		"recurso_ofei" : "URRAO"
+	},
+	{
+		"codsic_planta" : "3ADA",
+		"recurso_ofei" : "AUTOGPTARBELLO1"
+	},
+	{
+		"codsic_planta" : "GEC3",
+		"recurso_ofei" : "GECELCA3"
+	},
+	{
+		"codsic_planta" : "2T1L",
+		"recurso_ofei" : "M_ELMOLINO"
+	},
+	{
+		"codsic_planta" : "CIS1",
+		"recurso_ofei" : "INGENIOSANCARLOS1"
+	}
+]}
