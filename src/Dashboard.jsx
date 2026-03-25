@@ -6,7 +6,7 @@ const MONO = "ui-monospace, 'Cascadia Code', 'Courier New', monospace";
 
 const C = {
   bg: "#060b14", bg2: "#0a0f1a", card: "#0d1320", cardAlt: "#101827",
-  border: "#162038", text: "#e4eaf4", textSec: "#8899b8", textMuted: "#4a5d80", textDark: "#2d3f5e",
+  border: "#162038", text: "#e4eaf4", textSec: "#8899b8", textMuted: "#7a9cca", textDark: "#6080a8",
   green: "#00d4aa", greenBright: "#00f5c8", greenDim: "rgba(0,212,170,0.12)", greenBorder: "rgba(0,212,170,0.25)",
   cyan: "#06b6d4", cyanBright: "#22d3ee", blue: "#3b82f6", blueBright: "#60a5fa",
   amber: "#f59e0b", red: "#ef4444",
@@ -156,7 +156,7 @@ function GenerationTicker({ height }) {
   if (loading) {
     return (
       <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", background: C.bg2, borderRadius: 10, border: `1px solid ${C.border}` }}>
-        <span style={{ fontSize: 11, color: C.textMuted, fontFamily: MONO }}>Cargando generacion nacional...</span>
+        <span style={{ fontSize: 13, color: C.textMuted, fontFamily: MONO }}>Cargando generacion nacional...</span>
       </div>
     );
   }
@@ -168,11 +168,11 @@ function GenerationTicker({ height }) {
     <div style={{ height, display: "flex", alignItems: "center", gap: 8, background: C.bg2, borderRadius: 10, border: `1px solid ${C.border}`, overflow: "hidden", position: "relative" }}>
       {/* Left label */}
       <div style={{ flexShrink: 0, padding: "0 12px", borderRight: `1px solid ${C.border}`, height: "100%", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", background: `linear-gradient(135deg, ${C.bg2}, ${C.card})`, zIndex: 2, minWidth: 110 }}>
-        <div style={{ fontSize: 8, color: C.textMuted, fontFamily: MONO, letterSpacing: 1, textTransform: "uppercase" }}>Top 10 Despacho</div>
-        <div style={{ fontSize: 15, fontWeight: 900, color: C.green, fontFamily: MONO }}>{totalGen.toFixed(0)} MW</div>
-        <div style={{ fontSize: 7, color: C.textDark, fontFamily: MONO }}>{lastUpdate ? lastUpdate.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : ""}</div>
+        <div style={{ fontSize: 10, color: C.textMuted, fontFamily: MONO, letterSpacing: 1, textTransform: "uppercase" }}>Top 10 Despacho</div>
+        <div style={{ fontSize: 17, fontWeight: 900, color: C.green, fontFamily: MONO }}>{totalGen.toFixed(0)} MW</div>
+        <div style={{ fontSize: 9, color: C.textDark, fontFamily: MONO }}>{lastUpdate ? lastUpdate.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : ""}</div>
         {isSimulated && (
-          <div style={{ fontSize: 7, color: C.amber, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 4, padding: "1px 5px", marginTop: 2, fontFamily: MONO, letterSpacing: 0.5, whiteSpace: "nowrap" }}>
+          <div style={{ fontSize: 9, color: C.amber, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 4, padding: "1px 5px", marginTop: 2, fontFamily: MONO, letterSpacing: 0.5, whiteSpace: "nowrap" }}>
             SIMULADO
           </div>
         )}
@@ -190,19 +190,19 @@ function GenerationTicker({ height }) {
           const pctBar = Math.min(100, Math.max(0, p.pct));
           return (
             <div key={i} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "4px 16px 4px 12px", borderRight: `1px solid ${C.border}22`, flexShrink: 0, cursor: "default" }}>
-              <span style={{ fontSize: 13 }}>⚡</span>
+              <span style={{ fontSize: 15 }}>⚡</span>
               <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ fontSize: 10, fontWeight: 800, color: col, fontFamily: MONO, letterSpacing: 0.5 }}>{p.code}</span>
-                  <span style={{ fontSize: 9, color: C.textMuted, fontFamily: FONT }}>{p.name}</span>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: col, fontFamily: MONO, letterSpacing: 0.5 }}>{p.code}</span>
+                  <span style={{ fontSize: 11, color: C.textMuted, fontFamily: FONT }}>{p.name}</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ fontSize: 12, fontWeight: 900, color: C.text, fontFamily: MONO }}>{p.gen.toFixed(0)}</span>
-                  <span style={{ fontSize: 8, color: C.textMuted, fontFamily: MONO }}>MW</span>
+                  <span style={{ fontSize: 14, fontWeight: 900, color: C.text, fontFamily: MONO }}>{p.gen.toFixed(0)}</span>
+                  <span style={{ fontSize: 10, color: C.textMuted, fontFamily: MONO }}>MW</span>
                   <div style={{ width: 40, height: 4, background: "rgba(255,255,255,0.05)", borderRadius: 2, overflow: "hidden" }}>
                     <div style={{ width: pctBar + "%", height: "100%", background: `linear-gradient(90deg, ${col}, ${col}aa)`, borderRadius: 2, transition: "width 1s ease" }} />
                   </div>
-                  <span style={{ fontSize: 9, fontWeight: 700, color: pctBar > 80 ? C.green : pctBar > 40 ? col : C.textMuted, fontFamily: MONO }}>{p.pct}%</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: pctBar > 80 ? C.green : pctBar > 40 ? col : C.textMuted, fontFamily: MONO }}>{p.pct}%</span>
                 </div>
               </div>
             </div>
@@ -287,20 +287,20 @@ function UnitCards({ selected, onSelect, height }) {
               <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:isSel?4:3}}>
                 <div style={{width:isSel?9:7,height:isSel?9:7,borderRadius:"50%",background:u.color,boxShadow:`0 0 ${isSel?7:3}px ${u.color}60`,flexShrink:0}}/>
                 <span style={{fontSize:isSel?14:12,fontWeight:800,color:isSel?u.color:C.text,fontFamily:MONO,letterSpacing:1}}>{u.id}</span>
-                {isSel&&<span style={{marginLeft:"auto",fontSize:9,color:C.green,background:C.greenDim,border:`1px solid ${C.greenBorder}`,borderRadius:5,padding:"1px 6px",fontFamily:MONO,fontWeight:700,whiteSpace:"nowrap"}}>SELECCIONADA</span>}
+                {isSel&&<span style={{marginLeft:"auto",fontSize: 11,color:C.green,background:C.greenDim,border:`1px solid ${C.greenBorder}`,borderRadius:5,padding:"1px 6px",fontFamily:MONO,fontWeight:700,whiteSpace:"nowrap"}}>SELECCIONADA</span>}
               </div>
-              <div style={{fontSize:10,color:C.textMuted,fontFamily:FONT,marginBottom:isSel?6:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{u.name} - {u.capacity} MW</div>
+              <div style={{fontSize: 12,color:C.textMuted,fontFamily:FONT,marginBottom:isSel?6:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{u.name} - {u.capacity} MW</div>
               {isSel ? (
                 <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
                   {[{l:"Gen. Prom",v:avgF.toFixed(1)+" MW",c:u.color},{l:"Capacidad",v:pctCap+"%",c:C.text},{l:"Desv.",v:(dev>=0?"+":"")+dev.toFixed(2)+"%",c:Math.abs(dev)>2?C.red:C.green},{l:"Media",v:unitSt.mean.toFixed(2)+"%",c:C.text},{l:"Std Dev",v:unitSt.std.toFixed(2)+"%",c:u.color}].map((x,i)=>(
-                    <div key={i}><div style={{fontSize:9,color:C.textMuted,fontFamily:MONO,letterSpacing:0.5}}>{x.l}</div><div style={{fontSize:14,fontWeight:800,color:x.c,fontFamily:MONO}}>{x.v}</div></div>
+                    <div key={i}><div style={{fontSize: 11,color:C.textMuted,fontFamily:MONO,letterSpacing:0.5}}>{x.l}</div><div style={{fontSize: 16,fontWeight:800,color:x.c,fontFamily:MONO}}>{x.v}</div></div>
                   ))}
                 </div>
               ) : (
                 <div style={{display:"flex",alignItems:"baseline",gap:6}}>
-                  <span style={{fontSize:16,fontWeight:800,color:u.color,fontFamily:MONO}}>{avgF.toFixed(0)}</span>
-                  <span style={{fontSize:10,color:C.textMuted,fontFamily:MONO}}>MW</span>
-                  <span style={{fontSize:10,fontWeight:700,color:Math.abs(dev)>2?C.red:C.green,fontFamily:MONO,marginLeft:"auto"}}>{dev>=0?"+":""}{dev.toFixed(1)}%</span>
+                  <span style={{fontSize: 18,fontWeight:800,color:u.color,fontFamily:MONO}}>{avgF.toFixed(0)}</span>
+                  <span style={{fontSize: 12,color:C.textMuted,fontFamily:MONO}}>MW</span>
+                  <span style={{fontSize: 12,fontWeight:700,color:Math.abs(dev)>2?C.red:C.green,fontFamily:MONO,marginLeft:"auto"}}>{dev>=0?"+":""}{dev.toFixed(1)}%</span>
                 </div>
               )}
             </div>
@@ -357,13 +357,13 @@ function Chart({ unitId, width, height }) {
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4,paddingLeft:4,flexShrink:0}}>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
           <div style={{width:7,height:7,borderRadius:"50%",background:unit.color,boxShadow:`0 0 5px ${unit.color}60`}}/>
-          <span style={{fontSize:12,fontWeight:700,color:C.text,fontFamily:FONT}}>Desviacion % — {unitId}</span>
+          <span style={{fontSize: 14,fontWeight:700,color:C.text,fontFamily:FONT}}>Desviación % — {unitId}</span>
         </div>
         <div style={{display:"flex",gap:12}}>
-          {[{c:unit.color,l:"Desviacion",d:false},{c:C.text,l:"Media",d:true},{c:C.red,l:"UCL/LCL",d:true}].map((x,i)=>(
+          {[{c:unit.color,l:"Desviación",d:false},{c:C.text,l:"Media",d:true},{c:C.red,l:"UCL/LCL",d:true}].map((x,i)=>(
             <div key={i} style={{display:"flex",alignItems:"center",gap:4}}>
               <div style={{width:12,height:2,background:x.d?"transparent":x.c,borderTop:x.d?`1.5px dashed ${x.c}`:"none"}}/>
-              <span style={{fontSize:9,color:C.textMuted,fontFamily:FONT}}>{x.l}</span>
+              <span style={{fontSize: 11,color:C.textMuted,fontFamily:FONT}}>{x.l}</span>
             </div>
           ))}
         </div>
@@ -413,7 +413,7 @@ function Table({ unitId }) {
   const [hov, setHov] = useState(-1);
   const data = ALL_DATA[unitId];
   const unit = UNITS.find(u=>u.id===unitId);
-  const headers = ["Periodo","Despacho (MW)","Redespacho (MW)","Despacho Final (MW)","Desviacion %"];
+  const headers = ["Periodo","Despacho (MW)","Redespacho (MW)","GENERACIÓN (MW)","Desviación %"];
   const scrollRef = useRef(null);
   const currentHour = new Date().getHours() || 24; // periodo 1-24, hour 0 maps to 24
   const currentIdx = currentHour - 1;
@@ -433,14 +433,14 @@ function Table({ unitId }) {
   return (
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",height:"100%",display:"flex",flexDirection:"column"}}>
       <div style={{display:"flex",alignItems:"center",borderBottom:`1px solid ${C.border}`,padding:"0 14px",flexShrink:0}}>
-        <div style={{padding:"8px 12px",fontSize:12,fontWeight:700,color:unit.color,fontFamily:FONT,borderBottom:`2px solid ${unit.color}`}}>{unitId} — Despacho 24h</div>
-        <div style={{padding:"8px 12px",fontSize:12,fontWeight:500,color:C.textMuted,fontFamily:FONT,borderBottom:"2px solid transparent",cursor:"pointer"}}>Historico</div>
+        <div style={{padding:"8px 12px",fontSize: 14,fontWeight:700,color:unit.color,fontFamily:FONT,borderBottom:`2px solid ${unit.color}`}}>{unitId} — Despacho 24h</div>
+        <div style={{padding:"8px 12px",fontSize: 14,fontWeight:500,color:C.textMuted,fontFamily:FONT,borderBottom:"2px solid transparent",cursor:"pointer"}}>Histórico</div>
       </div>
       <div ref={scrollRef} style={{flex:1,overflowY:"auto",overflowX:"hidden",minHeight:0}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontFamily:FONT}}>
           <thead>
             <tr>{headers.map((h,i)=>(
-              <th key={i} style={{padding:"7px 10px",textAlign:i===0?"center":"right",fontSize:9,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.7,borderBottom:`1px solid ${C.border}`,whiteSpace:"nowrap",fontFamily:MONO,position:"sticky",top:0,background:C.card,zIndex:1}}>{h}</th>
+              <th key={i} style={{padding:"7px 10px",textAlign:i===0?"center":"right",fontSize: 11,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.7,borderBottom:`1px solid ${C.border}`,whiteSpace:"nowrap",fontFamily:MONO,position:"sticky",top:0,background:C.card,zIndex:1}}>{h}</th>
             ))}</tr>
           </thead>
           <tbody>
@@ -450,12 +450,12 @@ function Table({ unitId }) {
               const isCurrent = i===currentIdx;
               return (
                 <tr key={i} onMouseEnter={()=>setHov(i)} onMouseLeave={()=>setHov(-1)} style={{background:isCurrent?"rgba(255,255,255,0.045)":hov===i?"rgba(255,255,255,0.015)":"transparent",transition:"background 0.1s"}}>
-                  <td style={{padding:"7px 10px",textAlign:"center",fontFamily:MONO,fontSize:11,fontWeight:700,color:isCurrent?C.text:C.textSec,borderBottom:`1px solid ${C.border}`}}>{row.periodo}{isCurrent?" ◂":""}</td>
-                  <td style={{padding:"7px 10px",textAlign:"right",fontFamily:MONO,fontSize:11,color:C.text,fontWeight:600,borderBottom:`1px solid ${C.border}`}}>{row.despacho.toFixed(1)}</td>
-                  <td style={{padding:"7px 10px",textAlign:"right",fontFamily:MONO,fontSize:11,color:isCurrent?C.text:C.textSec,borderBottom:`1px solid ${C.border}`}}>{row.redespacho.toFixed(1)}</td>
-                  <td style={{padding:"7px 10px",textAlign:"right",fontFamily:MONO,fontSize:11,fontWeight:700,color:unit.color,borderBottom:`1px solid ${C.border}`}}>{row.final.toFixed(1)}</td>
+                  <td style={{padding:"7px 10px",textAlign:"center",fontFamily:MONO,fontSize: 13,fontWeight:700,color:isCurrent?C.text:C.textSec,borderBottom:`1px solid ${C.border}`}}>{row.periodo}{isCurrent?" ◂":""}</td>
+                  <td style={{padding:"7px 10px",textAlign:"right",fontFamily:MONO,fontSize: 13,color:C.text,fontWeight:600,borderBottom:`1px solid ${C.border}`}}>{row.despacho.toFixed(1)}</td>
+                  <td style={{padding:"7px 10px",textAlign:"right",fontFamily:MONO,fontSize: 13,color:isCurrent?C.text:C.textSec,borderBottom:`1px solid ${C.border}`}}>{row.redespacho.toFixed(1)}</td>
+                  <td style={{padding:"7px 10px",textAlign:"right",fontFamily:MONO,fontSize: 13,fontWeight:700,color:unit.color,borderBottom:`1px solid ${C.border}`}}>{row.final.toFixed(1)}</td>
                   <td style={{padding:"7px 10px",textAlign:"right",borderBottom:`1px solid ${C.border}`}}>
-                    <span style={{display:"inline-block",background:`${dC}12`,border:`1px solid ${dC}28`,borderRadius:5,padding:"2px 7px",fontFamily:MONO,fontSize:10,fontWeight:700,color:dC}}>{dev>=0?"+":""}{dev.toFixed(2)}%</span>
+                    <span style={{display:"inline-block",background:`${dC}12`,border:`1px solid ${dC}28`,borderRadius:5,padding:"2px 7px",fontFamily:MONO,fontSize: 12,fontWeight:700,color:dC}}>{dev>=0?"+":""}{dev.toFixed(2)}%</span>
                   </td>
                 </tr>
               );
@@ -502,20 +502,20 @@ export default function Dashboard() {
         <div style={{display:"flex",alignItems:"center",gap:14}}>
           {[{l:"Gen Total",v:totalGen.toFixed(0)+" MW",c:C.green},{l:"Despacho",v:totalDesp.toFixed(0)+" MW",c:C.cyan},{l:"Desv Global",v:(gDev>=0?"+":"")+gDev.toFixed(2)+"%",c:Math.abs(gDev)>2?C.red:C.green}].map((s,i)=>(
             <div key={i} style={{textAlign:"right"}}>
-              <div style={{fontSize:8,color:C.textMuted,fontFamily:MONO,letterSpacing:0.5}}>{s.l}</div>
-              <div style={{fontSize:12,fontWeight:800,color:s.c,fontFamily:MONO}}>{s.v}</div>
+              <div style={{fontSize: 10,color:C.textMuted,fontFamily:MONO,letterSpacing:0.5}}>{s.l}</div>
+              <div style={{fontSize: 14,fontWeight:800,color:s.c,fontFamily:MONO}}>{s.v}</div>
             </div>
           ))}
           <div style={{width:1,height:20,background:C.border}}/>
-          <span style={{fontSize:11,color:C.textMuted,fontFamily:MONO}}>{time.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}</span>
-          <div style={{width:26,height:26,borderRadius:"50%",background:`linear-gradient(135deg,${C.cyan}40,${C.green}40)`,border:`2px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:C.green,fontFamily:MONO}}>OP</div>
+          <span style={{fontSize: 13,color:C.textMuted,fontFamily:MONO}}>{time.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}</span>
+          <div style={{width:26,height:26,borderRadius:"50%",background:`linear-gradient(135deg,${C.cyan}40,${C.green}40)`,border:`2px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize: 12,fontWeight:700,color:C.green,fontFamily:MONO}}>OP</div>
         </div>
       </nav>
 
       {/* Content */}
       <div style={{flex:1,padding:px,display:"flex",flexDirection:"column",gap,overflow:"hidden",minHeight:0}}>
-        <GenerationTicker height={tickerH}/>
         <UnitCards selected={sel} onSelect={id=>setSel(id||"GEC3")} height={unitRowH}/>
+        <GenerationTicker height={tickerH}/>
         <div style={{flex:1,display:"flex",gap,minHeight:0}}>
           <div style={{flex:"55 1 0",minWidth:0}}>
             <Chart unitId={sel} width={chartW} height={Math.max(150,mainH)}/>
@@ -525,8 +525,8 @@ export default function Dashboard() {
           </div>
         </div>
         <div style={{height:footerH,flexShrink:0,display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid ${C.border}`,paddingTop:4}}>
-          <span style={{fontSize:9,color:C.textDark,fontFamily:MONO}}>PowerGridControl v2.4.1 — Actualizacion cada 2s</span>
-          <span style={{fontSize:9,color:C.textDark,fontFamily:MONO}}>UCL = +5% | LCL = -5% | 24 periodos</span>
+          <span style={{fontSize: 11,color:C.textDark,fontFamily:MONO}}>PowerGridControl v2.4.1 — Actualizacion cada 2s</span>
+          <span style={{fontSize: 11,color:C.textDark,fontFamily:MONO}}>UCL = +5% | LCL = -5% | 24 periodos</span>
         </div>
       </div>
     </div>
