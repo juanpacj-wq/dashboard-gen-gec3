@@ -6,10 +6,8 @@ const RECONNECT_MS = 5_000
 const FALLBACK_MS  = 3_000
 const DEBOUNCE_MS  = 300
 
-// HEADLESS mode: "true" = old headless, "false" = ventana visible, "new" = new headless (default)
-// El modo "new" es headless real que se comporta igual a headed (no necesita xvfb)
-const HEADLESS_ENV = (process.env.HEADLESS || 'new').trim().toLowerCase()
-const HEADLESS = HEADLESS_ENV === 'false' ? false : HEADLESS_ENV === 'true' ? true : 'new'
+// HEADLESS=false para ventana visible (debug local), cualquier otro valor = headless nuevo
+const HEADLESS = process.env.HEADLESS === 'false' ? false : true
 
 export class PMEScraper {
   #pme; #units; #onData
@@ -53,16 +51,9 @@ export class PMEScraper {
 
   async #run() {
     console.log(`[Scraper] Iniciando navegador (headless=${HEADLESS})…`)
-    this.#browser = await chromium.launch({
-      headless: HEADLESS,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-gpu',
-        '--disable-dev-shm-usage',
-        '--disable-crashpad',
-      ],
-    })
+    const args = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage']
+    if (HEADLESS) args.push('--headless=new')
+    this.#browser = await chromium.launch({ headless: HEADLESS, args })
 
     const ctx = await this.#browser.newContext({
       ignoreHTTPSErrors: true,
