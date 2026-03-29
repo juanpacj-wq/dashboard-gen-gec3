@@ -46,10 +46,12 @@ async function fetchMetric(metricId, dateStr) {
   }
 
   // Aggregate into internal unit IDs (sum sub-units for GEC3)
+  // Units not in the response get an array of 24 zeros (not null — they have 0 dispatch)
+  const ZEROS = HOUR_KEYS.map(() => 0);
   const byUnit = {};
   for (const [unitId, mapping] of Object.entries(UNIT_XM_MAP)) {
     const arrays = mapping.codes.map(c => byCode[c]).filter(Boolean);
-    if (arrays.length === 0) continue;
+    if (arrays.length === 0) { byUnit[unitId] = ZEROS; continue; }
     byUnit[unitId] = HOUR_KEYS.map((_, i) => {
       const sum = arrays.reduce((acc, arr) => acc + (arr[i] || 0), 0);
       return Math.round(sum * 10) / 10;
