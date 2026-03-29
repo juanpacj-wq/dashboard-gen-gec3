@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
 // Map internal unit IDs to XM codes.
-// GEC3 is split into sub-units in XM (5G3O, 5G3S, etc.) — we sum them.
+// GEC3 only appears in XM when it has non-zero dispatch.
 const UNIT_XM_MAP = {
-  GEC3:  { codes: ["5G3O", "5G3S", "5G3T", "5G3U"], aggregate: "sum" },
+  GEC3:  { codes: ["GEC3"] },
   GEC32: { codes: ["GE32"] },
   TGJ1:  { codes: ["TGJ1"] },
   TGJ2:  { codes: ["TGJ2"] },
