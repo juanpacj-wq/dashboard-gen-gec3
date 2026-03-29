@@ -1,16 +1,26 @@
 import { savePeriod, saveAccumState, loadAccumState } from './db.js'
 
+// Colombia is UTC-5 (no daylight saving)
+function colombiaTime(date = new Date()) {
+  const utc = date.getTime() + date.getTimezoneOffset() * 60_000
+  const col = new Date(utc - 5 * 3_600_000)
+  return {
+    hour: col.getHours(),       // 0-23
+    minute: col.getMinutes(),   // 0-59
+    period: col.getHours() + 1, // 1-24 (period 1 = hour 0-1)
+    dateStr: col.toISOString().slice(0, 10),
+  }
+}
+
 export class EnergyAccumulator {
   #state = {}       // { unitId: { mwh, lastMW, lastTime, hour, date } }
-  #completed = {}   // { unitId: { [hour]: mwhValue } }
+  #completed = {}   // { unitId: { [hour]: mwhValue } }  — keyed by hour (0-23)
   #minuteBuckets = {} // { unitId: { hour, buckets: [{ sum, count } × 60] } }
   #saveInterval = null
 
   async init() {
     const rows = await loadAccumState()
-    const now = new Date()
-    const todayStr = now.toISOString().slice(0, 10)
-    const currentHour = now.getHours()
+    const { hour: currentHour, dateStr: todayStr } = colombiaTime()
 
     for (const row of rows) {
       const rowDate = new Date(row.fecha).toISOString().slice(0, 10)
@@ -33,9 +43,7 @@ export class EnergyAccumulator {
   /** Called on every scraper update */
   update(units) {
     const now = new Date()
-    const currentHour = now.getHours()
-    const currentMinute = now.getMinutes()
-    const todayStr = now.toISOString().slice(0, 10)
+    const { hour: currentHour, minute: currentMinute, dateStr: todayStr } = colombiaTime(now)
 
     for (const unit of units) {
       const mw = unit.valueMW ?? 0
@@ -83,13 +91,14 @@ export class EnergyAccumulator {
     return { accumulated, completedPeriods: this.#completed, minuteAvgs }
   }
 
+  // hour is 0-23, stored in DB as 0-23 (maps to period hour+1 on the client)
   async #completePeriod(unitId, date, hour, mwh) {
     if (!this.#completed[unitId]) this.#completed[unitId] = {}
     this.#completed[unitId][hour] = Math.round(mwh * 10) / 10
 
     try {
       await savePeriod(unitId, date, hour, mwh)
-      console.log(`[Accumulator] Periodo guardado: ${unitId} hora=${hour} energia=${mwh.toFixed(3)} MWh`)
+      console.log(`[Accumulator] Periodo guardado: ${unitId} hora=${hour} periodo=${hour + 1} energia=${mwh.toFixed(3)} MWh`)
     } catch (err) {
       console.error(`[Accumulator] Error guardando periodo:`, err.message)
     }
