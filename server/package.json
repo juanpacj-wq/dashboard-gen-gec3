@@ -1,0 +1,14 @@
+{
+  "name": "modashboard-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=../.env server.js",
+    "dev": "node --env-file=../.env --watch server.js",
+    "install:browsers": "playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.50.0",
+    "ws": "^8.18.0"
+  }
+}

@@ -1,0 +1,17 @@
+[Unit]
+Description=Dashboard Generacion WebSocket Server
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/var/www/dashboard-gen/server
+EnvironmentFile=/var/www/dashboard-gen/server/.env
+ExecStart=/usr/bin/xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" /usr/bin/node server.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

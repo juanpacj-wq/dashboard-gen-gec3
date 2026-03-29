@@ -22,5 +22,17 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-centrales_xm_2026-03-24.json
+
+
+
+centrales_xm_20260324.json
 Nombre unidades y su código.json
+
+CLAUDE.md
+Nombre_unidades_y_su_código.json
+
+# Environment & debug
+.env
+server/.env
+server/debug-screenshot.png
+server/debug-dom.json
