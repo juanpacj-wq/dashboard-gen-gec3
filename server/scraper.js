@@ -6,8 +6,10 @@ const RECONNECT_MS = 5_000
 const FALLBACK_MS  = 3_000
 const DEBOUNCE_MS  = 300
 
-// HEADLESS=true por defecto en producción. Usar HEADLESS=false para debug con ventana visible
-const HEADLESS = process.env.HEADLESS !== 'false'
+// HEADLESS mode: "true" = old headless, "false" = ventana visible, "new" = new headless (default)
+// El modo "new" es headless real que se comporta igual a headed (no necesita xvfb)
+const HEADLESS_ENV = (process.env.HEADLESS || 'new').trim().toLowerCase()
+const HEADLESS = HEADLESS_ENV === 'false' ? false : HEADLESS_ENV === 'true' ? true : 'new'
 
 export class PMEScraper {
   #pme; #units; #onData
