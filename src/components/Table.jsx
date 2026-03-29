@@ -6,8 +6,8 @@ export function Table({ unitId, xmDispatch, pmeAccumulated, completedPeriods }) 
   const [hov, setHov] = useState(-1);
   const baseData = ALL_DATA[unitId];
   const unit = UNITS.find(u=>u.id===unitId);
-  const currentHour = new Date().getHours() || 24;
-  const currentIdx = currentHour - 1;
+  // hora 0 = periodo 1 = index 0, hora 17 = periodo 18 = index 17
+  const currentIdx = new Date().getHours();
 
   // Overlay XM API data for despacho/redespacho/generacion when available
   // XM values are number | null. null = API didn't return data for that period

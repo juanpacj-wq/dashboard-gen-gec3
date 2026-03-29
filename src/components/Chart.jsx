@@ -6,8 +6,9 @@ export function Chart({ unitId, width, height, minuteAvgs, xmDispatch }) {
   const [tip, setTip] = useState(null);
 
   const unit = UNITS.find(u => u.id === unitId);
-  const currentHour = new Date().getHours() || 24;
-  const currentIdx = currentHour - 1;
+  // hora 0 = periodo 1 = index 0, hora 17 = periodo 18 = index 17
+  const currentIdx = new Date().getHours();
+  const currentPeriod = currentIdx + 1;
 
   // Redespacho for current period = mean line
   // Use XM value if > 0, otherwise fall back to simulated
@@ -80,7 +81,7 @@ export function Chart({ unitId, width, height, minuteAvgs, xmDispatch }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4, paddingLeft: 4, flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <div style={{ width: 7, height: 7, borderRadius: "50%", background: unit.color, boxShadow: `0 0 5px ${unit.color}60` }} />
-          <span style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: FONT }}>Generación MW — {unitId} — P{currentHour}</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: FONT }}>Generación MW — {unitId} — P{currentPeriod}</span>
         </div>
         <div style={{ display: "flex", gap: 12 }}>
           {[{ c: unit.color, l: "Gen MW", d: false }, { c: C.text, l: `Redespacho (${redespacho.toFixed(1)})`, d: true }, { c: C.red, l: "±5%", d: true }].map((x, i) => (
