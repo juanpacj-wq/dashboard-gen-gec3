@@ -76,9 +76,25 @@ export function Table({ unitId, xmDispatch, pmeAccumulated, completedPeriods }) 
           </thead>
           <tbody>
             {data.map((row,i)=>{
-              const dev=row.redespacho!==0?((row.final-row.redespacho)/row.redespacho)*100:0;
-              const dA=Math.abs(dev); const dC=dA>3?C.red:dA>1.5?C.amber:C.green;
               const isCurrent = i===currentIdx;
+              const isFuture = i > currentIdx;
+              // Deviation logic:
+              // Past: (gen - redesp) / redesp
+              // Current: proportional — compare gen vs (redesp * minutesFraction)
+              // Future: null (show "-")
+              let dev = null;
+              if (!isFuture && row.redespacho !== 0) {
+                if (isCurrent) {
+                  const minuteNow = new Date().getMinutes();
+                  const fraction = (minuteNow + 1) / 60; // +1 because minute 0 = 1st minute elapsed
+                  const expectedMWh = row.redespacho * fraction;
+                  dev = expectedMWh !== 0 ? ((row.final - expectedMWh) / expectedMWh) * 100 : 0;
+                } else {
+                  dev = ((row.final - row.redespacho) / row.redespacho) * 100;
+                }
+              }
+              const dA = dev !== null ? Math.abs(dev) : 0;
+              const dC = dev === null ? C.textMuted : dA > 3 ? C.red : dA > 1.5 ? C.amber : C.green;
               const cBt = isCurrent?`2px solid ${unit.color}70`:`1px solid ${C.border}`;
               const cBb = isCurrent?`2px solid ${unit.color}70`:`1px solid ${C.border}`;
               return (
@@ -130,7 +146,11 @@ export function Table({ unitId, xmDispatch, pmeAccumulated, completedPeriods }) 
                   </td>
                   {/* Desviación */}
                   <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",borderTop:cBt,borderBottom:cBb,borderRight:isCurrent?`2px solid ${unit.color}70`:"none",verticalAlign:"middle"}}>
-                    <span style={{display:"inline-block",background:`${dC}${isCurrent?"22":"12"}`,border:`1px solid ${dC}${isCurrent?"55":"28"}`,borderRadius:6,padding:isCurrent?"5px 12px":"2px 7px",fontFamily:MONO,fontSize:isCurrent?14:12,fontWeight:700,color:dC}}>{dev>=0?"+":""}{dev.toFixed(2)}%</span>
+                    {dev !== null ? (
+                      <span style={{display:"inline-block",background:`${dC}${isCurrent?"22":"12"}`,border:`1px solid ${dC}${isCurrent?"55":"28"}`,borderRadius:6,padding:isCurrent?"5px 12px":"2px 7px",fontFamily:MONO,fontSize:isCurrent?14:12,fontWeight:700,color:dC}}>{dev>=0?"+":""}{dev.toFixed(2)}%</span>
+                    ) : (
+                      <span style={{fontFamily:MONO,fontSize:12,color:C.textMuted}}>—</span>
+                    )}
                   </td>
                 </tr>
               );
