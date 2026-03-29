@@ -51,7 +51,10 @@ export class PMEScraper {
 
   async #run() {
     console.log(`[Scraper] Iniciando navegador (headless=${HEADLESS})…`)
-    this.#browser = await chromium.launch({ headless: HEADLESS })
+    this.#browser = await chromium.launch({
+      headless: HEADLESS,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    })
 
     const ctx = await this.#browser.newContext({
       ignoreHTTPSErrors: true,
