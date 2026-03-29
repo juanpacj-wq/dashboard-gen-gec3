@@ -36,7 +36,7 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit }) {
           <span style={{ fontSize: isSel ? 14 : 12, fontWeight: 800, color: isSel ? u.color : C.text, fontFamily: MONO, letterSpacing: 1 }}>{u.id}</span>
           {isSel && <span style={{ marginLeft: "auto", fontSize: 11, color: C.green, background: C.greenDim, border: `1px solid ${C.greenBorder}`, borderRadius: 5, padding: "1px 6px", fontFamily: MONO, fontWeight: 700, whiteSpace: "nowrap" }}>SELECCIONADA</span>}
         </div>
-        <div style={{ fontSize: 12, color: C.textMuted, fontFamily: FONT, marginBottom: isSel ? 6 : 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Capacidad Instalada - {u.capacity} MW</div>
+        <div style={{ fontSize: 12, color: C.textMuted, fontFamily: FONT, marginBottom: isSel ? 6 : 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{isSel ? "Capacidad Instalada" : "CAPAIns"} - {u.capacity} MW</div>
         {isSel ? (
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
             {[
