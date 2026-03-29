@@ -1,16 +1,26 @@
 import sql from 'mssql'
 
-const pool = new sql.ConnectionPool({
-  server:   process.env.DB_HOST || 'localhost',
+// Support named instances: DB_HOST=192.168.17.20\instanceName
+const rawHost = process.env.DB_HOST || 'localhost'
+const hasInstance = rawHost.includes('\\')
+const serverName = hasInstance ? rawHost.split('\\')[0] : rawHost
+const instanceName = hasInstance ? rawHost.split('\\')[1] : undefined
+
+const poolConfig = {
+  server:   serverName,
   database: process.env.DB_NAME || 'dashboard_gen',
   user:     process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  port:     parseInt(process.env.DB_PORT, 10) || 1433,
   options: {
     encrypt: false,
     trustServerCertificate: true,
+    instanceName,
   },
-})
+}
+// Only set port if no named instance (they are mutually exclusive)
+if (!hasInstance) poolConfig.port = parseInt(process.env.DB_PORT, 10) || 1433
+
+const pool = new sql.ConnectionPool(poolConfig)
 
 const poolConnect = pool.connect()
 
