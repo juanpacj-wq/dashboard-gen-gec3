@@ -9,71 +9,47 @@ export function useRealtimeData() {
   const [units, setUnits] = useState([]);
   const [status, setStatus] = useState('connecting');
   const [lastUpdate, setLastUpdate] = useState(null);
-  // Accumulated MWh per unit for the current hour period
   const [accumulated, setAccumulated] = useState({});
-  // Per-minute average MW for the current hour: { unitId: [{ avg, count }, ...×60] }
   const [minuteAvgs, setMinuteAvgs] = useState({});
-  // Completed periods: { unitId: { [periodIdx]: mwh } }
   const [completedPeriods, setCompletedPeriods] = useState({});
 
   const ws = useRef(null);
   const timer = useRef(null);
   const stopped = useRef(false);
-  // Per-unit integration state: { lastMW, lastTime, mwh, hour }
-  const integrators = useRef({});
-  // Per-unit per-minute buckets: { unitId: { hour, buckets: [{ sum, count }, ...×60] } }
-  const minuteBuckets = useRef({});
-  // Snapshot of completed periods in ref (to build state updates)
-  const completedRef = useRef({});
 
-  const handleUpdate = useCallback((msgUnits) => {
-    const now = Date.now();
-    const d = new Date();
-    const currentHour = d.getHours();
-    const currentMinute = d.getMinutes();
-    const acc = {};
-    const mins = {};
-
-    for (const u of msgUnits) {
-      const prev = integrators.current[u.id];
-      const mw = u.valueMW ?? 0;
-
-      // --- Energy accumulator (trapezoidal) ---
-      if (!prev || prev.hour !== currentHour) {
-        // Hour changed: save previous period's accumulated MWh
-        if (prev && prev.hour !== currentHour && prev.mwh > 0) {
-          const prevIdx = prev.hour; // hour 0-23 maps to periodIdx 0-23
-          if (!completedRef.current[u.id]) completedRef.current[u.id] = {};
-          completedRef.current[u.id][prevIdx] = Math.round(prev.mwh * 10) / 10;
+  // Load completed periods from REST API on mount
+  useEffect(() => {
+    fetch('/api/periods/today')
+      .then(r => r.ok ? r.json() : [])
+      .then(rows => {
+        const periods = {};
+        for (const row of rows) {
+          if (!periods[row.unit_id]) periods[row.unit_id] = {};
+          periods[row.unit_id][row.hora] = row.energia_mwh;
         }
-        integrators.current[u.id] = { lastMW: mw, lastTime: now, mwh: 0, hour: currentHour };
-        acc[u.id] = 0;
-      } else {
-        const dtHours = (now - prev.lastTime) / 3_600_000;
-        const areaMWh = ((prev.lastMW + mw) / 2) * dtHours;
-        const newMWh = prev.mwh + areaMWh;
-        integrators.current[u.id] = { lastMW: mw, lastTime: now, mwh: newMWh, hour: currentHour };
-        acc[u.id] = Math.round(newMWh * 10) / 10;
-      }
+        setCompletedPeriods(prev => ({ ...periods, ...prev }));
+      })
+      .catch(() => {});
+  }, []);
 
-      // --- Per-minute average buckets ---
-      let mb = minuteBuckets.current[u.id];
-      if (!mb || mb.hour !== currentHour) {
-        mb = { hour: currentHour, buckets: Array.from({ length: 60 }, () => ({ sum: 0, count: 0 })) };
-        minuteBuckets.current[u.id] = mb;
-      }
-      mb.buckets[currentMinute].sum += mw;
-      mb.buckets[currentMinute].count += 1;
+  const handleMessage = useCallback((msg) => {
+    if (msg.type !== 'update') return;
 
-      // Build minute averages array (null for minutes with no data)
-      mins[u.id] = mb.buckets.map(b => b.count > 0 ? Math.round((b.sum / b.count) * 10) / 10 : null);
-    }
-
-    setAccumulated(acc);
-    setMinuteAvgs(mins);
-    setCompletedPeriods({ ...completedRef.current });
-    setUnits(msgUnits);
+    setUnits(msg.units);
     setLastUpdate(new Date());
+
+    // Server sends accumulated, minuteAvgs, completedPeriods
+    if (msg.accumulated) setAccumulated(msg.accumulated);
+    if (msg.minuteAvgs) setMinuteAvgs(msg.minuteAvgs);
+    if (msg.completedPeriods) {
+      setCompletedPeriods(prev => {
+        const merged = { ...prev };
+        for (const [unitId, hours] of Object.entries(msg.completedPeriods)) {
+          merged[unitId] = { ...merged[unitId], ...hours };
+        }
+        return merged;
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -92,16 +68,11 @@ export function useRealtimeData() {
       }
       ws.current = socket;
 
-      socket.onopen = () => {
-        setStatus('live');
-      };
+      socket.onopen = () => setStatus('live');
 
       socket.onmessage = (e) => {
         try {
-          const msg = JSON.parse(e.data);
-          if (msg.type === 'update') {
-            handleUpdate(msg.units);
-          }
+          handleMessage(JSON.parse(e.data));
         } catch { /* ignore malformed messages */ }
       };
 
@@ -111,9 +82,7 @@ export function useRealtimeData() {
         timer.current = setTimeout(connect, RECONNECT_MS);
       };
 
-      socket.onerror = () => {
-        socket.close();
-      };
+      socket.onerror = () => socket.close();
     }
 
     connect();
@@ -123,7 +92,7 @@ export function useRealtimeData() {
       clearTimeout(timer.current);
       ws.current?.close();
     };
-  }, [handleUpdate]);
+  }, [handleMessage]);
 
   return { units, status, lastUpdate, accumulated, minuteAvgs, completedPeriods };
 }

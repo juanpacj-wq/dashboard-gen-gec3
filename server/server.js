@@ -2,17 +2,37 @@ import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
 import { PMEScraper } from './scraper.js'
 import { UNITS, PME } from './config.js'
+import { initDB, getTodayPeriods } from './db.js'
+import { EnergyAccumulator } from './accumulator.js'
 
 const PORT = parseInt(process.env.WS_PORT, 10) || 3001
 
+// ── Energy accumulator ────────────────────────────────────────────────────────
+const accumulator = new EnergyAccumulator()
+
 // ── HTTP + WebSocket server ──────────────────────────────────────────────────
-const httpServer = createServer((req, res) => {
-  // Health check mínimo
+const httpServer = createServer(async (req, res) => {
+  // Health check
   if (req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ status: 'ok', clients: clients.size }))
     return
   }
+
+  // REST endpoint: completed periods for today
+  if (req.url === '/api/periods/today' && req.method === 'GET') {
+    try {
+      const periods = await getTodayPeriods()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(periods))
+    } catch (err) {
+      console.error('[API] Error fetching periods:', err.message)
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: err.message }))
+    }
+    return
+  }
+
   res.writeHead(404).end()
 })
 
@@ -24,7 +44,7 @@ wss.on('connection', (ws, req) => {
   clients.add(ws)
   console.log(`[WS] Cliente conectado — IP: ${req.socket.remoteAddress} | Total: ${clients.size}`)
 
-  // Enviar el último dato conocido de inmediato (sin esperar el próximo ciclo)
+  // Send last known data immediately
   if (lastPayload) ws.send(JSON.stringify(lastPayload))
 
   ws.on('close', () => {
@@ -37,6 +57,15 @@ wss.on('connection', (ws, req) => {
 
 // ── Broadcast a todos los clientes conectados ────────────────────────────────
 function broadcast(payload) {
+  // Feed units to the accumulator
+  accumulator.update(payload.units)
+
+  // Enrich payload with accumulation data
+  const { accumulated, completedPeriods, minuteAvgs } = accumulator.getState()
+  payload.accumulated = accumulated
+  payload.completedPeriods = completedPeriods
+  payload.minuteAvgs = minuteAvgs
+
   lastPayload = payload
   const msg = JSON.stringify(payload)
   let sent = 0
@@ -53,17 +82,33 @@ function broadcast(payload) {
 
 // ── Scraper ──────────────────────────────────────────────────────────────────
 const scraper = new PMEScraper({ pme: PME, units: UNITS, onData: broadcast })
-scraper.start()
 
 // ── Arranque ─────────────────────────────────────────────────────────────────
-httpServer.listen(PORT, () => {
-  console.log(`\n[Server] WebSocket en ws://localhost:${PORT}`)
-  console.log(`[Server] Health check en http://localhost:${PORT}/health\n`)
-})
+async function start() {
+  try {
+    await initDB()
+    await accumulator.init()
+    console.log('[DB] Conexión OK')
+  } catch (err) {
+    console.error('[DB] Error de conexión:', err.message)
+    console.log('[DB] Continuando sin persistencia — datos solo en memoria')
+  }
+
+  scraper.start()
+
+  httpServer.listen(PORT, () => {
+    console.log(`\n[Server] WebSocket en ws://localhost:${PORT}`)
+    console.log(`[Server] Health check en http://localhost:${PORT}/health`)
+    console.log(`[Server] Periodos API en http://localhost:${PORT}/api/periods/today\n`)
+  })
+}
+
+start()
 
 // ── Apagado limpio ───────────────────────────────────────────────────────────
 process.on('SIGINT', async () => {
   console.log('\n[Server] Apagando…')
+  await accumulator.stop()
   await scraper.stop()
   httpServer.close()
   process.exit(0)

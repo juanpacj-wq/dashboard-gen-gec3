@@ -1,0 +1,112 @@
+import { savePeriod, saveAccumState, loadAccumState } from './db.js'
+
+export class EnergyAccumulator {
+  #state = {}       // { unitId: { mwh, lastMW, lastTime, hour, date } }
+  #completed = {}   // { unitId: { [hour]: mwhValue } }
+  #minuteBuckets = {} // { unitId: { hour, buckets: [{ sum, count } × 60] } }
+  #saveInterval = null
+
+  async init() {
+    const rows = await loadAccumState()
+    const now = new Date()
+    const todayStr = now.toISOString().slice(0, 10)
+    const currentHour = now.getHours()
+
+    for (const row of rows) {
+      const rowDate = new Date(row.fecha).toISOString().slice(0, 10)
+      if (rowDate === todayStr && row.hora === currentHour) {
+        this.#state[row.unit_id] = {
+          mwh: row.energia_mwh,
+          lastMW: row.last_mw,
+          lastTime: new Date(row.last_time),
+          hour: row.hora,
+          date: rowDate,
+        }
+      }
+    }
+    console.log('[Accumulator] Estado restaurado:', Object.keys(this.#state).length, 'unidades')
+
+    // Persist state to DB every 30 seconds
+    this.#saveInterval = setInterval(() => this.#persistState(), 30_000)
+  }
+
+  /** Called on every scraper update */
+  update(units) {
+    const now = new Date()
+    const currentHour = now.getHours()
+    const currentMinute = now.getMinutes()
+    const todayStr = now.toISOString().slice(0, 10)
+
+    for (const unit of units) {
+      const mw = unit.valueMW ?? 0
+
+      // --- Energy accumulation (trapezoidal) ---
+      const prev = this.#state[unit.id]
+
+      if (prev && (prev.hour !== currentHour || prev.date !== todayStr)) {
+        // Hour changed → save completed period
+        this.#completePeriod(unit.id, prev.date, prev.hour, prev.mwh)
+        this.#state[unit.id] = { mwh: 0, lastMW: mw, lastTime: now, hour: currentHour, date: todayStr }
+      } else if (!prev) {
+        this.#state[unit.id] = { mwh: 0, lastMW: mw, lastTime: now, hour: currentHour, date: todayStr }
+      } else {
+        const dtHours = (now - prev.lastTime) / 3_600_000
+        const areaMWh = ((prev.lastMW + mw) / 2) * dtHours
+        prev.mwh += areaMWh
+        prev.lastMW = mw
+        prev.lastTime = now
+      }
+
+      // --- Per-minute average buckets ---
+      let mb = this.#minuteBuckets[unit.id]
+      if (!mb || mb.hour !== currentHour) {
+        mb = { hour: currentHour, buckets: Array.from({ length: 60 }, () => ({ sum: 0, count: 0 })) }
+        this.#minuteBuckets[unit.id] = mb
+      }
+      mb.buckets[currentMinute].sum += mw
+      mb.buckets[currentMinute].count += 1
+    }
+  }
+
+  /** Get state to broadcast to clients */
+  getState() {
+    const accumulated = {}
+    for (const [id, s] of Object.entries(this.#state)) {
+      accumulated[id] = Math.round(s.mwh * 10) / 10
+    }
+
+    const minuteAvgs = {}
+    for (const [id, mb] of Object.entries(this.#minuteBuckets)) {
+      minuteAvgs[id] = mb.buckets.map(b => b.count > 0 ? Math.round((b.sum / b.count) * 10) / 10 : null)
+    }
+
+    return { accumulated, completedPeriods: this.#completed, minuteAvgs }
+  }
+
+  async #completePeriod(unitId, date, hour, mwh) {
+    if (!this.#completed[unitId]) this.#completed[unitId] = {}
+    this.#completed[unitId][hour] = Math.round(mwh * 10) / 10
+
+    try {
+      await savePeriod(unitId, date, hour, mwh)
+      console.log(`[Accumulator] Periodo guardado: ${unitId} hora=${hour} energia=${mwh.toFixed(3)} MWh`)
+    } catch (err) {
+      console.error(`[Accumulator] Error guardando periodo:`, err.message)
+    }
+  }
+
+  async #persistState() {
+    for (const [unitId, s] of Object.entries(this.#state)) {
+      try {
+        await saveAccumState(unitId, s.date, s.hour, s.mwh, s.lastMW, s.lastTime)
+      } catch (err) {
+        console.error(`[Accumulator] Error persistiendo estado:`, err.message)
+      }
+    }
+  }
+
+  async stop() {
+    clearInterval(this.#saveInterval)
+    await this.#persistState()
+  }
+}
