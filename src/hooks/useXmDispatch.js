@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
-// Map internal unit IDs to XM codsic_planta codes
-const UNIT_XM_CODE = {
-  GEC3: "GEC3",
-  GEC32: "GE32",
-  TGJ1: "TGJ1",
-  TGJ2: "TGJ2",
+// Map internal unit IDs to XM codes.
+// GEC3 is split into sub-units in XM (5G3O, 5G3S, etc.) — we sum them.
+const UNIT_XM_MAP = {
+  GEC3:  { codes: ["5G3O", "5G3S", "5G3T", "5G3U"], aggregate: "sum" },
+  GEC32: { codes: ["GE32"] },
+  TGJ1:  { codes: ["TGJ1"] },
+  TGJ2:  { codes: ["TGJ2"] },
 };
 
-const XM_CODES = Object.values(UNIT_XM_CODE);
+const ALL_XM_CODES = Object.values(UNIT_XM_MAP).flatMap(m => m.codes);
 const HOUR_KEYS = Array.from({ length: 24 }, (_, i) => `Hour${String(i + 1).padStart(2, "0")}`);
 
 // Returns { value: number, missing: boolean } per hour
@@ -30,20 +31,31 @@ async function fetchMetric(metricId, dateStr) {
   const records = json?.Items || [];
   if (records.length === 0) throw new Error(`Sin datos ${metricId}`);
 
+  // Parse all relevant XM codes into arrays of MW values
   const byCode = {};
   for (const item of records) {
     const vals = item.HourlyEntities?.[0]?.Values;
     if (!vals) continue;
     const code = (vals.code || "").trim();
-    if (!XM_CODES.includes(code)) continue;
-    // When a unit exists in the response, null/empty means 0 MW (not "missing")
+    if (!ALL_XM_CODES.includes(code)) continue;
     byCode[code] = HOUR_KEYS.map(k => {
       const raw = vals[k];
       if (raw == null || raw === "") return 0;
-      return Math.round(parseFloat(raw) / 1000 * 10) / 10;
+      return parseFloat(raw) / 1000;
     });
   }
-  return byCode;
+
+  // Aggregate into internal unit IDs (sum sub-units for GEC3)
+  const byUnit = {};
+  for (const [unitId, mapping] of Object.entries(UNIT_XM_MAP)) {
+    const arrays = mapping.codes.map(c => byCode[c]).filter(Boolean);
+    if (arrays.length === 0) continue;
+    byUnit[unitId] = HOUR_KEYS.map((_, i) => {
+      const sum = arrays.reduce((acc, arr) => acc + (arr[i] || 0), 0);
+      return Math.round(sum * 10) / 10;
+    });
+  }
+  return byUnit;
 }
 
 export function useXmDispatch(redespIntervalMs = 300000) {
@@ -57,10 +69,10 @@ export function useXmDispatch(redespIntervalMs = 300000) {
     try {
       const redespData = await fetchMetric("GeneProgRedesp", dateStr);
       const result = {};
-      for (const [unitId, xmCode] of Object.entries(UNIT_XM_CODE)) {
+      for (const unitId of Object.keys(UNIT_XM_MAP)) {
         result[unitId] = {
           despacho: prevData?.[unitId]?.despacho || null,
-          redespacho: redespData[xmCode] || null,
+          redespacho: redespData[unitId] || null,
         };
       }
       setDispatchData(result);
@@ -83,10 +95,10 @@ export function useXmDispatch(redespIntervalMs = 300000) {
       ]);
 
       const result = {};
-      for (const [unitId, xmCode] of Object.entries(UNIT_XM_CODE)) {
+      for (const unitId of Object.keys(UNIT_XM_MAP)) {
         result[unitId] = {
-          despacho: despData[xmCode] || null,
-          redespacho: redespData[xmCode] || null,
+          despacho: despData[unitId] || null,
+          redespacho: redespData[unitId] || null,
         };
       }
 
