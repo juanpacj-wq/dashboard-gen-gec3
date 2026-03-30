@@ -12,6 +12,13 @@ const UNIT_XM_MAP = {
 const ALL_XM_CODES = Object.values(UNIT_XM_MAP).flatMap(m => m.codes);
 const HOUR_KEYS = Array.from({ length: 24 }, (_, i) => `Hour${String(i + 1).padStart(2, "0")}`);
 
+// Colombia is UTC-5, always (no DST)
+function colombiaDateStr() {
+  const now = new Date();
+  const col = new Date(now.getTime() - 5 * 3600000);
+  return col.toISOString().slice(0, 10);
+}
+
 // Returns { value: number, missing: boolean } per hour
 // missing=true means the API returned null/undefined/empty for that period
 async function fetchMetric(metricId, dateStr) {
@@ -67,7 +74,7 @@ export function useXmDispatch(redespIntervalMs = 300000) {
   const despFetched = useRef(false);
 
   const fetchRedespacho = useCallback(async (prevData) => {
-    const dateStr = new Date().toISOString().split("T")[0];
+    const dateStr = colombiaDateStr();
     try {
       const redespData = await fetchMetric("GeneProgRedesp", dateStr);
       const result = {};
@@ -89,7 +96,7 @@ export function useXmDispatch(redespIntervalMs = 300000) {
   }, []);
 
   const fetchAll = useCallback(async () => {
-    const dateStr = new Date().toISOString().split("T")[0];
+    const dateStr = colombiaDateStr();
     try {
       const [despData, redespData] = await Promise.all([
         fetchMetric("GeneProgDesp", dateStr),
