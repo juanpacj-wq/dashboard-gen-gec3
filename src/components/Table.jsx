@@ -7,7 +7,8 @@ export function Table({ unitId, xmDispatch, pmeAccumulated, completedPeriods }) 
   const baseData = ALL_DATA[unitId];
   const unit = UNITS.find(u=>u.id===unitId);
   // hora 0 = periodo 1 = index 0, hora 17 = periodo 18 = index 17
-  const currentIdx = new Date().getHours();
+  // Usar hora Colombia (UTC-5) explícitamente
+  const currentIdx = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Bogota" })).getHours();
 
   // Overlay XM API data for despacho/redespacho/generacion when available
   // XM values are number | null. null = API didn't return data for that period
@@ -22,16 +23,19 @@ export function Table({ unitId, xmDispatch, pmeAccumulated, completedPeriods }) 
     // Use API value if present (including 0), fall back to simulated if null/undefined
     const despacho = xmDesp != null ? xmDesp : row.despacho;
     const redespacho = xmRedesp != null ? xmRedesp : row.redespacho;
-    // Generation: current period = PME live, past completed = stored, rest = 0
+    // Generation: current period = PME live, past completed = stored, future = always 0
     const periodHour = i; // periodIdx 0 = hour 0, etc.
     let final_;
-if (i === currentIdx) {
-  final_ = pmeGenMWh;
-} else if (unitCompleted[periodHour] != null) {
-  final_ = unitCompleted[periodHour];
-} else {
-  final_ = 0;
-}
+    if (i > currentIdx) {
+      // Periodo futuro: NUNCA mostrar datos (evita datos del día anterior)
+      final_ = 0;
+    } else if (i === currentIdx) {
+      final_ = pmeGenMWh;
+    } else if (unitCompleted[periodHour] != null) {
+      final_ = unitCompleted[periodHour];
+    } else {
+      final_ = 0;
+    }
 
 // 👇 evitar negativos
 final_ = Math.max(0, final_);
