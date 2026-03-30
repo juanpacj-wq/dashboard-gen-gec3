@@ -8,6 +8,7 @@ import { Table } from "./components/Table";
 import { useRealtimeData } from "./hooks/useRealtimeData";
 import { useXmDispatch } from "./hooks/useXmDispatch";
 
+
 const STATUS_CFG = {
   live:         { color: C.green,   label: "En vivo" },
   reconnecting: { color: "#f59e0b", label: "Reconectando..." },

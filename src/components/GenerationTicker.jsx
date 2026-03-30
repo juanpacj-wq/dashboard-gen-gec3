@@ -35,6 +35,7 @@ export function GenerationTicker({ height }) {
   const items = [...plants, ...plants];
 
   return (
+    
     <div style={{ height, display: "flex", alignItems: "center", gap: 8, background: C.bg2, borderRadius: 10, border: `1px solid ${C.border}`, overflow: "hidden", position: "relative" }}>
       {/* Left label */}
       <div style={{ flexShrink: 0, padding: "0 12px", borderRight: `1px solid ${C.border}`, height: "100%", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", background: `linear-gradient(135deg, ${C.bg2}, ${C.card})`, zIndex: 2, minWidth: 110 }}>
@@ -57,7 +58,7 @@ export function GenerationTicker({ height }) {
       >
         {items.map((p, i) => {
           const col = C.cyan;
-          const pctBar = Math.min(100, Math.max(0, p.pct));
+          // const pctBar = Math.min(100, Math.max(0, p.pct));
           return (
             <div key={i} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "4px 16px 4px 12px", borderRight: `1px solid ${C.border}22`, flexShrink: 0, cursor: "default" }}>
               <span style={{ fontSize: 15 }}>⚡</span>
@@ -69,10 +70,10 @@ export function GenerationTicker({ height }) {
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 14, fontWeight: 900, color: C.text, fontFamily: MONO }}>{p.gen.toFixed(0)}</span>
                   <span style={{ fontSize: 10, color: C.textMuted, fontFamily: MONO }}>MW</span>
-                  <div style={{ width: 40, height: 4, background: "rgba(255,255,255,0.05)", borderRadius: 2, overflow: "hidden" }}>
+                  {/*<div style={{ width: 40, height: 4, background: "rgba(255,255,255,0.05)", borderRadius: 2, overflow: "hidden" }}>
                     <div style={{ width: pctBar + "%", height: "100%", background: `linear-gradient(90deg, ${col}, ${col}aa)`, borderRadius: 2, transition: "width 1s ease" }} />
                   </div>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: pctBar > 80 ? C.green : pctBar > 40 ? col : C.textMuted, fontFamily: MONO }}>{p.pct}%</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: pctBar > 80 ? C.green : pctBar > 40 ? col : C.textMuted, fontFamily: MONO }}>{p.pct}%</span>*/}
                 </div>
               </div>
             </div>
