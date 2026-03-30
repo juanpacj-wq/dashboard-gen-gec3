@@ -35,8 +35,8 @@ export function MiniGauge({ value, max, color, size, displayValue, displayUnit }
       {fDeg>0.5&&<path d={arc(rM,sa,fDeg)} fill="none" stroke={`url(#${uid}l)`} strokeWidth={size*0.022} strokeLinecap="round" filter={`url(#${uid}g)`}/>}
       {endP&&<><circle cx={endP[0]} cy={endP[1]} r={size*0.03} fill={color} opacity={0.3} filter={`url(#${uid}g)`}/><circle cx={endP[0]} cy={endP[1]} r={size*0.01} fill="#fff"/></>}
       <circle cx={cx} cy={cy} r={size*0.2} fill={`url(#${uid}r)`}/><circle cx={cx} cy={cy} r={size*0.16} fill={`url(#${uid}b)`}/><circle cx={cx} cy={cy} r={size*0.16} fill="none" stroke={`${color}15`} strokeWidth={1}/>
-      <text x={cx} y={cy-1} textAnchor="middle" dominantBaseline="central" fill="#fff" fontSize={size*(displayValue!=null?0.16:0.19)} fontWeight="800" fontFamily={FONT}>{displayValue!=null?(pct>0?(anim/pct*displayValue).toFixed(1):"0.0"):Math.round(anim)}</text>
-      <text x={cx} y={cy+size*0.09} textAnchor="middle" dominantBaseline="central" fill={C.textMuted} fontSize={size*0.06} fontFamily={MONO}>{displayUnit||"%CAP"}</text>
+      <text x={cx} y={cy-1} textAnchor="middle" dominantBaseline="central" fill="#fff" fontSize={size*(displayValue!=null?0.23:0.19)} fontWeight="800" fontFamily={FONT}>{displayValue!=null?(pct>0?(anim/pct*displayValue).toFixed(1):"0.0"):Math.round(anim)}</text>
+      <text x={cx} y={cy+size*0.18} textAnchor="middle" dominantBaseline="central" fill={C.textMuted} fontSize={size*0.15} fontFamily={MONO}>{displayUnit||"%CAP"}</text>
     </svg>
   );
 }

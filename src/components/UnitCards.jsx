@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { C, MONO, FONT } from "../theme";
-import { UNITS, ALL_DATA, calcStats } from "../data/units";
+import { UNITS, ALL_DATA, //calcStats 
+
+} from "../data/units";
 import { MiniGauge } from "./MiniGauge";
 
 function UnitCard({ u, isSel, onSelect, height, realtimeUnit }) {
@@ -9,14 +11,21 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit }) {
   const avgD = useMemo(() => data.reduce((a, r) => a + r.redespacho, 0) / 24, [data]);
   const avgF = useMemo(() => data.reduce((a, r) => a + r.final, 0) / 24, [data]);
 
-  const currentMW = realtimeUnit?.valueMW ?? avgF;
+  const currentMW = Math.max(0, realtimeUnit?.valueMW ?? avgF);
   const maxMW = realtimeUnit?.maxMW ?? u.capacity;
-
-  const pctCap = useMemo(() => Math.min(100, Math.round((currentMW / maxMW) * 100)), [currentMW, maxMW]);
-  const dev = useMemo(() => ((currentMW - avgD) / avgD) * 100, [currentMW, avgD]);
-
-  const devs = useMemo(() => data.map(r => ((r.final - r.redespacho) / r.redespacho) * 100), [data]);
-  const unitSt = useMemo(() => isSel ? calcStats(devs) : null, [isSel, devs]);
+  
+  // capacidad %
+  const pctCap = useMemo(
+  () => Math.min(100, Math.max(0, Math.round((currentMW / maxMW) * 100))),
+  [currentMW, maxMW]
+  );
+  const rawMW = realtimeUnit?.valueMW ?? avgF;
+  // desviacion
+  const dev = useMemo(() => {  if (rawMW < 0) return 0;  if (!avgD) return 0;  return ((rawMW - avgD) / avgD) * 100;}, [rawMW, avgD]);
+  
+  
+  //const devs = useMemo(() => data.map(r => ((r.final - r.redespacho) / r.redespacho) * 100), [data]);
+  //const unitSt = useMemo(() => isSel ? calcStats(devs) : null, [isSel, devs]);
 
   return (
     <div onClick={() => onSelect(isSel ? null : u.id)} style={{
@@ -33,7 +42,7 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit }) {
       <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: isSel ? 4 : 3 }}>
           <div style={{ width: isSel ? 9 : 7, height: isSel ? 9 : 7, borderRadius: "50%", background: u.color, boxShadow: `0 0 ${isSel ? 7 : 3}px ${u.color}60`, flexShrink: 0 }} />
-          <span style={{ fontSize: isSel ? 14 : 12, fontWeight: 800, color: isSel ? u.color : C.text, fontFamily: MONO, letterSpacing: 1 }}>{u.id}</span>
+          <span style={{ fontSize: isSel ? 24 : 16, fontWeight: 800, color: isSel ? u.color : C.text, fontFamily: MONO, letterSpacing: 1 }}>{u.id}</span>
           {isSel && <span style={{ marginLeft: "auto", fontSize: 11, color: C.green, background: C.greenDim, border: `1px solid ${C.greenBorder}`, borderRadius: 5, padding: "1px 6px", fontFamily: MONO, fontWeight: 700, whiteSpace: "nowrap" }}>SELECCIONADA</span>}
         </div>
         <div style={{ fontSize: 12, color: C.textMuted, fontFamily: FONT, marginBottom: isSel ? 6 : 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{isSel ? "Capacidad Instalada" : "CAPAIns"} - {u.capacity} MW</div>
@@ -41,9 +50,9 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit }) {
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
             {[
               { l: "Capacidad", v: pctCap + "%", c: C.text },
-              { l: "Desv.", v: (dev >= 0 ? "+" : "") + dev.toFixed(2) + "%", c: Math.abs(dev) > 2 ? C.red : C.green },
-              { l: "Media", v: unitSt.mean.toFixed(2) + "%", c: C.text },
-              { l: "Std Dev", v: unitSt.std.toFixed(2) + "%", c: u.color },
+              { l: "Desv. (incorrecto)", v: (dev >= 0 ? "+" : "") + dev.toFixed(2) + "%", c: Math.abs(dev) > 2 ? C.red : C.green },
+              //{ l: "Media", v: unitSt.mean.toFixed(2) + "%", c: C.text },
+              //{ l: "Std Dev", v: unitSt.std.toFixed(2) + "%", c: u.color },
             ].map((x, i) => (
               <div key={i}>
                 <div style={{ fontSize: 11, color: C.textMuted, fontFamily: MONO, letterSpacing: 0.5 }}>{x.l}</div>

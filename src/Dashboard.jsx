@@ -31,7 +31,7 @@ export default function Dashboard() {
 
   const navH = 55;
   const tickerH = 52;
-  const gap = 8;
+  const gap = 5;
   const px = 16;
   const contentH = vh - navH;
   const unitRowH = Math.max(80, contentH * 0.14);
