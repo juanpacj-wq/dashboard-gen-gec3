@@ -10,8 +10,11 @@ export function useXmGeneration(intervalMs = 300000) {
 
   const fetchData = useCallback(async () => {
     const today = new Date();
-    const dateStr = today.toISOString().split("T")[0];
-    const hourKey = `Hour${String(today.getHours() + 1).padStart(2, "0")}`;
+    // Colombia is UTC-5 (no DST)
+    const col = new Date(today.getTime() - 5 * 3600000);
+    const dateStr = col.toISOString().slice(0, 10);
+    const colHour = col.getUTCHours();
+    const hourKey = `Hour${String(colHour + 1).padStart(2, "0")}`;
 
     try {
       const res = await fetch("/api/xm/hourly", {
@@ -53,7 +56,7 @@ export function useXmGeneration(intervalMs = 300000) {
       setIsSimulated(false);
       setLoading(false);
     } catch {
-      const rng = seedRng(today.getHours() * 1000 + today.getMinutes());
+      const rng = seedRng(colHour * 1000 + col.getUTCMinutes());
       const fallbackCodes = Object.keys(PLANT_NAME_MAP).slice(0, 10);
       const simulated = fallbackCodes.map(code => {
         const gen = Math.round((200 + rng() * 1000) * 10) / 10;
