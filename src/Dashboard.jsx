@@ -32,7 +32,11 @@ export default function Dashboard() {
   const fraction = (minuteNow + 1) / 60;
 
   // Totales globales reales del periodo actual
-  const totalGen = UNITS.reduce((s, u) => s + Math.max(0, accumulated?.[u.id] ?? 0), 0);
+  // Gen Total = suma de los valores instantáneos PME (valueMW), negativos cuentan como 0
+  const totalGen = UNITS.reduce((s, u) => {
+    const rt = rtUnits.find(r => r.id === u.id);
+    return s + Math.max(0, rt?.valueMW ?? 0);
+  }, 0);
   const totalRedesp = UNITS.reduce((s, u) => {
     const xmRedesp = xmDispatch?.[u.id]?.redespacho?.[currentIdx];
     return s + (xmRedesp ?? ALL_DATA[u.id][currentIdx].redespacho);
