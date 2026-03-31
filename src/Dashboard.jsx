@@ -86,14 +86,12 @@ export default function Dashboard() {
         <UnitCards selected={sel} onSelect={id=>setSel(id||"GEC3")} height={unitRowH} realtimeUnits={rtUnits} xmDispatch={xmDispatch} pmeAccumulated={accumulated}/>
         
         <div style={{flex:1,display:"flex",gap,minHeight:0}}>
-          <div style={{flex:showChart?"60 1 0":"1 1 0",minWidth:0,transition:"flex 0.3s ease"}}>
+          <div style={{flex:showChart?"60 1 0":"80 1 0",minWidth:0,transition:"flex 0.3s ease"}}>
             <Table unitId={sel} xmDispatch={xmDispatch} pmeAccumulated={accumulated} completedPeriods={completedPeriods} horizontal={!showChart} showChart={showChart} onToggleChart={()=>setShowChart(v=>!v)}/>
           </div>
-          {showChart && (
-            <div style={{flex:"40 1 0",minWidth:0}}>
-              <Chart unitId={sel} width={chartW} height={Math.max(150,mainH)} minuteAvgs={minuteAvgs} xmDispatch={xmDispatch}/>
-            </div>
-          )}
+          <div style={{flex:showChart?"40 1 0":"20 1 0",minWidth:0,transition:"flex 0.3s ease"}}>
+            <Chart unitId={sel} width={chartW} height={Math.max(150,mainH)} minuteAvgs={minuteAvgs} xmDispatch={xmDispatch}/>
+          </div>
         </div>
         <GenerationTicker height={tickerH}/>
         <div style={{height:footerH,flexShrink:0,display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid ${C.border}`,paddingTop:4}}>

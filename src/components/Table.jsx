@@ -115,34 +115,38 @@ function HorizontalTable({ data, unit, currentIdx }) {
   ];
   const numRows = rowDefs.length;
 
+  const zebraA = "rgba(255,255,255,0.02)";
+  const zebraB = "transparent";
+
   return (
     <div ref={scrollRef} style={{flex:1,overflowX:"auto",overflowY:"hidden",minHeight:0,display:"flex"}}>
       <table style={{borderCollapse:"separate",borderSpacing:0,fontFamily:FONT,minWidth:"100%",height:"100%"}}>
         <thead>
           <tr style={{height:`${100/numRows}%`}}>
-            <th style={{padding:"10px 14px",textAlign:"left",fontSize:13,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.7,borderBottom:`1px solid ${C.border}`,fontFamily:MONO,position:"sticky",left:0,background:C.card,zIndex:3,minWidth:140}}>Periodo</th>
+            <th style={{padding:"4px 8px",textAlign:"left",fontSize:11,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${C.border}`,fontFamily:MONO,position:"sticky",left:0,background:C.card,zIndex:3,minWidth:100}}>Periodo</th>
             {data.map((row,i)=>{
               const isCurrent = i===currentIdx;
               const isFuture = i > currentIdx;
+              const zebra = i%2===0?zebraA:zebraB;
               return (
                 <th key={i}
                   onMouseEnter={()=>setHov(i)} onMouseLeave={()=>setHov(-1)}
                   style={{
-                    padding: isCurrent ? "16px 14px" : "10px 6px",
+                    padding: isCurrent ? "6px 4px" : "4px 2px",
                     textAlign:"center",
-                    fontSize: isCurrent ? 24 : 15,
+                    fontSize: isCurrent ? 18 : 14,
                     fontWeight: isCurrent ? 900 : 700,
                     color:isCurrent?unit.color:isFuture?C.textDark:C.textSec,
                     fontFamily:MONO,borderBottom:`1px solid ${C.border}`,
-                    background:isCurrent?`${unit.color}15`:hov===i?"rgba(255,255,255,0.015)":"transparent",
+                    background:isCurrent?`${unit.color}15`:hov===i?"rgba(255,255,255,0.03)":zebra,
                     borderTop:isCurrent?`3px solid ${unit.color}`:"none",
                     borderLeft:isCurrent?`2px solid ${unit.color}70`:"none",
                     borderRight:isCurrent?`2px solid ${unit.color}70`:"none",
-                    minWidth:56,whiteSpace:"nowrap",
+                    minWidth:36,whiteSpace:"nowrap",
                     transition:"background 0.15s",
                     verticalAlign:"middle"
                   }}>
-                  {isCurrent && <div style={{fontSize:10,background:`${unit.color}30`,color:unit.color,padding:"2px 7px",borderRadius:20,letterSpacing:1.5,textTransform:"uppercase",fontWeight:800,lineHeight:1.5,marginBottom:3}}>AHORA</div>}
+                  {isCurrent && <div style={{fontSize:8,background:`${unit.color}30`,color:unit.color,padding:"1px 4px",borderRadius:20,letterSpacing:1,textTransform:"uppercase",fontWeight:800,lineHeight:1.4,marginBottom:1}}>AHORA</div>}
                   {row.periodo}
                 </th>
               );
@@ -152,12 +156,13 @@ function HorizontalTable({ data, unit, currentIdx }) {
         <tbody>
           {rowDefs.slice(1).map((rd)=>(
             <tr key={rd.key} style={{height:`${100/numRows}%`}}>
-              <td style={{padding:"8px 14px",fontSize:13,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.5,fontFamily:MONO,borderBottom:`1px solid ${C.border}`,position:"sticky",left:0,background:C.card,zIndex:2,whiteSpace:"nowrap"}}>{rd.label}</td>
+              <td style={{padding:"3px 8px",fontSize:11,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.3,fontFamily:MONO,borderBottom:`1px solid ${C.border}`,position:"sticky",left:0,background:C.card,zIndex:2,whiteSpace:"nowrap"}}>{rd.label}</td>
               {data.map((row,i)=>{
                 const isCurrent = i===currentIdx;
                 const isFuture = i > currentIdx;
                 const val = row[rd.key];
                 const isLastRow = rd.key === "dev";
+                const zebra = i%2===0?zebraA:zebraB;
 
                 let content, color = C.textSec;
                 if(rd.key==="despacho"){
@@ -171,20 +176,22 @@ function HorizontalTable({ data, unit, currentIdx }) {
                   content = "—";
                 } else if(rd.key==="final"){
                   color = isFuture?C.textDark:unit.color;
-                  content = <>{Math.round(val)}{isCurrent && <span style={{fontSize:11,fontWeight:500,color:`${unit.color}90`,marginLeft:3}}>MW</span>}</>;
+                  content = <>{Math.round(val)}{isCurrent && <span style={{fontSize:9,fontWeight:500,color:`${unit.color}90`,marginLeft:2}}>MW</span>}</>;
                 } else if(rd.key==="dev"){
                   if(val !== null){
                     const dA = Math.abs(val);
                     const dC = dA > 3 ? C.red : dA > 1.5 ? C.amber : C.green;
+                    const devText = isCurrent ? val.toFixed(1) : (dA >= 100 ? Math.round(val).toString() : val.toFixed(0));
                     content = <span style={{
                       background:`${dC}${isCurrent?"22":"12"}`,
                       border:`1px solid ${dC}${isCurrent?"55":"28"}`,
-                      borderRadius:isCurrent?6:4,
-                      padding:isCurrent?"5px 12px":"2px 6px",
-                      fontSize:isCurrent?18:13,
+                      borderRadius:isCurrent?5:2,
+                      padding:isCurrent?"2px 6px":"0px 2px",
+                      fontSize:isCurrent?13:11,
                       fontWeight:700,
-                      color:dC
-                    }}>{val>=0?"+":""}{val.toFixed(1)}%</span>;
+                      color:dC,
+                      whiteSpace:"nowrap",
+                    }}>{devText}%</span>;
                   } else {
                     content = <span style={{color:C.textMuted}}>—</span>;
                   }
@@ -195,15 +202,15 @@ function HorizontalTable({ data, unit, currentIdx }) {
                   <td key={i}
                     onMouseEnter={()=>setHov(i)} onMouseLeave={()=>setHov(-1)}
                     style={{
-                      padding: isCurrent ? "16px 14px" : "8px 6px",
+                      padding: isCurrent ? "6px 4px" : "3px 2px",
                       textAlign:"center",fontFamily:MONO,
-                      fontSize: isCurrent ? 28 : 18,
+                      fontSize: isCurrent ? 22 : 15,
                       fontWeight: rd.key==="final" ? (isCurrent ? 900 : 800) : (isCurrent ? 700 : 600),
                       color,
                       borderBottom: isCurrent && isLastRow ? `3px solid ${unit.color}` : `1px solid ${C.border}`,
                       borderLeft: isCurrent ? `2px solid ${unit.color}70` : "none",
                       borderRight: isCurrent ? `2px solid ${unit.color}70` : "none",
-                      background:isCurrent?`${unit.color}15`:hov===i?"rgba(255,255,255,0.015)":"transparent",
+                      background:isCurrent?`${unit.color}15`:hov===i?"rgba(255,255,255,0.03)":zebra,
                       transition:"background 0.15s",
                       verticalAlign:"middle",
                     }}>
