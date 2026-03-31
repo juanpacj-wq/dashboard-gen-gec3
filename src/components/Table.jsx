@@ -106,13 +106,12 @@ function HorizontalTable({ data, unit, currentIdx }) {
 
   const rowDefs = [
     { key:"periodo", label:"Periodo" },
-    { key:"despacho", label:"Despacho (MW)" },
-    { key:"redespacho", label:"Redespacho (MW)" },
-    { key:"proyDespacho", label:"Proy. Despacho (MW)" },
-    { key:"despFinal", label:"Despacho Final (MW)" },
-    { key:"final", label:"Generacion (MW)" },
-    { key:"proyGeneracion", label:"Proy. Generacion (MW)" },
-    { key:"dev", label:"Desviacion %" },
+    { key:"despacho", label:"Despacho" },
+    { key:"redespacho", label:"P. Despacho" },
+    { key:"despFinal", label:"D. Final" },
+    { key:"final", label:"Generacion" },
+    { key:"proyGeneracion", label:"P. Generacion" },
+    { key:"dev", label:"Desviacion" },
   ];
   const numRows = rowDefs.length; // 8 rows including header
 
