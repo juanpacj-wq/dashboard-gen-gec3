@@ -85,7 +85,7 @@ export function Chart({ unitId, width, height, minuteAvgs, xmDispatch }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4, paddingLeft: 4, flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <div style={{ width: 7, height: 7, borderRadius: "50%", background: unit.color, boxShadow: `0 0 5px ${unit.color}60` }} />
-          <span style={{ fontSize: 12, fontWeight: 700, color: C.text, fontFamily: FONT }}>Gen. MW — {unitId} </span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.text, fontFamily: FONT }}>Gen {unitId} </span>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           {[{ c: unit.color, l: "MW", d: false }, { c: C.text, l: `Redespacho`, d: true }, { c: C.red, l: "±5%", d: true }].map((x, i) => (
