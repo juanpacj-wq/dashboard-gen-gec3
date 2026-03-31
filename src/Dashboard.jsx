@@ -29,8 +29,6 @@ export default function Dashboard() {
 
   // Periodo actual Colombia (UTC-5)
   const currentIdx = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Bogota" })).getHours();
-  const minuteNow = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Bogota" })).getMinutes();
-  const fraction = (minuteNow + 1) / 60;
 
   // Totales globales reales del periodo actual
   // Gen Total = suma de los valores instantáneos PME (valueMW), negativos cuentan como 0
@@ -42,8 +40,8 @@ export default function Dashboard() {
     const xmRedesp = xmDispatch?.[u.id]?.redespacho?.[currentIdx];
     return s + (xmRedesp ?? ALL_DATA[u.id][currentIdx].redespacho);
   }, 0);
-  const expectedTotal = totalRedesp * fraction;
-  const gDev = expectedTotal !== 0 ? ((totalGen - expectedTotal) / expectedTotal) * 100 : 0;
+  // Desviación global = comparación directa MW generados vs MW redespachados
+  const gDev = totalRedesp !== 0 ? ((totalGen - totalRedesp) / totalRedesp) * 100 : 0;
 
   const navH = 55;
   const tickerH = 52;
