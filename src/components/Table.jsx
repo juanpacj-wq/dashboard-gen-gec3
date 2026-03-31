@@ -108,7 +108,10 @@ function HorizontalTable({ data, unit, currentIdx }) {
     { key:"periodo", label:"Periodo" },
     { key:"despacho", label:"Despacho (MW)" },
     { key:"redespacho", label:"Redespacho (MW)" },
+    { key:"proyDespacho", label:"Proy. Despacho (MW)" },
+    { key:"despFinal", label:"Despacho Final (MW)" },
     { key:"final", label:"Generacion (MW)" },
+    { key:"proyGeneracion", label:"Proy. Generacion (MW)" },
     { key:"dev", label:"Desviacion %" },
   ];
 
@@ -156,6 +159,9 @@ function HorizontalTable({ data, unit, currentIdx }) {
                 } else if(rd.key==="redespacho"){
                   color = row.hasRedespacho?C.cyan:isCurrent?C.text:C.textSec;
                   content = Math.round(val);
+                } else if(rd.key==="proyDespacho" || rd.key==="despFinal" || rd.key==="proyGeneracion"){
+                  color = C.textMuted;
+                  content = "—";
                 } else if(rd.key==="final"){
                   color = isFuture?C.textDark:unit.color;
                   content = Math.round(val);
