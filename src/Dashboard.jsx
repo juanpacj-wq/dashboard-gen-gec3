@@ -18,6 +18,7 @@ const STATUS_CFG = {
 export default function Dashboard() {
   const [time, setTime] = useState(new Date());
   const [sel, setSel] = useState("GEC3");
+  const [showChart, setShowChart] = useState(false);
   const [vh, setVh] = useState(window.innerHeight);
   const [vw, setVw] = useState(window.innerWidth);
   const { units: rtUnits, status: wsStatus, lastUpdate, accumulated, minuteAvgs, completedPeriods } = useRealtimeData();
@@ -87,13 +88,14 @@ export default function Dashboard() {
         <UnitCards selected={sel} onSelect={id=>setSel(id||"GEC3")} height={unitRowH} realtimeUnits={rtUnits} xmDispatch={xmDispatch} pmeAccumulated={accumulated}/>
         <GenerationTicker height={tickerH}/>
         <div style={{flex:1,display:"flex",gap,minHeight:0}}>
-          <div style={{flex:"60 1 0",minWidth:0}}>
-            <Table unitId={sel} xmDispatch={xmDispatch} pmeAccumulated={accumulated} completedPeriods={completedPeriods}/>
+          <div style={{flex:showChart?"60 1 0":"1 1 0",minWidth:0,transition:"flex 0.3s ease"}}>
+            <Table unitId={sel} xmDispatch={xmDispatch} pmeAccumulated={accumulated} completedPeriods={completedPeriods} horizontal={!showChart} showChart={showChart} onToggleChart={()=>setShowChart(v=>!v)}/>
           </div>
-          <div style={{flex:"40 1 0",minWidth:0}}>
-            <Chart unitId={sel} width={chartW} height={Math.max(150,mainH)} minuteAvgs={minuteAvgs} xmDispatch={xmDispatch}/>
-          </div>
-          
+          {showChart && (
+            <div style={{flex:"40 1 0",minWidth:0}}>
+              <Chart unitId={sel} width={chartW} height={Math.max(150,mainH)} minuteAvgs={minuteAvgs} xmDispatch={xmDispatch}/>
+            </div>
+          )}
         </div>
         <div style={{height:footerH,flexShrink:0,display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid ${C.border}`,paddingTop:4}}>
           <span style={{fontSize: 11,color:C.textDark,fontFamily:MONO}}>Dashboard generación v2.4.1 — Actualizacion cada 2s</span>
