@@ -84,7 +84,7 @@ export default function Dashboard() {
       {/* Content */}
       <div style={{flex:1,padding:px,display:"flex",flexDirection:"column",gap,overflow:"hidden",minHeight:0}}>
         <UnitCards selected={sel} onSelect={id=>setSel(id||"GEC3")} height={unitRowH} realtimeUnits={rtUnits} xmDispatch={xmDispatch} pmeAccumulated={accumulated}/>
-        <GenerationTicker height={tickerH}/>
+        
         <div style={{flex:1,display:"flex",gap,minHeight:0}}>
           <div style={{flex:showChart?"60 1 0":"1 1 0",minWidth:0,transition:"flex 0.3s ease"}}>
             <Table unitId={sel} xmDispatch={xmDispatch} pmeAccumulated={accumulated} completedPeriods={completedPeriods} horizontal={!showChart} showChart={showChart} onToggleChart={()=>setShowChart(v=>!v)}/>
@@ -95,6 +95,7 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+        <GenerationTicker height={tickerH}/>
         <div style={{height:footerH,flexShrink:0,display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid ${C.border}`,paddingTop:4}}>
           <span style={{fontSize: 11,color:C.textDark,fontFamily:MONO}}>Dashboard generación v2.4.1 — Actualizacion cada 2s</span>
           <span style={{fontSize: 11,color:C.textDark,fontFamily:MONO}}>UCL = +5% | LCL = -5% | 24 periodos</span>
