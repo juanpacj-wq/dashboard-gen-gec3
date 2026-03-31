@@ -5,23 +5,33 @@ import { UNITS, ALL_DATA, //calcStats
 } from "../data/units";
 import { MiniGauge } from "./MiniGauge";
 
-function UnitCard({ u, isSel, onSelect, height, realtimeUnit }) {
+function UnitCard({ u, isSel, onSelect, height, realtimeUnit, xmDispatch, pmeAccumulated }) {
   const data = ALL_DATA[u.id];
 
-  const avgD = useMemo(() => data.reduce((a, r) => a + r.redespacho, 0) / 24, [data]);
-  const avgF = useMemo(() => data.reduce((a, r) => a + r.final, 0) / 24, [data]);
+  // Periodo actual Colombia (UTC-5)
+  const currentIdx = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Bogota" })).getHours();
+  const minuteNow = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Bogota" })).getMinutes();
+  const fraction = (minuteNow + 1) / 60;
 
-  const currentMW = Math.max(0, realtimeUnit?.valueMW ?? avgF);
+  // Generación actual (PME acumulado del periodo actual)
+  const pmeGen = Math.max(0, pmeAccumulated?.[u.id] ?? 0);
+  const currentMW = realtimeUnit?.valueMW != null ? Math.max(0, realtimeUnit.valueMW) : pmeGen;
   const maxMW = realtimeUnit?.maxMW ?? u.capacity;
-  
+
   // capacidad %
   const pctCap = useMemo(
   () => Math.min(100, Math.max(0, Math.round((currentMW / maxMW) * 100))),
   [currentMW, maxMW]
   );
-  const rawMW = realtimeUnit?.valueMW ?? avgF;
-  // desviacion
-  const dev = useMemo(() => {  if (rawMW < 0) return 0;  if (!avgD) return 0;  return ((rawMW - avgD) / avgD) * 100;}, [rawMW, avgD]);
+
+  // Desviación: misma lógica que la tabla para el periodo actual
+  const dev = useMemo(() => {
+    const xmRedesp = xmDispatch?.[u.id]?.redespacho?.[currentIdx];
+    const redespacho = xmRedesp ?? data[currentIdx].redespacho;
+    if (!redespacho) return 0;
+    const expectedMWh = redespacho * fraction;
+    return expectedMWh !== 0 ? ((pmeGen - expectedMWh) / expectedMWh) * 100 : 0;
+  }, [xmDispatch, u.id, currentIdx, fraction, pmeGen, data]);
   
   
   //const devs = useMemo(() => data.map(r => ((r.final - r.redespacho) / r.redespacho) * 100), [data]);
@@ -50,7 +60,7 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit }) {
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
             {[
               { l: "Capacidad", v: pctCap + "%", c: C.text },
-              { l: "Desv. (incorrecto)", v: (dev >= 0 ? "+" : "") + dev.toFixed(2) + "%", c: Math.abs(dev) > 2 ? C.red : C.green },
+              { l: "Desviación", v: (dev >= 0 ? "+" : "") + dev.toFixed(2) + "%", c: Math.abs(dev) > 2 ? C.red : C.green },
               //{ l: "Media", v: unitSt.mean.toFixed(2) + "%", c: C.text },
               //{ l: "Std Dev", v: unitSt.std.toFixed(2) + "%", c: u.color },
             ].map((x, i) => (
@@ -72,7 +82,7 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit }) {
   );
 }
 
-export function UnitCards({ selected, onSelect, height, realtimeUnits = [] }) {
+export function UnitCards({ selected, onSelect, height, realtimeUnits = [], xmDispatch, pmeAccumulated }) {
   return (
     <div style={{ display: "flex", gap: 8, height }}>
       {UNITS.map(u => (
@@ -83,6 +93,8 @@ export function UnitCards({ selected, onSelect, height, realtimeUnits = [] }) {
           onSelect={onSelect}
           height={height}
           realtimeUnit={realtimeUnits.find(r => r.id === u.id) ?? null}
+          xmDispatch={xmDispatch}
+          pmeAccumulated={pmeAccumulated}
         />
       ))}
     </div>

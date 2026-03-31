@@ -26,9 +26,19 @@ export default function Dashboard() {
   useEffect(()=>{const t=setInterval(()=>setTime(new Date()),1000);return()=>clearInterval(t);},[]);
   useEffect(()=>{const h=()=>{setVh(window.innerHeight);setVw(window.innerWidth);};window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);},[]);
 
-  const totalGen = UNITS.reduce((s,u)=>s+ALL_DATA[u.id].reduce((a,r)=>a+r.final,0)/24,0);
-  const totalRedesp = UNITS.reduce((s,u)=>s+ALL_DATA[u.id].reduce((a,r)=>a+r.redespacho,0)/24,0);
-  const gDev = ((totalGen-totalRedesp)/totalRedesp)*100;
+  // Periodo actual Colombia (UTC-5)
+  const currentIdx = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Bogota" })).getHours();
+  const minuteNow = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Bogota" })).getMinutes();
+  const fraction = (minuteNow + 1) / 60;
+
+  // Totales globales reales del periodo actual
+  const totalGen = UNITS.reduce((s, u) => s + Math.max(0, accumulated?.[u.id] ?? 0), 0);
+  const totalRedesp = UNITS.reduce((s, u) => {
+    const xmRedesp = xmDispatch?.[u.id]?.redespacho?.[currentIdx];
+    return s + (xmRedesp ?? ALL_DATA[u.id][currentIdx].redespacho);
+  }, 0);
+  const expectedTotal = totalRedesp * fraction;
+  const gDev = expectedTotal !== 0 ? ((totalGen - expectedTotal) / expectedTotal) * 100 : 0;
 
   const navH = 55;
   const tickerH = 52;
@@ -70,7 +80,7 @@ export default function Dashboard() {
 
       {/* Content */}
       <div style={{flex:1,padding:px,display:"flex",flexDirection:"column",gap,overflow:"hidden",minHeight:0}}>
-        <UnitCards selected={sel} onSelect={id=>setSel(id||"GEC3")} height={unitRowH} realtimeUnits={rtUnits}/>
+        <UnitCards selected={sel} onSelect={id=>setSel(id||"GEC3")} height={unitRowH} realtimeUnits={rtUnits} xmDispatch={xmDispatch} pmeAccumulated={accumulated}/>
         <GenerationTicker height={tickerH}/>
         <div style={{flex:1,display:"flex",gap,minHeight:0}}>
           <div style={{flex:"60 1 0",minWidth:0}}>
@@ -82,7 +92,7 @@ export default function Dashboard() {
           
         </div>
         <div style={{height:footerH,flexShrink:0,display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid ${C.border}`,paddingTop:4}}>
-          <span style={{fontSize: 11,color:C.textDark,fontFamily:MONO}}>PowerGridControl v2.4.1 — Actualizacion cada 2s</span>
+          <span style={{fontSize: 11,color:C.textDark,fontFamily:MONO}}>Dashboard generación v2.4.1 — Actualizacion cada 2s</span>
           <span style={{fontSize: 11,color:C.textDark,fontFamily:MONO}}>UCL = +5% | LCL = -5% | 24 periodos</span>
         </div>
       </div>
