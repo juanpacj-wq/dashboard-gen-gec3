@@ -78,7 +78,7 @@ function TableHeader({ unit, isXmLive, showChart, onToggleChart }) {
           display:"flex",alignItems:"center",gap:5,
           transition:"all 0.2s",
         }}>
-          Grafico CEP {showChart ? "◂" : "▸"}
+          Desplegar {showChart ? "◂" : "▸"}
         </button>
       </div>
     </div>
