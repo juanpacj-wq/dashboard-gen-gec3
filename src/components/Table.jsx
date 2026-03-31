@@ -60,7 +60,7 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods) {
 function TableHeader({ unit, isXmLive, showChart, onToggleChart }) {
   return (
     <div style={{display:"flex",alignItems:"center",borderBottom:`1px solid ${C.border}`,padding:"0 14px",flexShrink:0}}>
-      <div style={{padding:"8px 12px",fontSize:24,fontWeight:700,color:unit.color,fontFamily:FONT,borderBottom:`2px solid ${unit.color}`,display:"flex",alignItems:"center",gap:8}}>
+      <div style={{padding:"8px 12px",fontSize:18,fontWeight:700,color:unit.color,fontFamily:FONT,borderBottom:`2px solid ${unit.color}`,display:"flex",alignItems:"center",gap:8}}>
         Despacho 24h
         {isXmLive
           ? <span style={{fontSize:9,background:`${C.green}25`,color:C.green,padding:"2px 6px",borderRadius:10,fontWeight:700,letterSpacing:0.5}}>XM LIVE</span>
@@ -118,7 +118,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
       <table style={{borderCollapse:"separate",borderSpacing:0,fontFamily:FONT,minWidth:"100%",height:"100%"}}>
         <thead>
           <tr>
-            <th style={{padding:"10px 14px",textAlign:"left",fontSize:13,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.7,borderBottom:`1px solid ${C.border}`,fontFamily:MONO,position:"sticky",left:0,background:C.card,zIndex:3,minWidth:140}}></th>
+            <th style={{padding:"10px 14px",textAlign:"left",fontSize:13,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.7,borderBottom:`1px solid ${C.border}`,fontFamily:MONO,position:"sticky",left:0,background:C.card,zIndex:3,minWidth:140}}>Periodo</th>
             {data.map((row,i)=>{
               const isCurrent = i===currentIdx;
               const isFuture = i > currentIdx;
