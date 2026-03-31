@@ -152,13 +152,13 @@ function HorizontalTable({ data, unit, currentIdx }) {
                 let content, color = C.textSec;
                 if(rd.key==="despacho"){
                   color = row.hasRedespacho?C.textDark:isCurrent?C.text:C.textSec;
-                  content = <span style={{textDecoration:row.hasRedespacho?"line-through":"none",opacity:row.hasRedespacho?0.5:1}}>{val.toFixed(1)}</span>;
+                  content = <span style={{textDecoration:row.hasRedespacho?"line-through":"none",opacity:row.hasRedespacho?0.5:1}}>{Math.round(val)}</span>;
                 } else if(rd.key==="redespacho"){
                   color = row.hasRedespacho?C.cyan:isCurrent?C.text:C.textSec;
-                  content = val.toFixed(1);
+                  content = Math.round(val);
                 } else if(rd.key==="final"){
                   color = isFuture?C.textDark:unit.color;
-                  content = val.toFixed(1);
+                  content = Math.round(val);
                 } else if(rd.key==="dev"){
                   if(val !== null){
                     const dA = Math.abs(val);
@@ -175,7 +175,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
                     onMouseEnter={()=>setHov(i)} onMouseLeave={()=>setHov(-1)}
                     style={{
                       padding:"8px 6px",textAlign:"center",fontFamily:MONO,
-                      fontSize:15,fontWeight:rd.key==="final"?800:600,
+                      fontSize:18,fontWeight:rd.key==="final"?800:600,
                       color,
                       borderBottom:`1px solid ${C.border}`,
                       background:isCurrent?`${unit.color}15`:hov===i?"rgba(255,255,255,0.015)":"transparent",
@@ -257,23 +257,23 @@ function VerticalTable({ data, unit, currentIdx }) {
                   )}
                 </td>
                 {/* Despacho */}
-                <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?24:16,color:row.hasRedespacho?(isCurrent?`${C.textMuted}aa`:C.textDark):row.despSimulated?(isCurrent?`${C.amber}cc`:C.amber):(isCurrent?C.text:C.textSec),fontWeight:isCurrent?700:600,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",textDecoration:row.hasRedespacho?"line-through":"none",opacity:row.hasRedespacho?0.5:1}}>
+                <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?28:20,color:row.hasRedespacho?(isCurrent?`${C.textMuted}aa`:C.textDark):row.despSimulated?(isCurrent?`${C.amber}cc`:C.amber):(isCurrent?C.text:C.textSec),fontWeight:isCurrent?700:600,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",textDecoration:row.hasRedespacho?"line-through":"none",opacity:row.hasRedespacho?0.5:1}}>
                   <span title={row.hasRedespacho?"Valor reemplazado por redespacho":row.despSimulated?"Valor aleatorio, no extraido correctamente de XM":undefined} style={{cursor:(row.hasRedespacho||row.despSimulated)?"help":undefined,borderBottom:row.despSimulated&&!row.hasRedespacho?`1px dashed ${C.amber}60`:undefined}}>
-                    {row.despacho.toFixed(1)}
+                    {Math.round(row.despacho)}
                     {row.despSimulated && !row.hasRedespacho && <span style={{fontSize:12,marginLeft:3,color:C.amber}}>⚠</span>}
                   </span>
                 </td>
                 {/* Redespacho */}
-                <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?24:16,color:row.hasRedespacho?(isCurrent?C.cyan:C.cyan):row.redespSimulated?(isCurrent?`${C.amber}cc`:C.amber):(isCurrent?C.text:C.textSec),fontWeight:row.hasRedespacho?(isCurrent?800:700):(isCurrent?700:600),borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",background:row.hasRedespacho?`${C.cyan}08`:"transparent"}}>
+                <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?28:20,color:row.hasRedespacho?(isCurrent?C.cyan:C.cyan):row.redespSimulated?(isCurrent?`${C.amber}cc`:C.amber):(isCurrent?C.text:C.textSec),fontWeight:row.hasRedespacho?(isCurrent?800:700):(isCurrent?700:600),borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",background:row.hasRedespacho?`${C.cyan}08`:"transparent"}}>
                   <span title={row.hasRedespacho?"Redespacho activo":row.redespSimulated?"Valor aleatorio, no extraido correctamente de XM":undefined} style={{cursor:(row.hasRedespacho||row.redespSimulated)?"help":undefined,borderBottom:row.redespSimulated&&!row.hasRedespacho?`1px dashed ${C.amber}60`:undefined}}>
-                    {row.redespacho.toFixed(1)}
+                    {Math.round(row.redespacho)}
                     {row.hasRedespacho && <span style={{fontSize:9,marginLeft:3,color:C.cyan}}>▸</span>}
                     {row.redespSimulated && !row.hasRedespacho && <span style={{fontSize:9,marginLeft:3,color:C.amber}}>⚠</span>}
                   </span>
                 </td>
                 {/* Generacion */}
-                <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?24:16,fontWeight:900,color:unit.color,letterSpacing:isCurrent?-0.5:0,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",lineHeight:1}}>
-                  {row.final.toFixed(1)}
+                <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?28:20,fontWeight:900,color:unit.color,letterSpacing:isCurrent?-0.5:0,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",lineHeight:1}}>
+                  {Math.round(row.final)}
                   {isCurrent && <span style={{fontSize:11,fontWeight:500,color:`${unit.color}90`,marginLeft:3}}>MW</span>}
                 </td>
                 {/* Desviacion */}
