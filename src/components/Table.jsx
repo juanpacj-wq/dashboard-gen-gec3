@@ -67,7 +67,6 @@ function TableHeader({ unit, isXmLive, showChart, onToggleChart }) {
           : <span style={{fontSize:9,background:`${C.amber}20`,color:C.amber,padding:"2px 6px",borderRadius:10,fontWeight:700,letterSpacing:0.5}}>SIMULADO</span>
         }
       </div>
-      <div style={{padding:"8px 12px",fontSize:14,fontWeight:500,color:C.textMuted,fontFamily:FONT,borderBottom:"2px solid transparent",cursor:"pointer"}}>Historico</div>
       <div style={{marginLeft:"auto"}}>
         <button onClick={onToggleChart} style={{
           background: showChart ? `${unit.color}18` : `${C.textMuted}12`,
