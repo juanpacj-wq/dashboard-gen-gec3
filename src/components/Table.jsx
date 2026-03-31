@@ -77,7 +77,7 @@ function TableHeader({ unit, isXmLive, showChart, onToggleChart }) {
           display:"flex",alignItems:"center",gap:5,
           transition:"all 0.2s",
         }}>
-          Desplegar {showChart ? "◂" : "▸"}
+           {showChart ? "▸Pivotar" : "Despivotar◂"}
         </button>
       </div>
     </div>
@@ -113,7 +113,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
     { key:"proyGeneracion", label:"P. Generacion" },
     { key:"dev", label:"Desviacion" },
   ];
-  const numRows = rowDefs.length; // 8 rows including header
+  const numRows = rowDefs.length;
 
   return (
     <div ref={scrollRef} style={{flex:1,overflowX:"auto",overflowY:"hidden",minHeight:0,display:"flex"}}>
@@ -128,15 +128,21 @@ function HorizontalTable({ data, unit, currentIdx }) {
                 <th key={i}
                   onMouseEnter={()=>setHov(i)} onMouseLeave={()=>setHov(-1)}
                   style={{
-                    padding:"10px 6px",textAlign:"center",fontSize:15,fontWeight:700,
+                    padding: isCurrent ? "16px 14px" : "10px 6px",
+                    textAlign:"center",
+                    fontSize: isCurrent ? 24 : 15,
+                    fontWeight: isCurrent ? 900 : 700,
                     color:isCurrent?unit.color:isFuture?C.textDark:C.textSec,
                     fontFamily:MONO,borderBottom:`1px solid ${C.border}`,
                     background:isCurrent?`${unit.color}15`:hov===i?"rgba(255,255,255,0.015)":"transparent",
-                    borderTop:isCurrent?`2px solid ${unit.color}70`:"none",
+                    borderTop:isCurrent?`3px solid ${unit.color}`:"none",
+                    borderLeft:isCurrent?`2px solid ${unit.color}70`:"none",
+                    borderRight:isCurrent?`2px solid ${unit.color}70`:"none",
                     minWidth:56,whiteSpace:"nowrap",
                     transition:"background 0.15s",
+                    verticalAlign:"middle"
                   }}>
-                  {isCurrent && <div style={{fontSize:9,background:`${unit.color}30`,color:unit.color,padding:"2px 6px",borderRadius:10,letterSpacing:1,textTransform:"uppercase",fontWeight:800,lineHeight:1.4,marginBottom:3}}>AHORA</div>}
+                  {isCurrent && <div style={{fontSize:10,background:`${unit.color}30`,color:unit.color,padding:"2px 7px",borderRadius:20,letterSpacing:1.5,textTransform:"uppercase",fontWeight:800,lineHeight:1.5,marginBottom:3}}>AHORA</div>}
                   {row.periodo}
                 </th>
               );
@@ -151,6 +157,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
                 const isCurrent = i===currentIdx;
                 const isFuture = i > currentIdx;
                 const val = row[rd.key];
+                const isLastRow = rd.key === "dev";
 
                 let content, color = C.textSec;
                 if(rd.key==="despacho"){
@@ -164,12 +171,20 @@ function HorizontalTable({ data, unit, currentIdx }) {
                   content = "—";
                 } else if(rd.key==="final"){
                   color = isFuture?C.textDark:unit.color;
-                  content = Math.round(val);
+                  content = <>{Math.round(val)}{isCurrent && <span style={{fontSize:11,fontWeight:500,color:`${unit.color}90`,marginLeft:3}}>MW</span>}</>;
                 } else if(rd.key==="dev"){
                   if(val !== null){
                     const dA = Math.abs(val);
                     const dC = dA > 3 ? C.red : dA > 1.5 ? C.amber : C.green;
-                    content = <span style={{background:`${dC}12`,border:`1px solid ${dC}28`,borderRadius:4,padding:"2px 6px",fontSize:13,fontWeight:700,color:dC}}>{val>=0?"+":""}{val.toFixed(1)}%</span>;
+                    content = <span style={{
+                      background:`${dC}${isCurrent?"22":"12"}`,
+                      border:`1px solid ${dC}${isCurrent?"55":"28"}`,
+                      borderRadius:isCurrent?6:4,
+                      padding:isCurrent?"5px 12px":"2px 6px",
+                      fontSize:isCurrent?18:13,
+                      fontWeight:700,
+                      color:dC
+                    }}>{val>=0?"+":""}{val.toFixed(1)}%</span>;
                   } else {
                     content = <span style={{color:C.textMuted}}>—</span>;
                   }
@@ -180,10 +195,14 @@ function HorizontalTable({ data, unit, currentIdx }) {
                   <td key={i}
                     onMouseEnter={()=>setHov(i)} onMouseLeave={()=>setHov(-1)}
                     style={{
-                      padding:"8px 6px",textAlign:"center",fontFamily:MONO,
-                      fontSize:18,fontWeight:rd.key==="final"?800:600,
+                      padding: isCurrent ? "16px 14px" : "8px 6px",
+                      textAlign:"center",fontFamily:MONO,
+                      fontSize: isCurrent ? 28 : 18,
+                      fontWeight: rd.key==="final" ? (isCurrent ? 900 : 800) : (isCurrent ? 700 : 600),
                       color,
-                      borderBottom:`1px solid ${C.border}`,
+                      borderBottom: isCurrent && isLastRow ? `3px solid ${unit.color}` : `1px solid ${C.border}`,
+                      borderLeft: isCurrent ? `2px solid ${unit.color}70` : "none",
+                      borderRight: isCurrent ? `2px solid ${unit.color}70` : "none",
                       background:isCurrent?`${unit.color}15`:hov===i?"rgba(255,255,255,0.015)":"transparent",
                       transition:"background 0.15s",
                       verticalAlign:"middle",
