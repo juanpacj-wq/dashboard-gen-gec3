@@ -107,13 +107,14 @@ function HorizontalTable({ data, unit, currentIdx }) {
   const rowDefs = [
     { key:"periodo", label:"Periodo" },
     { key:"despacho", label:"Despacho (MW)" },
+    { key:"redespacho", label:"Redespacho (MW)" },
     { key:"proyDespacho", label:"Proy. Despacho (MW)" },
     { key:"despFinal", label:"Despacho Final (MW)" },
     { key:"final", label:"Generacion (MW)" },
     { key:"proyGeneracion", label:"Proy. Generacion (MW)" },
     { key:"dev", label:"Desviacion %" },
   ];
-  const numRows = rowDefs.length; // 7 rows including header
+  const numRows = rowDefs.length; // 8 rows including header
 
   return (
     <div ref={scrollRef} style={{flex:1,overflowX:"auto",overflowY:"hidden",minHeight:0,display:"flex"}}>
@@ -156,6 +157,9 @@ function HorizontalTable({ data, unit, currentIdx }) {
                 if(rd.key==="despacho"){
                   color = row.hasRedespacho?C.textDark:isCurrent?C.text:C.textSec;
                   content = <span style={{textDecoration:row.hasRedespacho?"line-through":"none",opacity:row.hasRedespacho?0.5:1}}>{Math.round(val)}</span>;
+                } else if(rd.key==="redespacho"){
+                  color = row.hasRedespacho?C.cyan:isCurrent?C.text:C.textSec;
+                  content = Math.round(val);
                 } else if(rd.key==="proyDespacho" || rd.key==="despFinal" || rd.key==="proyGeneracion"){
                   color = C.textMuted;
                   content = "—";
