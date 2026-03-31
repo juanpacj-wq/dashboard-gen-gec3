@@ -107,19 +107,19 @@ function HorizontalTable({ data, unit, currentIdx }) {
   const rowDefs = [
     { key:"periodo", label:"Periodo" },
     { key:"despacho", label:"Despacho (MW)" },
-    { key:"redespacho", label:"Redespacho (MW)" },
     { key:"proyDespacho", label:"Proy. Despacho (MW)" },
     { key:"despFinal", label:"Despacho Final (MW)" },
     { key:"final", label:"Generacion (MW)" },
     { key:"proyGeneracion", label:"Proy. Generacion (MW)" },
     { key:"dev", label:"Desviacion %" },
   ];
+  const numRows = rowDefs.length; // 7 rows including header
 
   return (
     <div ref={scrollRef} style={{flex:1,overflowX:"auto",overflowY:"hidden",minHeight:0,display:"flex"}}>
       <table style={{borderCollapse:"separate",borderSpacing:0,fontFamily:FONT,minWidth:"100%",height:"100%"}}>
         <thead>
-          <tr>
+          <tr style={{height:`${100/numRows}%`}}>
             <th style={{padding:"10px 14px",textAlign:"left",fontSize:13,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.7,borderBottom:`1px solid ${C.border}`,fontFamily:MONO,position:"sticky",left:0,background:C.card,zIndex:3,minWidth:140}}>Periodo</th>
             {data.map((row,i)=>{
               const isCurrent = i===currentIdx;
@@ -145,7 +145,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
         </thead>
         <tbody>
           {rowDefs.slice(1).map((rd)=>(
-            <tr key={rd.key} style={{height:"25%"}}>
+            <tr key={rd.key} style={{height:`${100/numRows}%`}}>
               <td style={{padding:"8px 14px",fontSize:13,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.5,fontFamily:MONO,borderBottom:`1px solid ${C.border}`,position:"sticky",left:0,background:C.card,zIndex:2,whiteSpace:"nowrap"}}>{rd.label}</td>
               {data.map((row,i)=>{
                 const isCurrent = i===currentIdx;
@@ -156,9 +156,6 @@ function HorizontalTable({ data, unit, currentIdx }) {
                 if(rd.key==="despacho"){
                   color = row.hasRedespacho?C.textDark:isCurrent?C.text:C.textSec;
                   content = <span style={{textDecoration:row.hasRedespacho?"line-through":"none",opacity:row.hasRedespacho?0.5:1}}>{Math.round(val)}</span>;
-                } else if(rd.key==="redespacho"){
-                  color = row.hasRedespacho?C.cyan:isCurrent?C.text:C.textSec;
-                  content = Math.round(val);
                 } else if(rd.key==="proyDespacho" || rd.key==="despFinal" || rd.key==="proyGeneracion"){
                   color = C.textMuted;
                   content = "—";
