@@ -4,11 +4,13 @@ import { PMEScraper } from './scraper.js'
 import { UNITS, PME } from './config.js'
 import { initDB, getTodayPeriods } from './db.js'
 import { EnergyAccumulator } from './accumulator.js'
+import { EmailDispatchService } from './emailDispatch.js'
 
 const PORT = parseInt(process.env.WS_PORT, 10) || 3001
 
 // ── Energy accumulator ────────────────────────────────────────────────────────
 const accumulator = new EnergyAccumulator()
+const emailDispatch = new EmailDispatchService()
 
 // ── HTTP + WebSocket server ──────────────────────────────────────────────────
 const httpServer = createServer(async (req, res) => {
@@ -27,6 +29,20 @@ const httpServer = createServer(async (req, res) => {
       res.end(JSON.stringify(periods))
     } catch (err) {
       console.error('[API] Error fetching periods:', err.message)
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: err.message }))
+    }
+    return
+  }
+
+  // REST endpoint: despacho final for today
+  if (req.url === '/api/despacho-final/today' && req.method === 'GET') {
+    try {
+      const data = emailDispatch.getState()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(data))
+    } catch (err) {
+      console.error('[API] Error fetching despacho final:', err.message)
       res.writeHead(500, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: err.message }))
     }
@@ -65,6 +81,7 @@ function broadcast(payload) {
   payload.accumulated = accumulated
   payload.completedPeriods = completedPeriods
   payload.minuteAvgs = minuteAvgs
+  payload.despachoFinal = emailDispatch.getState()
 
   lastPayload = payload
   const msg = JSON.stringify(payload)
@@ -89,6 +106,9 @@ async function start() {
     await initDB()
     await accumulator.init()
     console.log('[DB] Conexión OK')
+
+    await emailDispatch.init()
+    emailDispatch.start()
   } catch (err) {
     console.error('[DB] Error de conexión:', err.message)
     console.log('[DB] Continuando sin persistencia — datos solo en memoria')
@@ -108,6 +128,7 @@ start()
 // ── Apagado limpio ───────────────────────────────────────────────────────────
 process.on('SIGINT', async () => {
   console.log('\n[Server] Apagando…')
+  await emailDispatch.stop()
   await accumulator.stop()
   await scraper.stop()
   httpServer.close()

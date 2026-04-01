@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { C, FONT, MONO } from "../theme";
 import { UNITS, ALL_DATA } from "../data/units";
 
-function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods) {
+function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal) {
   const baseData = ALL_DATA[unitId];
   const unit = UNITS.find(u=>u.id===unitId);
   const currentIdx = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Bogota" })).getHours();
@@ -49,7 +49,20 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods) {
       }
     }
 
-    return { ...row, despacho, redespacho, final: final_, despSimulated, redespSimulated, hasRedespacho, dev };
+    // D. Final: email value > xm fallback > redespacho for past periods
+    const periodo = i + 1;
+    const dfEntry = despachoFinal?.[unitId]?.[periodo];
+    let despFinal = null;
+    let despFinalSource = null;
+    if (dfEntry?.valor_mw != null) {
+      despFinal = dfEntry.valor_mw;
+      despFinalSource = dfEntry.source;
+    } else if (i <= currentIdx) {
+      despFinal = redespacho;
+      despFinalSource = 'xm_fallback';
+    }
+
+    return { ...row, despacho, redespacho, final: final_, despFinal, despFinalSource, despSimulated, redespSimulated, hasRedespacho, dev };
   });
 
   const isXmLive = hasXmDesp || hasXmRedesp;
@@ -171,7 +184,16 @@ function HorizontalTable({ data, unit, currentIdx }) {
                 } else if(rd.key==="redespacho"){
                   color = row.hasRedespacho?C.cyan:isCurrent?C.text:C.textSec;
                   content = Math.round(val);
-                } else if(rd.key==="proyDespacho" || rd.key==="despFinal" || rd.key==="proyGeneracion"){
+                } else if(rd.key==="despFinal"){
+                  if(row.despFinal != null){
+                    const isFromEmail = row.despFinalSource === 'email';
+                    color = isFromEmail ? C.cyan : isCurrent ? C.text : C.textSec;
+                    content = <>{Math.round(row.despFinal)}{isFromEmail && <span style={{fontSize:7,color:C.cyan,marginLeft:1}}>&#9993;</span>}</>;
+                  } else {
+                    color = C.textMuted;
+                    content = "—";
+                  }
+                } else if(rd.key==="proyDespacho" || rd.key==="proyGeneracion"){
                   color = C.textMuted;
                   content = "—";
                 } else if(rd.key==="final"){
@@ -230,7 +252,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
 function VerticalTable({ data, unit, currentIdx }) {
   const [hov, setHov] = useState(-1);
   const scrollRef = useRef(null);
-  const headers = ["Periodo","Despacho (MW)","Redespacho (MW)","GENERACION (MW)","Desviacion %"];
+  const headers = ["Periodo","Despacho (MW)","Redespacho (MW)","D. Final (MW)","GENERACION (MW)","Desviacion %"];
 
   useEffect(()=>{
     const container = scrollRef.current;
@@ -303,6 +325,17 @@ function VerticalTable({ data, unit, currentIdx }) {
                     {row.redespSimulated && !row.hasRedespacho && <span style={{fontSize:9,marginLeft:3,color:C.amber}}>⚠</span>}
                   </span>
                 </td>
+                {/* D. Final */}
+                <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?28:20,fontWeight:isCurrent?700:600,color:row.despFinal!=null?(row.despFinalSource==='email'?C.cyan:isCurrent?C.text:C.textSec):C.textMuted,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",background:row.despFinalSource==='email'?`${C.cyan}08`:"transparent"}}>
+                  {row.despFinal != null ? (
+                    <span>
+                      {Math.round(row.despFinal)}
+                      {row.despFinalSource === 'email' && <span style={{fontSize:9,marginLeft:3,color:C.cyan}}>&#9993;</span>}
+                    </span>
+                  ) : (
+                    <span style={{color:C.textMuted}}>—</span>
+                  )}
+                </td>
                 {/* Generacion */}
                 <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?28:20,fontWeight:900,color:unit.color,letterSpacing:isCurrent?-0.5:0,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",lineHeight:1}}>
                   {Math.round(row.final)}
@@ -326,8 +359,8 @@ function VerticalTable({ data, unit, currentIdx }) {
 }
 
 /* ─── Componente principal ─── */
-export function Table({ unitId, xmDispatch, pmeAccumulated, completedPeriods, horizontal, showChart, onToggleChart }) {
-  const { data, unit, currentIdx, isXmLive } = useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods);
+export function Table({ unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, horizontal, showChart, onToggleChart }) {
+  const { data, unit, currentIdx, isXmLive } = useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal);
 
   return (
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",height:"100%",display:"flex",flexDirection:"column"}}>

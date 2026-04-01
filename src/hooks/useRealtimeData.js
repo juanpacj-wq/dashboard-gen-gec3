@@ -12,12 +12,13 @@ export function useRealtimeData() {
   const [accumulated, setAccumulated] = useState({});
   const [minuteAvgs, setMinuteAvgs] = useState({});
   const [completedPeriods, setCompletedPeriods] = useState({});
+  const [despachoFinal, setDespachoFinal] = useState({});
 
   const ws = useRef(null);
   const timer = useRef(null);
   const stopped = useRef(false);
 
-  // Load completed periods from REST API on mount
+  // Load completed periods and despacho final from REST API on mount
   useEffect(() => {
     fetch('/api/periods/today')
       .then(r => r.ok ? r.json() : [])
@@ -29,6 +30,11 @@ export function useRealtimeData() {
         }
         setCompletedPeriods(prev => ({ ...periods, ...prev }));
       })
+      .catch(() => {});
+
+    fetch('/api/despacho-final/today')
+      .then(r => r.ok ? r.json() : {})
+      .then(data => setDespachoFinal(data))
       .catch(() => {});
   }, []);
 
@@ -50,6 +56,7 @@ export function useRealtimeData() {
         return merged;
       });
     }
+    if (msg.despachoFinal) setDespachoFinal(msg.despachoFinal);
   }, []);
 
   useEffect(() => {
@@ -94,5 +101,5 @@ export function useRealtimeData() {
     };
   }, [handleMessage]);
 
-  return { units, status, lastUpdate, accumulated, minuteAvgs, completedPeriods };
+  return { units, status, lastUpdate, accumulated, minuteAvgs, completedPeriods, despachoFinal };
 }

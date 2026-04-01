@@ -60,6 +60,26 @@ export async function initDB() {
       updated_at  DATETIME2     DEFAULT GETDATE()
     );
   `)
+  await db.request().query(`
+    IF OBJECT_ID('dashboard.despacho_final', 'U') IS NULL
+    CREATE TABLE dashboard.despacho_final (
+      id              INT IDENTITY(1,1) PRIMARY KEY,
+      unit_id         VARCHAR(10)   NOT NULL,
+      fecha           DATE          NOT NULL,
+      periodo         TINYINT       NOT NULL,
+      valor_mw        FLOAT         NOT NULL,
+      source          VARCHAR(20)   NOT NULL DEFAULT 'email',
+      email_subject   NVARCHAR(500) NULL,
+      email_id        VARCHAR(200)  NULL,
+      email_date      DATETIME2     NULL,
+      created_at      DATETIME2     DEFAULT GETDATE(),
+      updated_at      DATETIME2     DEFAULT GETDATE(),
+      created_by      VARCHAR(50)   DEFAULT 'system',
+      CONSTRAINT UQ_desp_final UNIQUE (unit_id, fecha, periodo),
+      CONSTRAINT CK_source CHECK (source IN ('email', 'xm_fallback')),
+      CONSTRAINT CK_periodo CHECK (periodo BETWEEN 1 AND 24)
+    );
+  `)
   console.log('[DB] Schema y tablas verificadas')
 }
 
@@ -114,4 +134,49 @@ export async function getTodayPeriods() {
   const result = await db.request()
     .query(`SELECT unit_id, hora, energia_mwh FROM dashboard.generacion_periodos WHERE fecha = CAST(GETDATE() AS DATE)`)
   return result.recordset
+}
+
+/** Save or update a despacho final record */
+export async function saveDespachoFinal(unitId, fecha, periodo, valorMw, source, emailSubject, emailId, emailDate) {
+  const db = await getDB()
+  await db.request()
+    .input('unitId', sql.VarChar, unitId)
+    .input('fecha', sql.Date, fecha)
+    .input('periodo', sql.TinyInt, periodo)
+    .input('valorMw', sql.Float, valorMw)
+    .input('source', sql.VarChar, source)
+    .input('emailSubject', sql.NVarChar, emailSubject)
+    .input('emailId', sql.VarChar, emailId)
+    .input('emailDate', sql.DateTime2, emailDate)
+    .query(`
+      MERGE dashboard.despacho_final AS target
+      USING (SELECT @unitId AS unit_id, @fecha AS fecha, @periodo AS periodo) AS source_tbl
+      ON target.unit_id = source_tbl.unit_id AND target.fecha = source_tbl.fecha AND target.periodo = source_tbl.periodo
+      WHEN MATCHED AND @source = 'email' THEN
+        UPDATE SET valor_mw = @valorMw, source = @source, email_subject = @emailSubject,
+                   email_id = @emailId, email_date = @emailDate, updated_at = GETDATE()
+      WHEN NOT MATCHED THEN
+        INSERT (unit_id, fecha, periodo, valor_mw, source, email_subject, email_id, email_date)
+        VALUES (@unitId, @fecha, @periodo, @valorMw, @source, @emailSubject, @emailId, @emailDate);
+    `)
+}
+
+/** Get despacho final records for a given date */
+export async function getDespachoFinalByDate(fecha) {
+  const db = await getDB()
+  const result = await db.request()
+    .input('fecha', sql.Date, fecha)
+    .query(`SELECT unit_id, periodo, valor_mw, source FROM dashboard.despacho_final WHERE fecha = @fecha`)
+  return result.recordset
+}
+
+/** Check if a despacho final record exists for a unit/date/period */
+export async function existsDespachoFinal(unitId, fecha, periodo) {
+  const db = await getDB()
+  const result = await db.request()
+    .input('unitId', sql.VarChar, unitId)
+    .input('fecha', sql.Date, fecha)
+    .input('periodo', sql.TinyInt, periodo)
+    .query(`SELECT 1 AS found FROM dashboard.despacho_final WHERE unit_id = @unitId AND fecha = @fecha AND periodo = @periodo`)
+  return result.recordset.length > 0
 }

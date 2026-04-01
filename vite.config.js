@@ -18,6 +18,9 @@ export default defineConfig({
       "/api/periods": {
         target: "http://localhost:3001",
       },
+      "/api/despacho-final": {
+        target: "http://localhost:3001",
+      },
     },
   },
 })
