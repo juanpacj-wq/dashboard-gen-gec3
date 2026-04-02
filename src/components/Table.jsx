@@ -17,7 +17,9 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
     const xmDesp = hasXmDesp ? xmUnit.despacho[i] : undefined;
     const xmRedesp = hasXmRedesp ? xmUnit.redespacho[i] : undefined;
     const despacho = xmDesp != null ? xmDesp : row.despacho;
-    const redespacho = xmRedesp != null ? xmRedesp : row.redespacho;
+    // Prefer despachoFinal (Graph API email) for redespacho over XM GeneProgRedesp
+    const dfRedesp = despachoFinal?.[unitId]?.[i + 1]?.valor_mw;
+    const redespacho = dfRedesp != null ? dfRedesp : (xmRedesp != null ? xmRedesp : row.redespacho);
     const periodHour = i;
     let final_;
     if (i > currentIdx) {
@@ -31,7 +33,7 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
     }
     final_ = Math.max(0, final_);
     const despSimulated = hasXmDesp && xmDesp == null;
-    const redespSimulated = hasXmRedesp && xmRedesp == null;
+    const redespSimulated = dfRedesp == null && hasXmRedesp && xmRedesp == null;
     const hasRedespacho = Math.abs(despacho - redespacho) > 0.05;
 
     // Deviation
@@ -65,7 +67,8 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
     return { ...row, despacho, redespacho, final: final_, despFinal, despFinalSource, despSimulated, redespSimulated, hasRedespacho, dev };
   });
 
-  const isXmLive = hasXmDesp || hasXmRedesp;
+  const hasEmailRedesp = despachoFinal?.[unitId] && Object.keys(despachoFinal[unitId]).length > 0;
+  const isXmLive = hasXmDesp || hasXmRedesp || hasEmailRedesp;
   return { data, unit, currentIdx, isXmLive };
 }
 
