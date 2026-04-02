@@ -2,6 +2,12 @@ import { useState, useEffect, useCallback } from "react";
 import { PLANT_NAME_MAP } from "../data/plantNames";
 import { seedRng } from "../data/units";
 
+// Colombia is UTC-5, always (no DST)
+function colombiaHour() {
+  const col = new Date(new Date().getTime() - 5 * 3600000);
+  return col.getUTCHours();
+}
+
 export function useXmGeneration(intervalMs = 300000) {
   const [plants, setPlants] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -9,39 +15,20 @@ export function useXmGeneration(intervalMs = 300000) {
   const [isSimulated, setIsSimulated] = useState(false);
 
   const fetchData = useCallback(async () => {
-    const today = new Date();
-    // Colombia is UTC-5 (no DST)
-    const col = new Date(today.getTime() - 5 * 3600000);
-    const dateStr = col.toISOString().slice(0, 10);
-    const colHour = col.getUTCHours();
-    const hourKey = `Hour${String(colHour + 1).padStart(2, "0")}`;
+    const colHour = colombiaHour();
 
     try {
-      const res = await fetch("/api/xm/hourly", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          MetricId: "GeneProgDesp",
-          StartDate: dateStr,
-          EndDate: dateStr,
-          Entity: "Recurso",
-          Filter: [],
-        }),
-      });
-
+      const res = await fetch("/api/despacho/national");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
+      const allPlants = await res.json();
 
-      const records = json?.Items || [];
-      if (records.length === 0) throw new Error("Sin datos para hoy");
+      if (!allPlants || allPlants.length === 0) throw new Error("Sin datos nacionales");
 
-      const all = records.map(item => {
-        const vals = item.HourlyEntities[0].Values;
-        const code = vals.code?.trim() || "";
-        const name = PLANT_NAME_MAP[code] || code;
-        const raw = vals[hourKey] ?? "";
-        const gen = raw !== "" ? Math.round(parseFloat(raw) / 1000 * 10) / 10 : 0;
-        return { code, name, gen };
+      const all = allPlants.map(p => {
+        const gen = p.values?.[colHour] ?? 0;
+        // Use the name from PLANT_NAME_MAP if available, otherwise use the file name
+        const name = PLANT_NAME_MAP[p.code] || p.name || p.code;
+        return { code: p.code, name, gen };
       });
 
       const top10 = all
@@ -56,7 +43,7 @@ export function useXmGeneration(intervalMs = 300000) {
       setIsSimulated(false);
       setLoading(false);
     } catch {
-      const rng = seedRng(colHour * 1000 + col.getUTCMinutes());
+      const rng = seedRng(colHour * 1000 + new Date().getMinutes());
       const fallbackCodes = Object.keys(PLANT_NAME_MAP).slice(0, 10);
       const simulated = fallbackCodes.map(code => {
         const gen = Math.round((200 + rng() * 1000) * 10) / 10;

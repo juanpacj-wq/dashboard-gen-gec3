@@ -60,10 +60,17 @@ const httpServer = createServer(async (req, res) => {
     return
   }
 
-  // REST endpoint: despacho scraped from dDEC file
+  // REST endpoint: despacho scraped from dDEC file (Gecelca units)
   if (req.url === '/api/despacho/today' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify(despScraper.getState() ?? {}))
+    return
+  }
+
+  // REST endpoint: despacho nacional (todas las plantas, para ticker)
+  if (req.url === '/api/despacho/national' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(despScraper.getNational() ?? []))
     return
   }
 
