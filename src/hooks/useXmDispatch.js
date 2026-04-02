@@ -104,10 +104,11 @@ export function useXmDispatch(redespIntervalMs = 300000) {
   const fetchAll = useCallback(async () => {
     const dateStr = colombiaDateStr();
     try {
-      const [despData, redespData] = await Promise.all([
+      const [despData, redespResult] = await Promise.all([
         fetchMetric("GeneProgDesp", dateStr),
-        fetchRedespScraper(),
+        fetchRedespScraper().catch(e => { console.warn("[XmDispatch] Redespacho scraper no disponible:", e.message); return null; }),
       ]);
+      const redespData = redespResult ?? {};
 
       const result = {};
       for (const unitId of Object.keys(UNIT_XM_MAP)) {
