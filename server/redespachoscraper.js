@@ -163,6 +163,7 @@ function parseAllPlants(content) {
     const parsed = parseLine(line)
     if (!parsed) continue
     const normalizedName = parsed.plantName.toUpperCase().replace(/\s+/g, '')
+    if (normalizedName === 'TOTAL') continue
     const mapping = NATIONAL_PLANT_MAP[normalizedName]
     const code = mapping?.code || normalizedName
     const name = parsed.plantName
