@@ -141,21 +141,7 @@ export class DespachoscraperService {
 
   async init(dbAvailable = false) {
     this.#dbAvailable = dbAvailable
-    if (this.#dbAvailable) {
-      const todayStr = getColombiaDate().toISOString().slice(0, 10)
-      try {
-        const cached = await loadDespachoProg(todayStr)
-        if (cached) {
-          this.#cache = cached
-          this.#found = true
-          this.#dateLoaded = todayStr
-          console.log(`[DespScraper] Datos de ${todayStr} cargados desde DB`)
-          return
-        }
-      } catch (e) {
-        console.warn('[DespScraper] Error leyendo DB, continuando con scraper:', e.message)
-      }
-    }
+    // Siempre hacer scrape en init — la DB se usa como fallback dentro de #refresh
     await this.#refresh()
   }
 
@@ -179,30 +165,21 @@ export class DespachoscraperService {
     const now = getColombiaDate()
     const todayStr = now.toISOString().slice(0, 10)
 
+    // Ya encontrado para hoy → no volver a consultar
     if (this.#found && this.#dateLoaded === todayStr) return
 
+    // Nuevo día → resetear
     if (this.#dateLoaded !== todayStr) {
       this.#found = false
       this.#dateLoaded = todayStr
       console.log(`[DespScraper] Nuevo día ${todayStr} — buscando archivo de despacho`)
-
-      if (this.#dbAvailable) {
-        try {
-          const cached = await loadDespachoProg(todayStr)
-          if (cached) {
-            this.#cache = cached
-            this.#found = true
-            console.log(`[DespScraper] Datos de ${todayStr} cargados desde DB`)
-            return
-          }
-        } catch { /* fall through to scraper */ }
-      }
     }
 
+    // 1. Intentar scraper (fuente primaria — siempre tiene las 4 unidades)
     const raw = await scrapeDespacho()
-    this.#cache = parseItems(raw.Items)
 
     if (raw.found) {
+      this.#cache = parseItems(raw.Items)
       this.#found = true
       console.log(`[DespScraper] Archivo encontrado y cargado para ${todayStr}`)
       if (this.#dbAvailable) {
@@ -213,8 +190,23 @@ export class DespachoscraperService {
           console.error('[DespScraper] Error guardando en DB:', e.message)
         }
       }
-    } else {
-      console.log(`[DespScraper] Archivo no disponible aún para ${todayStr}, reintentando en ${RETRY_MS / 1000}s...`)
+      return
     }
+
+    // 2. Scraper no encontró archivo → intentar DB como fallback
+    if (this.#dbAvailable && !this.#cache) {
+      try {
+        const cached = await loadDespachoProg(todayStr)
+        if (cached) {
+          this.#cache = cached
+          console.log(`[DespScraper] Datos de ${todayStr} cargados desde DB (fallback)`)
+          return
+        }
+      } catch { /* ignore */ }
+    }
+
+    // 3. Ni scraper ni DB → usar zeros de parseItems
+    this.#cache = parseItems(raw.Items)
+    console.log(`[DespScraper] Archivo no disponible aún para ${todayStr}, reintentando en ${RETRY_MS / 1000}s...`)
   }
 }
