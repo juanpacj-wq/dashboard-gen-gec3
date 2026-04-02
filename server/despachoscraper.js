@@ -2,20 +2,13 @@
  * Servicio de despacho diario XM
  * Descarga dDECMMDD_TIES.txt del portal XM, lo parsea y expone los 24 valores horarios por unidad.
  * Persiste en dashboard.despacho_programado (una sola escritura por día).
- * También expone datos nacionales (todas las plantas) para el ticker.
  */
 
-import { readFileSync } from 'fs'
-import { fileURLToPath } from 'url'
-import { dirname, join } from 'path'
 import { saveDespachoProgBulk, loadDespachoProg } from './db.js'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
 
 const API_BASE = 'https://api-portalxm.xm.com.co/administracion-archivos/ficheros/mostrar-url'
 const BLOB_CONTAINER = 'storageportalxm'
 
-// Gecelca units filter
 const PLANT_CODE_MAP = {
   'GECELCA 3':  'GEC3',
   'GECELCA 32': 'GE32',
@@ -26,28 +19,6 @@ const PLANT_CODE_MAP = {
 // Codigo XM → unitId interno del dashboard
 const CODE_TO_UNIT = { GEC3: 'GEC3', GE32: 'GEC32', TGJ1: 'TGJ1', TGJ2: 'TGJ2' }
 const HOUR_KEYS = Array.from({ length: 24 }, (_, i) => `Hour${String(i + 1).padStart(2, '0')}`)
-
-// ── Mapeo nacional: nombre planta → código XM ──────────────────────────────
-// Carga "Nombre unidades y su código.json" y construye un mapa normalizado
-function loadPlantNameMap() {
-  try {
-    const raw = JSON.parse(readFileSync(join(__dirname, '..', 'Nombre_unidades_y_su_código.json'), 'utf-8'))
-    const arr = raw[Object.keys(raw)[0]] || []
-    const map = {}
-    for (const e of arr) {
-      if (!e.recurso_ofei || !e.codsic_planta) continue
-      const key = e.recurso_ofei.trim().toUpperCase().replace(/\s+/g, '')
-      map[key] = { code: e.codsic_planta.trim(), name: e.recurso_ofei.trim() }
-    }
-    console.log(`[DespScraper] Mapa de plantas cargado: ${Object.keys(map).length} entradas`)
-    return map
-  } catch (e) {
-    console.warn('[DespScraper] No se pudo cargar mapa de plantas:', e.message)
-    return {}
-  }
-}
-
-const NATIONAL_PLANT_MAP = loadPlantNameMap()
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -101,7 +72,7 @@ async function downloadFile(ruta) {
   return response.text()
 }
 
-// Returns { found: boolean, Items: [...], rawContent: string|null }
+// Returns { found: boolean, Items: [...] }
 async function scrapeDespacho() {
   const ruta = buildFilePath()
   console.log(`[DespScraper] Consultando: ${ruta}`)
@@ -111,7 +82,7 @@ async function scrapeDespacho() {
     content = await downloadFile(ruta)
   } catch (err) {
     console.warn(`[DespScraper] Archivo no disponible (${err.message}), asignando 0 a todas las horas.`)
-    return { found: false, Items: buildEmptyItems(), rawContent: null }
+    return { found: false, Items: buildEmptyItems() }
   }
 
   const items = []
@@ -130,7 +101,7 @@ async function scrapeDespacho() {
     items.push({ HourlyEntities: [{ Values: hourValues }] })
   }
 
-  return { found: items.length > 0, Items: items, rawContent: content }
+  return { found: items.length > 0, Items: items }
 }
 
 // ── Convierte Items[] → { GEC3: [24 MW], GEC32: [24 MW], TGJ1: [24 MW], TGJ2: [24 MW] } ──
@@ -157,38 +128,12 @@ function parseItems(items) {
   return result
 }
 
-// ── Parsea TODAS las plantas del archivo para el ticker nacional ────────────
-
-function parseAllPlants(content) {
-  const plants = [] // [{ code, name, values: [24 MW] }]
-  for (const rawLine of content.split('\n')) {
-    const line = rawLine.trim()
-    if (!line) continue
-    const parsed = parseLine(line)
-    if (!parsed) continue
-
-    // Normalizar nombre para buscar en el mapa
-    const normalizedName = parsed.plantName.toUpperCase().replace(/\s+/g, '')
-    const mapping = NATIONAL_PLANT_MAP[normalizedName]
-    const code = mapping?.code || normalizedName
-    const name = parsed.plantName
-
-    const values = Array.from({ length: 24 }, (_, i) =>
-      i < parsed.values.length ? Math.round(parsed.values[i] * 10) / 10 : 0
-    )
-
-    plants.push({ code, name, values })
-  }
-  return plants
-}
-
 // ── Servicio ────────────────────────────────────────────────────────────────
 
 const RETRY_MS = 5 * 60 * 1000 // 5 minutos entre reintentos
 
 export class DespachoscraperService {
   #cache = null
-  #nationalCache = null // [{ code, name, values: [24 MW] }] — todas las plantas
   #interval = null
   #found = false
   #dateLoaded = null // fecha (YYYY-MM-DD) del archivo cargado
@@ -196,7 +141,6 @@ export class DespachoscraperService {
 
   async init(dbAvailable = false) {
     this.#dbAvailable = dbAvailable
-    // Intentar cargar desde DB primero (recuperación post-reinicio)
     if (this.#dbAvailable) {
       const todayStr = getColombiaDate().toISOString().slice(0, 10)
       try {
@@ -231,23 +175,15 @@ export class DespachoscraperService {
     return this.#cache
   }
 
-  /** Returns all plants for the national ticker: [{ code, name, values: [24 MW] }] */
-  getNational() {
-    return this.#nationalCache
-  }
-
   async #refresh() {
     const now = getColombiaDate()
     const todayStr = now.toISOString().slice(0, 10)
 
-    // Si ya se encontró el archivo de hoy, no volver a consultar
     if (this.#found && this.#dateLoaded === todayStr) return
 
-    // Nuevo día → resetear estado, intentar cargar desde DB
     if (this.#dateLoaded !== todayStr) {
       this.#found = false
       this.#dateLoaded = todayStr
-      this.#nationalCache = null
       console.log(`[DespScraper] Nuevo día ${todayStr} — buscando archivo de despacho`)
 
       if (this.#dbAvailable) {
@@ -256,8 +192,8 @@ export class DespachoscraperService {
           if (cached) {
             this.#cache = cached
             this.#found = true
-            console.log(`[DespScraper] Datos de ${todayStr} cargados desde DB (sin datos nacionales hasta próximo fetch)`)
-            // No retornar — continuar al scraper para obtener datos nacionales
+            console.log(`[DespScraper] Datos de ${todayStr} cargados desde DB`)
+            return
           }
         } catch { /* fall through to scraper */ }
       }
@@ -268,12 +204,7 @@ export class DespachoscraperService {
 
     if (raw.found) {
       this.#found = true
-      // Parsear todas las plantas para el ticker
-      if (raw.rawContent) {
-        this.#nationalCache = parseAllPlants(raw.rawContent)
-        console.log(`[DespScraper] Archivo cargado para ${todayStr}: ${this.#nationalCache.length} plantas nacionales`)
-      }
-      // Persistir en DB
+      console.log(`[DespScraper] Archivo encontrado y cargado para ${todayStr}`)
       if (this.#dbAvailable) {
         try {
           await saveDespachoProgBulk(todayStr, this.#cache)

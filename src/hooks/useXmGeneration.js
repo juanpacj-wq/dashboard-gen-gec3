@@ -18,7 +18,7 @@ export function useXmGeneration(intervalMs = 300000) {
     const colHour = colombiaHour();
 
     try {
-      const res = await fetch("/api/despacho/national");
+      const res = await fetch("/api/redespacho/national");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const allPlants = await res.json();
 
@@ -26,8 +26,8 @@ export function useXmGeneration(intervalMs = 300000) {
 
       const all = allPlants.map(p => {
         const gen = p.values?.[colHour] ?? 0;
-        // Use the name from PLANT_NAME_MAP if available, otherwise use the file name
-        const name = PLANT_NAME_MAP[p.code] || p.name || p.code;
+        // Use the full name from the rDEC file directly
+        const name = p.name || PLANT_NAME_MAP[p.code] || p.code;
         return { code: p.code, name, gen };
       });
 

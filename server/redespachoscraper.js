@@ -2,9 +2,15 @@
  * Servicio de redespacho diario XM
  * Descarga rDECMMDD.txt del portal XM, lo parsea y expone los 24 valores horarios por unidad.
  * Persiste en dashboard.redespacho_programado con auditoría de cambios en redespacho_historico.
+ * También expone datos nacionales (todas las plantas) para el ticker.
  */
 
+import { readFileSync } from 'fs'
+import { fileURLToPath } from 'url'
+import { dirname, join } from 'path'
 import { saveRedespachoProgBulk, loadRedespachoProg } from './db.js'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 const API_BASE = 'https://api-portalxm.xm.com.co/administracion-archivos/ficheros/mostrar-url'
 const BLOB_CONTAINER = 'storageportalxm'
@@ -81,7 +87,7 @@ async function scrapeRedespacho() {
     content = await downloadFile(ruta)
   } catch (err) {
     console.warn(`[RedespScraper] Archivo no disponible (${err.message}), asignando 0 a todas las horas.`)
-    return { Items: buildEmptyItems() }
+    return { Items: buildEmptyItems(), rawContent: null }
   }
 
   const items = []
@@ -100,7 +106,7 @@ async function scrapeRedespacho() {
     items.push({ HourlyEntities: [{ Values: hourValues }] })
   }
 
-  return { Items: items }
+  return { Items: items, rawContent: content }
 }
 
 // ── Convierte Items[] → { GEC3: [24 MW], GEC32: [24 MW], TGJ1: [24 MW], TGJ2: [24 MW] } ──
@@ -127,12 +133,54 @@ function parseItems(items) {
   return result
 }
 
+// ── Mapeo nacional: nombre planta → código XM ──────────────────────────────
+
+function loadPlantNameMap() {
+  try {
+    const raw = JSON.parse(readFileSync(join(__dirname, '..', 'Nombre_unidades_y_su_código.json'), 'utf-8'))
+    const arr = raw[Object.keys(raw)[0]] || []
+    const map = {}
+    for (const e of arr) {
+      if (!e.recurso_ofei || !e.codsic_planta) continue
+      const key = e.recurso_ofei.trim().toUpperCase().replace(/\s+/g, '')
+      map[key] = { code: e.codsic_planta.trim(), name: e.recurso_ofei.trim() }
+    }
+    console.log(`[RedespScraper] Mapa de plantas cargado: ${Object.keys(map).length} entradas`)
+    return map
+  } catch (e) {
+    console.warn('[RedespScraper] No se pudo cargar mapa de plantas:', e.message)
+    return {}
+  }
+}
+
+const NATIONAL_PLANT_MAP = loadPlantNameMap()
+
+function parseAllPlants(content) {
+  const plants = []
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine.trim()
+    if (!line) continue
+    const parsed = parseLine(line)
+    if (!parsed) continue
+    const normalizedName = parsed.plantName.toUpperCase().replace(/\s+/g, '')
+    const mapping = NATIONAL_PLANT_MAP[normalizedName]
+    const code = mapping?.code || normalizedName
+    const name = parsed.plantName
+    const values = Array.from({ length: 24 }, (_, i) =>
+      i < parsed.values.length ? Math.round(parsed.values[i] * 10) / 10 : 0
+    )
+    plants.push({ code, name, values })
+  }
+  return plants
+}
+
 // ── Servicio ────────────────────────────────────────────────────────────────
 
 const REFRESH_MS = 5 * 60 * 1000 // 5 minutos
 
 export class RedespachoscraperService {
   #cache = null
+  #nationalCache = null
   #interval = null
   #dbAvailable = false
 
@@ -170,10 +218,22 @@ export class RedespachoscraperService {
     return this.#cache
   }
 
+  /** Returns all plants for the national ticker: [{ code, name, values: [24 MW] }] */
+  getNational() {
+    return this.#nationalCache
+  }
+
   async #refresh() {
     const raw = await scrapeRedespacho()
     this.#cache = parseItems(raw.Items)
-    console.log(`[RedespScraper] Datos cargados: ${Object.keys(this.#cache).join(', ')}`)
+
+    // Parsear todas las plantas para el ticker nacional
+    if (raw.rawContent) {
+      this.#nationalCache = parseAllPlants(raw.rawContent)
+      console.log(`[RedespScraper] Datos cargados: ${Object.keys(this.#cache).join(', ')} | ${this.#nationalCache.length} plantas nacionales`)
+    } else {
+      console.log(`[RedespScraper] Datos cargados: ${Object.keys(this.#cache).join(', ')} | sin datos nacionales`)
+    }
 
     // Persistir en DB (detecta cambios y audita automáticamente)
     if (this.#dbAvailable) {
