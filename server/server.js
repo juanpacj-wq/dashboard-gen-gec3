@@ -106,13 +106,13 @@ async function start() {
     await initDB()
     await accumulator.init()
     console.log('[DB] Conexión OK')
-
     await emailDispatch.init()
-    emailDispatch.start()
   } catch (err) {
     console.error('[DB] Error de conexión:', err.message)
     console.log('[DB] Continuando sin persistencia — datos solo en memoria')
   }
+
+  emailDispatch.start()
 
   scraper.start()
 

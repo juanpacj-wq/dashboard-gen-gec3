@@ -58,11 +58,13 @@ async function getGraphToken() {
 }
 
 // ── Email Fetch ─────────────────────────────────────────────────────────────
-async function fetchRedespachoEmails() {
+async function fetchRedespachoEmails(dateStr) {
   const token = await getGraphToken()
-  const filter = `contains(subject,'Redespacho Periodo')`
+  // Start of day in Colombia time (UTC-5) expressed as UTC
+  const startOfDayUTC = `${dateStr}T05:00:00Z`
+  const filter = `contains(subject,'Redespacho Periodo') and receivedDateTime ge ${startOfDayUTC}`
   const select = 'id,subject,body,receivedDateTime'
-  const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(MAILBOX)}/messages?$filter=${encodeURIComponent(filter)}&$select=${select}&$top=50&$orderby=receivedDateTime desc`
+  const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(MAILBOX)}/messages?$filter=${encodeURIComponent(filter)}&$select=${select}&$top=50`
 
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
@@ -74,9 +76,10 @@ async function fetchRedespachoEmails() {
 
 // ── Email Parsing ───────────────────────────────────────────────────────────
 function parseRedespachoEmail(email) {
-  const subject = email.subject || ''
-  const match = subject.match(SUBJECT_RE)
-  if (!match) return null
+    const subject = email.subject || ''
+    const match = subject.match(SUBJECT_RE)
+    console.log('[Parse] Subject:', subject, '| Match:', match?.[0])
+    if (!match) return null
 
   const periodo = parseInt(match[1], 10)
   const fechaISO = toISO(match[2])
@@ -115,15 +118,16 @@ function parseRedespachoEmail(email) {
 
     // Extract decimal numbers from the row
     const numbers = row.match(/(\d+\.?\d*)/g)
-    if (!numbers || numbers.length < 2) continue
+    console.log('[Row]', row.slice(0, 80), '→ numbers:', numbers)
+    if (!numbers || numbers.length < 3) continue
 
-    // Second number is the modified dispatch value
-    const valorMw = parseFloat(numbers[1])
+    // numbers[0]=unit code, numbers[1]=despacho original, numbers[2]=redespacho (modified)
+    const valorMw = parseFloat(numbers[2])
     if (isNaN(valorMw)) continue
 
     results.push({ unitId, periodo, fechaISO, valorMw })
   }
-
+  console.log('[Parse] Resultado:', results)
   return results.length > 0
     ? { periodo, fechaISO, units: results, subject, emailId: email.id, emailDate: email.receivedDateTime }
     : null
@@ -236,7 +240,9 @@ export class EmailDispatchService {
     // 1. Fetch and parse emails
     let emails
     try {
-      emails = await fetchRedespachoEmails()
+      emails = await fetchRedespachoEmails(dateStr)
+      console.log(`[EmailDispatch] ${emails.length} correos encontrados`)
+      emails.forEach(e => console.log(' -', e.subject, '|', e.receivedDateTime))
     } catch (e) {
       console.error('[EmailDispatch] Error leyendo correos:', e.message)
       return
@@ -246,7 +252,11 @@ export class EmailDispatchService {
     for (const email of emails) {
       const parsed = parseRedespachoEmail(email)
       if (!parsed) continue
-      if (!validDates.includes(parsed.fechaISO)) continue
+      console.log(`[DEBUG] Parseado OK: P${parsed.periodo} fecha=${parsed.fechaISO} | validDates=${validDates}`)
+      if (!validDates.includes(parsed.fechaISO)) {
+        console.log(`[DEBUG] Descartado por fecha: ${parsed.fechaISO} no está en ${validDates}`)
+        continue
+      }
 
       for (const unit of parsed.units) {
         try {

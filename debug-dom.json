@@ -1,0 +1,28 @@
+{
+  "title": "Power Monitoring Expert",
+  "url": "https://gpme.gecelca.com.co/Web/Auth?ReturnUrl=%2fion%2fdefault.aspx%3fdgm%3dx-pml%253a%252fdiagrams%252fud%252fbalance.dgm%26node%3d%26logServerName%3dQUERYSERVER.BQ-ENERGIA-07%26logServerHandle%3d327952&dgm=x-pml%3a%2fdiagrams%2fud%2fbalance.dgm&node=&logServerName=QUERYSERVER.BQ-ENERGIA-07&logServerHandle=327952",
+  "iframes": [],
+  "svgCount": 0,
+  "tableRows": 0,
+  "svgTexts": [],
+  "allText": [
+    "Copyright © 2024 Schneider Electric. All Rights Reserved.",
+    "Usar mis credenciales de Windows",
+    "Inicio de sesión SSO",
+    "Autenticando...",
+    "Sistema no registrado",
+    "Sistema no registrado"
+  ],
+  "numericCells": [
+    {
+      "tag": "DIV",
+      "text": "Copyright © 2024 Schneider Electric. All",
+      "val": 2024
+    }
+  ],
+  "unitSearch": {
+    "kW tot": [],
+    "KWTOT_G3": [],
+    "KWTOT_G32": []
+  }
+}

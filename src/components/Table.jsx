@@ -17,9 +17,8 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
     const xmDesp = hasXmDesp ? xmUnit.despacho[i] : undefined;
     const xmRedesp = hasXmRedesp ? xmUnit.redespacho[i] : undefined;
     const despacho = xmDesp != null ? xmDesp : row.despacho;
-    // Prefer despachoFinal (Graph API email) for redespacho over XM GeneProgRedesp
-    const dfRedesp = despachoFinal?.[unitId]?.[i + 1]?.valor_mw;
-    const redespacho = dfRedesp != null ? dfRedesp : (xmRedesp != null ? xmRedesp : row.redespacho);
+    // P. Despacho: XM API only, emails never modify this
+    const redespacho = xmRedesp != null ? xmRedesp : row.redespacho;
     const periodHour = i;
     let final_;
     if (i > currentIdx) {
@@ -33,7 +32,7 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
     }
     final_ = Math.max(0, final_);
     const despSimulated = hasXmDesp && xmDesp == null;
-    const redespSimulated = dfRedesp == null && hasXmRedesp && xmRedesp == null;
+    const redespSimulated = hasXmRedesp && xmRedesp == null;
     const hasRedespacho = Math.abs(despacho - redespacho) > 0.05;
 
     // Deviation
@@ -51,7 +50,7 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
       }
     }
 
-    // D. Final: email value > xm fallback > redespacho for past periods
+    // D. Final: email first, fallback to P. Despacho (redespacho) if no email
     const periodo = i + 1;
     const dfEntry = despachoFinal?.[unitId]?.[periodo];
     let despFinal = null;
@@ -61,7 +60,7 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
       despFinalSource = dfEntry.source;
     } else if (i <= currentIdx) {
       despFinal = redespacho;
-      despFinalSource = 'xm_fallback';
+      despFinalSource = 'redespacho';
     }
 
     return { ...row, despacho, redespacho, final: final_, despFinal, despFinalSource, despSimulated, redespSimulated, hasRedespacho, dev };
