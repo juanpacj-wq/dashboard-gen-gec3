@@ -5,12 +5,14 @@ import { UNITS, PME } from './config.js'
 import { initDB, getTodayPeriods } from './db.js'
 import { EnergyAccumulator } from './accumulator.js'
 import { EmailDispatchService } from './emailDispatch.js'
+import { RedespachoscraperService } from './redespachoscraper.js'
 
 const PORT = parseInt(process.env.WS_PORT, 10) || 3001
 
 // ── Energy accumulator ────────────────────────────────────────────────────────
 const accumulator = new EnergyAccumulator()
 const emailDispatch = new EmailDispatchService()
+const redespScraper = new RedespachoscraperService()
 
 // ── HTTP + WebSocket server ──────────────────────────────────────────────────
 const httpServer = createServer(async (req, res) => {
@@ -46,6 +48,13 @@ const httpServer = createServer(async (req, res) => {
       res.writeHead(500, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: err.message }))
     }
+    return
+  }
+
+  // REST endpoint: redespacho scraped from rDEC file
+  if (req.url === '/api/redespacho/today' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(redespScraper.getState() ?? {}))
     return
   }
 
@@ -114,6 +123,9 @@ async function start() {
 
   emailDispatch.start()
 
+  await redespScraper.init()
+  redespScraper.start()
+
   scraper.start()
 
   httpServer.listen(PORT, () => {
@@ -129,6 +141,7 @@ start()
 process.on('SIGINT', async () => {
   console.log('\n[Server] Apagando…')
   await emailDispatch.stop()
+  redespScraper.stop()
   await accumulator.stop()
   await scraper.stop()
   httpServer.close()

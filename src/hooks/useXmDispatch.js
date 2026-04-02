@@ -19,6 +19,13 @@ function colombiaDateStr() {
   return col.toISOString().slice(0, 10);
 }
 
+async function fetchRedespScraper() {
+  const res = await fetch('/api/redespacho/today')
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return await res.json()
+  // Returns { GEC3: [24 MW], GEC32: [24 MW], TGJ1: [24 MW], TGJ2: [24 MW] }
+}
+
 // Returns { value: number, missing: boolean } per hour
 // missing=true means the API returned null/undefined/empty for that period
 async function fetchMetric(metricId, dateStr) {
@@ -74,9 +81,8 @@ export function useXmDispatch(redespIntervalMs = 300000) {
   const despFetched = useRef(false);
 
   const fetchRedespacho = useCallback(async (prevData) => {
-    const dateStr = colombiaDateStr();
     try {
-      const redespData = await fetchMetric("GeneProgRedesp", dateStr);
+      const redespData = await fetchRedespScraper();
       const result = {};
       for (const unitId of Object.keys(UNIT_XM_MAP)) {
         result[unitId] = {
@@ -100,7 +106,7 @@ export function useXmDispatch(redespIntervalMs = 300000) {
     try {
       const [despData, redespData] = await Promise.all([
         fetchMetric("GeneProgDesp", dateStr),
-        fetchMetric("GeneProgRedesp", dateStr),
+        fetchRedespScraper(),
       ]);
 
       const result = {};

@@ -21,6 +21,9 @@ export default defineConfig({
       "/api/despacho-final": {
         target: "http://localhost:3001",
       },
+      "/api/redespacho": {
+        target: "http://localhost:3001",
+      },
     },
   },
 })
