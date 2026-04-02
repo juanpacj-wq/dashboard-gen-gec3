@@ -1,10 +1,10 @@
 /**
- * Servicio de redespacho diario XM
- * Descarga rDECMMDD.txt del portal XM, lo parsea y expone los 24 valores horarios por unidad.
- * Persiste en dashboard.redespacho_programado con auditoría de cambios en redespacho_historico.
+ * Servicio de despacho diario XM
+ * Descarga dDECMMDD_TIES.txt del portal XM, lo parsea y expone los 24 valores horarios por unidad.
+ * Persiste en dashboard.despacho_programado (una sola escritura por día).
  */
 
-import { saveRedespachoProgBulk, loadRedespachoProg } from './db.js'
+import { saveDespachoProgBulk, loadDespachoProg } from './db.js'
 
 const API_BASE = 'https://api-portalxm.xm.com.co/administracion-archivos/ficheros/mostrar-url'
 const BLOB_CONTAINER = 'storageportalxm'
@@ -16,11 +16,11 @@ const PLANT_CODE_MAP = {
   'GUAJIRA 2':  'TGJ2',
 }
 
-// Código XM → unitId interno del dashboard
+// Codigo XM → unitId interno del dashboard
 const CODE_TO_UNIT = { GEC3: 'GEC3', GE32: 'GEC32', TGJ1: 'TGJ1', TGJ2: 'TGJ2' }
 const HOUR_KEYS = Array.from({ length: 24 }, (_, i) => `Hour${String(i + 1).padStart(2, '0')}`)
 
-// ── Helpers del scraper ──────────────────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
 function getColombiaDate() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }))
@@ -31,7 +31,7 @@ function buildFilePath() {
   const yyyy = now.getFullYear()
   const mm   = String(now.getMonth() + 1).padStart(2, '0')
   const dd   = String(now.getDate()).padStart(2, '0')
-  return `M:/InformacionAgentes/Usuarios/Publico/Redespacho/${yyyy}-${mm}/rDEC${mm}${dd}.txt`
+  return `Energia y Mercado/DESPACHO/TIES/Despachos/${yyyy}-${mm}/dDEC${mm}${dd}_TIES.txt`
 }
 
 function formatValue(num) {
@@ -72,16 +72,17 @@ async function downloadFile(ruta) {
   return response.text()
 }
 
-async function scrapeRedespacho() {
+// Returns { found: boolean, Items: [...] }
+async function scrapeDespacho() {
   const ruta = buildFilePath()
-  console.log(`[RedespScraper] Consultando: ${ruta}`)
+  console.log(`[DespScraper] Consultando: ${ruta}`)
 
   let content
   try {
     content = await downloadFile(ruta)
   } catch (err) {
-    console.warn(`[RedespScraper] Archivo no disponible (${err.message}), asignando 0 a todas las horas.`)
-    return { Items: buildEmptyItems() }
+    console.warn(`[DespScraper] Archivo no disponible (${err.message}), asignando 0 a todas las horas.`)
+    return { found: false, Items: buildEmptyItems() }
   }
 
   const items = []
@@ -100,7 +101,7 @@ async function scrapeRedespacho() {
     items.push({ HourlyEntities: [{ Values: hourValues }] })
   }
 
-  return { Items: items }
+  return { found: items.length > 0, Items: items }
 }
 
 // ── Convierte Items[] → { GEC3: [24 MW], GEC32: [24 MW], TGJ1: [24 MW], TGJ2: [24 MW] } ──
@@ -129,11 +130,13 @@ function parseItems(items) {
 
 // ── Servicio ────────────────────────────────────────────────────────────────
 
-const REFRESH_MS = 5 * 60 * 1000 // 5 minutos
+const RETRY_MS = 5 * 60 * 1000 // 5 minutos entre reintentos
 
-export class RedespachoscraperService {
+export class DespachoscraperService {
   #cache = null
   #interval = null
+  #found = false
+  #dateLoaded = null // fecha (YYYY-MM-DD) del archivo cargado
   #dbAvailable = false
 
   async init(dbAvailable = false) {
@@ -142,13 +145,16 @@ export class RedespachoscraperService {
     if (this.#dbAvailable) {
       const todayStr = getColombiaDate().toISOString().slice(0, 10)
       try {
-        const cached = await loadRedespachoProg(todayStr)
+        const cached = await loadDespachoProg(todayStr)
         if (cached) {
           this.#cache = cached
-          console.log(`[RedespScraper] Datos de ${todayStr} cargados desde DB`)
+          this.#found = true
+          this.#dateLoaded = todayStr
+          console.log(`[DespScraper] Datos de ${todayStr} cargados desde DB`)
+          return
         }
       } catch (e) {
-        console.warn('[RedespScraper] Error leyendo DB:', e.message)
+        console.warn('[DespScraper] Error leyendo DB, continuando con scraper:', e.message)
       }
     }
     await this.#refresh()
@@ -156,9 +162,9 @@ export class RedespachoscraperService {
 
   start() {
     this.#interval = setInterval(() => {
-      this.#refresh().catch(e => console.error('[RedespScraper] Error en ciclo:', e.message))
-    }, REFRESH_MS)
-    console.log(`[RedespScraper] Servicio iniciado — intervalo ${REFRESH_MS / 1000}s`)
+      this.#refresh().catch(e => console.error('[DespScraper] Error en ciclo:', e.message))
+    }, RETRY_MS)
+    console.log(`[DespScraper] Servicio iniciado — reintento cada ${RETRY_MS / 1000}s hasta encontrar archivo`)
   }
 
   stop() {
@@ -171,18 +177,48 @@ export class RedespachoscraperService {
   }
 
   async #refresh() {
-    const raw = await scrapeRedespacho()
-    this.#cache = parseItems(raw.Items)
-    console.log(`[RedespScraper] Datos cargados: ${Object.keys(this.#cache).join(', ')}`)
+    const now = getColombiaDate()
+    const todayStr = now.toISOString().slice(0, 10)
 
-    // Persistir en DB (detecta cambios y audita automáticamente)
-    if (this.#dbAvailable) {
-      const todayStr = getColombiaDate().toISOString().slice(0, 10)
-      try {
-        await saveRedespachoProgBulk(todayStr, this.#cache)
-      } catch (e) {
-        console.error('[RedespScraper] Error guardando en DB:', e.message)
+    // Si ya se encontró el archivo de hoy, no volver a consultar
+    if (this.#found && this.#dateLoaded === todayStr) return
+
+    // Nuevo día → resetear estado, intentar cargar desde DB
+    if (this.#dateLoaded !== todayStr) {
+      this.#found = false
+      this.#dateLoaded = todayStr
+      console.log(`[DespScraper] Nuevo día ${todayStr} — buscando archivo de despacho`)
+
+      if (this.#dbAvailable) {
+        try {
+          const cached = await loadDespachoProg(todayStr)
+          if (cached) {
+            this.#cache = cached
+            this.#found = true
+            console.log(`[DespScraper] Datos de ${todayStr} cargados desde DB`)
+            return
+          }
+        } catch { /* fall through to scraper */ }
       }
+    }
+
+    const raw = await scrapeDespacho()
+    this.#cache = parseItems(raw.Items)
+
+    if (raw.found) {
+      this.#found = true
+      console.log(`[DespScraper] Archivo encontrado y cargado para ${todayStr}`)
+      // Persistir en DB
+      if (this.#dbAvailable) {
+        try {
+          await saveDespachoProgBulk(todayStr, this.#cache)
+          console.log(`[DespScraper] Datos persistidos en DB para ${todayStr}`)
+        } catch (e) {
+          console.error('[DespScraper] Error guardando en DB:', e.message)
+        }
+      }
+    } else {
+      console.log(`[DespScraper] Archivo no disponible aún para ${todayStr}, reintentando en ${RETRY_MS / 1000}s...`)
     }
   }
 }

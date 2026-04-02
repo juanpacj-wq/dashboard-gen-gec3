@@ -80,6 +80,60 @@ export async function initDB() {
       CONSTRAINT CK_periodo CHECK (periodo BETWEEN 1 AND 24)
     );
   `)
+  // Despacho programado — un registro por unidad/fecha/periodo, se escribe una sola vez
+  await db.request().query(`
+    IF OBJECT_ID('dashboard.despacho_programado', 'U') IS NULL
+    CREATE TABLE dashboard.despacho_programado (
+      id          INT IDENTITY(1,1) PRIMARY KEY,
+      unit_id     VARCHAR(10)   NOT NULL,
+      fecha       DATE          NOT NULL,
+      periodo     TINYINT       NOT NULL,
+      valor_mw    FLOAT         NOT NULL,
+      created_at  DATETIME2     NOT NULL DEFAULT GETDATE(),
+      CONSTRAINT UQ_desp_prog UNIQUE (unit_id, fecha, periodo),
+      CONSTRAINT CK_desp_prog_periodo CHECK (periodo BETWEEN 1 AND 24)
+    );
+  `)
+
+  // Redespacho programado — valor vigente por unidad/fecha/periodo, se actualiza con cada lectura
+  await db.request().query(`
+    IF OBJECT_ID('dashboard.redespacho_programado', 'U') IS NULL
+    CREATE TABLE dashboard.redespacho_programado (
+      id          INT IDENTITY(1,1) PRIMARY KEY,
+      unit_id     VARCHAR(10)   NOT NULL,
+      fecha       DATE          NOT NULL,
+      periodo     TINYINT       NOT NULL,
+      valor_mw    FLOAT         NOT NULL,
+      version     INT           NOT NULL DEFAULT 1,
+      created_at  DATETIME2     NOT NULL DEFAULT GETDATE(),
+      updated_at  DATETIME2     NOT NULL DEFAULT GETDATE(),
+      CONSTRAINT UQ_redesp_prog UNIQUE (unit_id, fecha, periodo),
+      CONSTRAINT CK_redesp_prog_periodo CHECK (periodo BETWEEN 1 AND 24)
+    );
+  `)
+
+  // Redespacho histórico — log de auditoría, un registro por cada cambio detectado
+  await db.request().query(`
+    IF OBJECT_ID('dashboard.redespacho_historico', 'U') IS NULL
+    CREATE TABLE dashboard.redespacho_historico (
+      id              INT IDENTITY(1,1) PRIMARY KEY,
+      unit_id         VARCHAR(10)   NOT NULL,
+      fecha           DATE          NOT NULL,
+      periodo         TINYINT       NOT NULL,
+      valor_mw_prev   FLOAT         NULL,
+      valor_mw_new    FLOAT         NOT NULL,
+      version         INT           NOT NULL,
+      captured_at     DATETIME2     NOT NULL DEFAULT GETDATE(),
+      CONSTRAINT CK_redesp_hist_periodo CHECK (periodo BETWEEN 1 AND 24)
+    );
+  `)
+
+  // Índice para consultas de auditoría por fecha
+  await db.request().query(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_redesp_hist_fecha' AND object_id = OBJECT_ID('dashboard.redespacho_historico'))
+      CREATE INDEX IX_redesp_hist_fecha ON dashboard.redespacho_historico (fecha, unit_id, periodo);
+  `)
+
   console.log('[DB] Schema y tablas verificadas')
 }
 
@@ -168,6 +222,136 @@ export async function getDespachoFinalByDate(fecha) {
     .input('fecha', sql.Date, fecha)
     .query(`SELECT unit_id, periodo, valor_mw, source FROM dashboard.despacho_final WHERE fecha = @fecha`)
   return result.recordset
+}
+
+// ── Despacho programado (scraper) ───────────────────────────────────────────
+
+/** Save despacho programado — INSERT only, ignores if already exists */
+export async function saveDespachoProgBulk(fecha, unitData) {
+  // unitData = { GEC3: [24 values], GEC32: [...], ... }
+  const db = await getDB()
+  for (const [unitId, values] of Object.entries(unitData)) {
+    for (let i = 0; i < values.length; i++) {
+      const valor = values[i]
+      if (valor === 0) continue
+      await db.request()
+        .input('unitId', sql.VarChar, unitId)
+        .input('fecha', sql.Date, fecha)
+        .input('periodo', sql.TinyInt, i + 1)
+        .input('valorMw', sql.Float, valor)
+        .query(`
+          IF NOT EXISTS (
+            SELECT 1 FROM dashboard.despacho_programado
+            WHERE unit_id = @unitId AND fecha = @fecha AND periodo = @periodo
+          )
+          INSERT INTO dashboard.despacho_programado (unit_id, fecha, periodo, valor_mw)
+          VALUES (@unitId, @fecha, @periodo, @valorMw);
+        `)
+    }
+  }
+}
+
+/** Load despacho programado for a date → { GEC3: [24], GEC32: [24], ... } */
+export async function loadDespachoProg(fecha) {
+  const db = await getDB()
+  const result = await db.request()
+    .input('fecha', sql.Date, fecha)
+    .query(`SELECT unit_id, periodo, valor_mw FROM dashboard.despacho_programado WHERE fecha = @fecha`)
+  if (result.recordset.length === 0) return null
+  const data = {}
+  for (const row of result.recordset) {
+    if (!data[row.unit_id]) data[row.unit_id] = Array(24).fill(0)
+    data[row.unit_id][row.periodo - 1] = row.valor_mw
+  }
+  return data
+}
+
+// ── Redespacho programado (scraper) ─────────────────────────────────────────
+
+/** Save redespacho programado — UPSERT, logs changes to historico */
+export async function saveRedespachoProgBulk(fecha, unitData) {
+  const db = await getDB()
+  for (const [unitId, values] of Object.entries(unitData)) {
+    for (let i = 0; i < values.length; i++) {
+      const valor = values[i]
+      if (valor === 0) continue
+      const periodo = i + 1
+
+      // Read current value
+      const current = await db.request()
+        .input('unitId', sql.VarChar, unitId)
+        .input('fecha', sql.Date, fecha)
+        .input('periodo', sql.TinyInt, periodo)
+        .query(`SELECT valor_mw, version FROM dashboard.redespacho_programado WHERE unit_id = @unitId AND fecha = @fecha AND periodo = @periodo`)
+
+      const existing = current.recordset[0]
+
+      if (!existing) {
+        // First insert
+        await db.request()
+          .input('unitId', sql.VarChar, unitId)
+          .input('fecha', sql.Date, fecha)
+          .input('periodo', sql.TinyInt, periodo)
+          .input('valorMw', sql.Float, valor)
+          .query(`
+            INSERT INTO dashboard.redespacho_programado (unit_id, fecha, periodo, valor_mw)
+            VALUES (@unitId, @fecha, @periodo, @valorMw);
+          `)
+        // Log initial value in historico
+        await db.request()
+          .input('unitId', sql.VarChar, unitId)
+          .input('fecha', sql.Date, fecha)
+          .input('periodo', sql.TinyInt, periodo)
+          .input('valorMw', sql.Float, valor)
+          .input('version', sql.Int, 1)
+          .query(`
+            INSERT INTO dashboard.redespacho_historico (unit_id, fecha, periodo, valor_mw_prev, valor_mw_new, version)
+            VALUES (@unitId, @fecha, @periodo, NULL, @valorMw, @version);
+          `)
+      } else if (Math.abs(existing.valor_mw - valor) > 0.01) {
+        // Value changed — update and log
+        const newVersion = existing.version + 1
+        await db.request()
+          .input('unitId', sql.VarChar, unitId)
+          .input('fecha', sql.Date, fecha)
+          .input('periodo', sql.TinyInt, periodo)
+          .input('valorMw', sql.Float, valor)
+          .input('version', sql.Int, newVersion)
+          .query(`
+            UPDATE dashboard.redespacho_programado
+            SET valor_mw = @valorMw, version = @version, updated_at = GETDATE()
+            WHERE unit_id = @unitId AND fecha = @fecha AND periodo = @periodo;
+          `)
+        await db.request()
+          .input('unitId', sql.VarChar, unitId)
+          .input('fecha', sql.Date, fecha)
+          .input('periodo', sql.TinyInt, periodo)
+          .input('prevMw', sql.Float, existing.valor_mw)
+          .input('valorMw', sql.Float, valor)
+          .input('version', sql.Int, newVersion)
+          .query(`
+            INSERT INTO dashboard.redespacho_historico (unit_id, fecha, periodo, valor_mw_prev, valor_mw_new, version)
+            VALUES (@unitId, @fecha, @periodo, @prevMw, @valorMw, @version);
+          `)
+      }
+      // If value unchanged → no-op
+    }
+  }
+}
+
+/** Load redespacho programado for a date → { GEC3: [24], GEC32: [24], ... } */
+export async function loadRedespachoProg(fecha) {
+  const db = await getDB()
+  const result = await db.request()
+    .input('fecha', sql.Date, fecha)
+    .query(`SELECT unit_id, periodo, valor_mw FROM dashboard.redespacho_programado WHERE fecha = @fecha`)
+  if (result.recordset.length === 0) return null
+  const data = {}
+  for (const row of result.recordset) {
+    if (!data[row.unit_id]) data[row.unit_id] = Array(24).fill(0)
+    data[row.unit_id][row.periodo - 1] = row.valor_mw
+  }
+  return data
 }
 
 /** Check if a despacho final record exists for a unit/date/period */

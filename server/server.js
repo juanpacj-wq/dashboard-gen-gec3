@@ -6,6 +6,7 @@ import { initDB, getTodayPeriods } from './db.js'
 import { EnergyAccumulator } from './accumulator.js'
 import { EmailDispatchService } from './emailDispatch.js'
 import { RedespachoscraperService } from './redespachoscraper.js'
+import { DespachoscraperService } from './despachoscraper.js'
 
 const PORT = parseInt(process.env.WS_PORT, 10) || 3001
 
@@ -13,6 +14,7 @@ const PORT = parseInt(process.env.WS_PORT, 10) || 3001
 const accumulator = new EnergyAccumulator()
 const emailDispatch = new EmailDispatchService()
 const redespScraper = new RedespachoscraperService()
+const despScraper = new DespachoscraperService()
 
 // ── HTTP + WebSocket server ──────────────────────────────────────────────────
 const httpServer = createServer(async (req, res) => {
@@ -55,6 +57,13 @@ const httpServer = createServer(async (req, res) => {
   if (req.url === '/api/redespacho/today' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify(redespScraper.getState() ?? {}))
+    return
+  }
+
+  // REST endpoint: despacho scraped from dDEC file
+  if (req.url === '/api/despacho/today' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(despScraper.getState() ?? {}))
     return
   }
 
@@ -111,11 +120,13 @@ const scraper = new PMEScraper({ pme: PME, units: UNITS, onData: broadcast })
 
 // ── Arranque ─────────────────────────────────────────────────────────────────
 async function start() {
+  let dbOk = false
   try {
     await initDB()
     await accumulator.init()
     console.log('[DB] Conexión OK')
     await emailDispatch.init()
+    dbOk = true
   } catch (err) {
     console.error('[DB] Error de conexión:', err.message)
     console.log('[DB] Continuando sin persistencia — datos solo en memoria')
@@ -123,8 +134,11 @@ async function start() {
 
   emailDispatch.start()
 
-  await redespScraper.init()
+  await redespScraper.init(dbOk)
   redespScraper.start()
+
+  await despScraper.init(dbOk)
+  despScraper.start()
 
   scraper.start()
 
@@ -142,6 +156,7 @@ process.on('SIGINT', async () => {
   console.log('\n[Server] Apagando…')
   await emailDispatch.stop()
   redespScraper.stop()
+  despScraper.stop()
   await accumulator.stop()
   await scraper.stop()
   httpServer.close()
