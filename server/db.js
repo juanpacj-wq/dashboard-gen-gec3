@@ -233,7 +233,7 @@ export async function saveDespachoProgBulk(fecha, unitData) {
   for (const [unitId, values] of Object.entries(unitData)) {
     for (let i = 0; i < values.length; i++) {
       const valor = values[i]
-      if (valor === 0) continue
+      if (valor == null) continue
       await db.request()
         .input('unitId', sql.VarChar, unitId)
         .input('fecha', sql.Date, fecha)
@@ -274,7 +274,7 @@ export async function saveRedespachoProgBulk(fecha, unitData) {
   for (const [unitId, values] of Object.entries(unitData)) {
     for (let i = 0; i < values.length; i++) {
       const valor = values[i]
-      if (valor === 0) continue
+      if (valor == null) continue
       const periodo = i + 1
 
       // Read current value
