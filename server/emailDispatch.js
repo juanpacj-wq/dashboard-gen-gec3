@@ -60,8 +60,9 @@ async function getGraphToken() {
 // ── Email Fetch ─────────────────────────────────────────────────────────────
 async function fetchRedespachoEmails(dateStr) {
   const token = await getGraphToken()
-  // Start of day in Colombia time (UTC-5) expressed as UTC
-  const startOfDayUTC = `${dateStr}T05:00:00Z`
+  // Start searching from 8 PM previous day Colombia (01:00 UTC same day)
+  // to capture emails for early periods (1, 2) sent the evening before
+  const startOfDayUTC = `${dateStr}T01:00:00Z`
   const filter = `contains(subject,'Redespacho Periodo') and receivedDateTime ge ${startOfDayUTC}`
   const select = 'id,subject,body,receivedDateTime'
   const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(MAILBOX)}/messages?$filter=${encodeURIComponent(filter)}&$select=${select}&$top=50`
