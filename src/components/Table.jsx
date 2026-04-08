@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { C, FONT, MONO } from "../theme";
 import { UNITS, ALL_DATA } from "../data/units";
 
-function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos) {
+function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos) {
   const baseData = ALL_DATA[unitId];
   const unit = UNITS.find(u=>u.id===unitId);
   const currentIdx = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Bogota" })).getHours();
@@ -14,6 +14,7 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
   const unitCompleted = completedPeriods?.[unitId] || {};
   const liveProjection = projection?.[unitId] ?? null;
   const unitDesvHist = desviacionPeriodos?.[unitId] || {};
+  const unitProyHist = proyeccionPeriodos?.[unitId] || {};
 
   const data = baseData.map((row, i) => {
     const xmDesp = hasXmDesp ? xmUnit.despacho[i] : undefined;
@@ -71,7 +72,20 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
       }
     }
 
-    return { ...row, despacho, redespacho, final: final_, despFinal, despFinalSource, despSimulated, redespSimulated, hasRedespacho, dev };
+    // P. Generacion:
+    //  - future:  null
+    //  - current: live projection (VB6 formula)
+    //  - past:    closing projection snapshot from proyeccion_periodos
+    let proyGeneracion = null;
+    if (isFuture) {
+      proyGeneracion = null;
+    } else if (isCurrent) {
+      proyGeneracion = liveProjection?.projection ?? null;
+    } else {
+      proyGeneracion = unitProyHist[periodo]?.proyeccion_cierre_mwh ?? null;
+    }
+
+    return { ...row, despacho, redespacho, final: final_, despFinal, despFinalSource, despSimulated, redespSimulated, hasRedespacho, dev, proyGeneracion };
   });
 
   const hasEmailRedesp = despachoFinal?.[unitId] && Object.keys(despachoFinal[unitId]).length > 0;
@@ -203,9 +217,17 @@ function HorizontalTable({ data, unit, currentIdx }) {
                     color = C.textMuted;
                     content = "—";
                   }
-                } else if(rd.key==="proyDespacho" || rd.key==="proyGeneracion"){
+                } else if(rd.key==="proyDespacho"){
                   color = C.textMuted;
                   content = "—";
+                } else if(rd.key==="proyGeneracion"){
+                  if(val != null){
+                    color = isCurrent ? C.cyan : isFuture ? C.textDark : `${C.cyan}aa`;
+                    content = <>{Math.round(val)}{isCurrent && <span style={{fontSize:9,fontWeight:500,color:`${C.cyan}90`,marginLeft:2}}>MWh</span>}</>;
+                  } else {
+                    color = C.textMuted;
+                    content = "—";
+                  }
                 } else if(rd.key==="final"){
                   color = isFuture?C.textDark:unit.color;
                   content = <>{Math.round(val)}{isCurrent && <span style={{fontSize:9,fontWeight:500,color:`${unit.color}90`,marginLeft:2}}>MW</span>}</>;
@@ -262,7 +284,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
 function VerticalTable({ data, unit, currentIdx }) {
   const [hov, setHov] = useState(-1);
   const scrollRef = useRef(null);
-  const headers = ["Periodo","Despacho (MW)","Redespacho (MW)","D. Final (MW)","GENERACION (MW)","Desviacion %"];
+  const headers = ["Periodo","Despacho (MW)","Redespacho (MW)","D. Final (MW)","GENERACION (MW)","P. GENERACION (MWh)","Desviacion %"];
 
   useEffect(()=>{
     const container = scrollRef.current;
@@ -351,6 +373,17 @@ function VerticalTable({ data, unit, currentIdx }) {
                   {Math.round(row.final)}
                   {isCurrent && <span style={{fontSize:11,fontWeight:500,color:`${unit.color}90`,marginLeft:3}}>MW</span>}
                 </td>
+                {/* P. Generacion (proyección VB6) */}
+                <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?26:18,fontWeight:isCurrent?800:600,color:row.proyGeneracion!=null?(isCurrent?C.cyan:`${C.cyan}aa`):C.textMuted,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",lineHeight:1}}>
+                  {row.proyGeneracion != null ? (
+                    <span title="Proyección VB6: acumulado + potencia * (tiempo restante / 3600)">
+                      {Math.round(row.proyGeneracion)}
+                      {isCurrent && <span style={{fontSize:11,fontWeight:500,color:`${C.cyan}90`,marginLeft:3}}>MWh</span>}
+                    </span>
+                  ) : (
+                    <span style={{color:C.textMuted}}>—</span>
+                  )}
+                </td>
                 {/* Desviacion */}
                 <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",borderTop:cBt,borderBottom:cBb,borderRight:isCurrent?`2px solid ${unit.color}70`:"none",verticalAlign:"middle"}}>
                   {dev !== null ? (
@@ -369,8 +402,8 @@ function VerticalTable({ data, unit, currentIdx }) {
 }
 
 /* ─── Componente principal ─── */
-export function Table({ unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, horizontal, showChart, onToggleChart }) {
-  const { data, unit, currentIdx, isXmLive } = useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos);
+export function Table({ unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos, horizontal, showChart, onToggleChart }) {
+  const { data, unit, currentIdx, isXmLive } = useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos);
 
   return (
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",height:"100%",display:"flex",flexDirection:"column"}}>

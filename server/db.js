@@ -152,6 +152,51 @@ export async function initDB() {
     );
   `)
 
+  // Proyección histórico — auditoría append-only, agregado cada 3 min
+  await db.request().query(`
+    IF OBJECT_ID('dashboard.proyeccion_historico', 'U') IS NULL
+    CREATE TABLE dashboard.proyeccion_historico (
+      id               INT IDENTITY(1,1) PRIMARY KEY,
+      unit_id          VARCHAR(10)   NOT NULL,
+      fecha            DATE          NOT NULL,
+      periodo          TINYINT       NOT NULL,
+      acumulado_mwh    FLOAT         NOT NULL,
+      current_mw       FLOAT         NULL,
+      redespacho_mw    FLOAT         NULL,
+      proyeccion_mwh   FLOAT         NOT NULL,
+      desviacion_pct   FLOAT         NULL,
+      fraction         FLOAT         NOT NULL,
+      samples          INT           NOT NULL,
+      window_start     DATETIME2     NOT NULL,
+      window_end       DATETIME2     NOT NULL,
+      captured_at      DATETIME2     NOT NULL DEFAULT GETDATE(),
+      CONSTRAINT CK_proy_hist_periodo CHECK (periodo BETWEEN 1 AND 24)
+    );
+  `)
+
+  await db.request().query(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_proy_hist_fecha' AND object_id = OBJECT_ID('dashboard.proyeccion_historico'))
+      CREATE INDEX IX_proy_hist_fecha ON dashboard.proyeccion_historico (fecha, unit_id, periodo);
+  `)
+
+  // Proyección por periodo cerrado — 1 registro por unit/fecha/periodo con proyección de cierre
+  await db.request().query(`
+    IF OBJECT_ID('dashboard.proyeccion_periodos', 'U') IS NULL
+    CREATE TABLE dashboard.proyeccion_periodos (
+      id                    INT IDENTITY(1,1) PRIMARY KEY,
+      unit_id               VARCHAR(10)   NOT NULL,
+      fecha                 DATE          NOT NULL,
+      periodo               TINYINT       NOT NULL,
+      proyeccion_cierre_mwh FLOAT         NOT NULL,
+      generacion_real_mwh   FLOAT         NULL,
+      redespacho_mw         FLOAT         NULL,
+      desviacion_pct        FLOAT         NULL,
+      closed_at             DATETIME2     NOT NULL DEFAULT GETDATE(),
+      CONSTRAINT UQ_proy_periodos UNIQUE (unit_id, fecha, periodo),
+      CONSTRAINT CK_proy_periodos_periodo CHECK (periodo BETWEEN 1 AND 24)
+    );
+  `)
+
   // Desviación por periodo cerrado — histórico (mirror de generacion_periodos)
   await db.request().query(`
     IF OBJECT_ID('dashboard.desviacion_periodos', 'U') IS NULL
@@ -471,6 +516,86 @@ export async function getTodayDesviacionPeriodos() {
   const result = await db.request()
     .query(`SELECT unit_id, periodo, generacion_mwh, desp_final_mw, desp_final_source, desviacion_pct
             FROM dashboard.desviacion_periodos WHERE fecha = CAST(GETDATE() AS DATE)`)
+  return result.recordset
+}
+
+// ── Proyección histórico / Proyección periodos ─────────────────────────────
+
+/**
+ * Append one aggregated projection row. Called every 3 minutes from the
+ * projection buffer flush in server.js.
+ * payload = { fecha, periodo, acumuladoMwh, currentMw, redespachoMw, proyeccionMwh,
+ *             desviacionPct, fraction, samples, windowStart, windowEnd }
+ */
+export async function saveProyeccionHistorico(unitId, payload) {
+  const db = await getDB()
+  await db.request()
+    .input('unitId', sql.VarChar, unitId)
+    .input('fecha', sql.Date, payload.fecha)
+    .input('periodo', sql.TinyInt, payload.periodo)
+    .input('acumulado', sql.Float, payload.acumuladoMwh ?? 0)
+    .input('currentMw', sql.Float, payload.currentMw ?? null)
+    .input('redespacho', sql.Float, payload.redespachoMw ?? null)
+    .input('proyeccion', sql.Float, payload.proyeccionMwh ?? 0)
+    .input('desviacion', sql.Float, payload.desviacionPct ?? null)
+    .input('fraction', sql.Float, payload.fraction ?? 0)
+    .input('samples', sql.Int, payload.samples ?? 0)
+    .input('windowStart', sql.DateTime2, payload.windowStart)
+    .input('windowEnd', sql.DateTime2, payload.windowEnd)
+    .query(`
+      INSERT INTO dashboard.proyeccion_historico
+        (unit_id, fecha, periodo, acumulado_mwh, current_mw, redespacho_mw,
+         proyeccion_mwh, desviacion_pct, fraction, samples, window_start, window_end)
+      VALUES
+        (@unitId, @fecha, @periodo, @acumulado, @currentMw, @redespacho,
+         @proyeccion, @desviacion, @fraction, @samples, @windowStart, @windowEnd);
+    `)
+}
+
+/**
+ * UPSERT the closing projection for a completed period.
+ * payload = { proyeccionCierreMwh, generacionRealMwh, redespachoMw, desviacionPct }
+ */
+export async function saveProyeccionPeriodo(unitId, fecha, periodo, payload) {
+  const db = await getDB()
+  await db.request()
+    .input('unitId', sql.VarChar, unitId)
+    .input('fecha', sql.Date, fecha)
+    .input('periodo', sql.TinyInt, periodo)
+    .input('proyCierre', sql.Float, payload.proyeccionCierreMwh ?? 0)
+    .input('genReal', sql.Float, payload.generacionRealMwh ?? null)
+    .input('redespacho', sql.Float, payload.redespachoMw ?? null)
+    .input('desviacion', sql.Float, payload.desviacionPct ?? null)
+    .query(`
+      MERGE dashboard.proyeccion_periodos AS target
+      USING (SELECT @unitId AS unit_id, @fecha AS fecha, @periodo AS periodo) AS source_tbl
+      ON target.unit_id = source_tbl.unit_id AND target.fecha = source_tbl.fecha AND target.periodo = source_tbl.periodo
+      WHEN MATCHED THEN UPDATE SET proyeccion_cierre_mwh = @proyCierre,
+                                   generacion_real_mwh = @genReal,
+                                   redespacho_mw = @redespacho,
+                                   desviacion_pct = @desviacion,
+                                   closed_at = GETDATE()
+      WHEN NOT MATCHED THEN INSERT (unit_id, fecha, periodo, proyeccion_cierre_mwh, generacion_real_mwh, redespacho_mw, desviacion_pct)
+                              VALUES (@unitId, @fecha, @periodo, @proyCierre, @genReal, @redespacho, @desviacion);
+    `)
+}
+
+/** Get proyeccion_periodos records for a date */
+export async function getProyeccionPeriodosByDate(fecha) {
+  const db = await getDB()
+  const result = await db.request()
+    .input('fecha', sql.Date, fecha)
+    .query(`SELECT unit_id, periodo, proyeccion_cierre_mwh, generacion_real_mwh, redespacho_mw, desviacion_pct
+            FROM dashboard.proyeccion_periodos WHERE fecha = @fecha`)
+  return result.recordset
+}
+
+/** Shortcut: proyeccion_periodos records for today */
+export async function getTodayProyeccionPeriodos() {
+  const db = await getDB()
+  const result = await db.request()
+    .query(`SELECT unit_id, periodo, proyeccion_cierre_mwh, generacion_real_mwh, redespacho_mw, desviacion_pct
+            FROM dashboard.proyeccion_periodos WHERE fecha = CAST(GETDATE() AS DATE)`)
   return result.recordset
 }
 

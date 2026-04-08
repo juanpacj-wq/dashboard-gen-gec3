@@ -9,6 +9,9 @@ import {
   loadProyeccionActual,
   saveDesviacionPeriodo,
   getTodayDesviacionPeriodos,
+  saveProyeccionHistorico,
+  saveProyeccionPeriodo,
+  getTodayProyeccionPeriodos,
 } from './db.js'
 import { EnergyAccumulator } from './accumulator.js'
 import { EmailDispatchService } from './emailDispatch.js'
@@ -48,11 +51,30 @@ const accumulator = new EnergyAccumulator({
     } catch (err) {
       console.error('[Server] Error guardando desviación periodo:', err.message)
     }
+
+    // Persist closing projection snapshot for the period
+    try {
+      const lastSnap = lastProjection[unitId]
+      await saveProyeccionPeriodo(unitId, date, periodo, {
+        proyeccionCierreMwh: lastSnap?.proyeccion_mwh ?? mwh,
+        generacionRealMwh: mwh,
+        redespachoMw: redespacho,
+        desviacionPct: lastSnap?.desviacion_pct ?? result.desviacionPct,
+      })
+      console.log(`[Server] Proyección cierre guardada: ${unitId} p=${periodo} proy=${(lastSnap?.proyeccion_mwh ?? mwh).toFixed(2)} real=${mwh.toFixed(2)}`)
+    } catch (err) {
+      console.error('[Server] Error guardando proyección cierre:', err.message)
+    }
   },
 })
 
 // Latest live projection snapshot per unit (for throttled persistence)
 let lastProjection = {}
+
+// In-memory buffer of live projection samples per unit, flushed every 3 min
+// as an aggregated row into dashboard.proyeccion_historico for audit trail.
+const proyBuffer = {}
+let proyWindowStart = new Date()
 
 // ── HTTP + WebSocket server ──────────────────────────────────────────────────
 const httpServer = createServer(async (req, res) => {
@@ -139,6 +161,30 @@ const httpServer = createServer(async (req, res) => {
     return
   }
 
+  // REST endpoint: closing projection per period (audit) for today
+  if (req.url === '/api/proyeccion-periodos/today' && req.method === 'GET') {
+    try {
+      const rows = await getTodayProyeccionPeriodos()
+      const data = {}
+      for (const row of rows) {
+        if (!data[row.unit_id]) data[row.unit_id] = {}
+        data[row.unit_id][row.periodo] = {
+          proyeccion_cierre_mwh: row.proyeccion_cierre_mwh,
+          generacion_real_mwh: row.generacion_real_mwh,
+          redespacho_mw: row.redespacho_mw,
+          desviacion_pct: row.desviacion_pct,
+        }
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(data))
+    } catch (err) {
+      console.error('[API] Error fetching proyeccion periodos:', err.message)
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: err.message }))
+    }
+    return
+  }
+
   // REST endpoint: closed-period deviation history for today
   if (req.url === '/api/desviacion-periodos/today' && req.method === 'GET') {
     try {
@@ -207,6 +253,18 @@ function broadcast(payload) {
       desviacion_pct: live.deviation,
       fraction: live.fraction,
     }
+
+    // Feed the 3-min aggregation buffer for audit history
+    ;(proyBuffer[unit.id] ||= []).push({
+      fecha: todayStr,
+      periodo: currentPeriod,
+      acumuladoMwh: acumulado,
+      currentMw,
+      redespachoMw: redespacho,
+      projection: live.projection,
+      deviation: live.deviation,
+      fraction: live.fraction,
+    })
   }
   payload.projection = projection
   lastProjection = projection
@@ -244,6 +302,48 @@ const projectionSaveInterval = setInterval(async () => {
     }
   }
 }, 30_000)
+
+// Flush the projection buffer every 3 min — one aggregated row per unit
+const PROY_FLUSH_MS = 3 * 60 * 1000
+const proyHistFlushInterval = setInterval(async () => {
+  const windowEnd = new Date()
+  const windowStart = proyWindowStart
+  proyWindowStart = windowEnd
+
+  for (const unitId of Object.keys(proyBuffer)) {
+    const samples = proyBuffer[unitId]
+    if (!samples || samples.length === 0) continue
+    proyBuffer[unitId] = []
+
+    const n = samples.length
+    const sum = (fn) => samples.reduce((s, x) => s + (Number.isFinite(fn(x)) ? fn(x) : 0), 0)
+    const avg = (fn) => sum(fn) / n
+    // Average deviation ignoring nulls
+    const devSamples = samples.filter(x => x.deviation != null)
+    const avgDev = devSamples.length > 0
+      ? devSamples.reduce((s, x) => s + x.deviation, 0) / devSamples.length
+      : null
+    const last = samples[n - 1]
+
+    try {
+      await saveProyeccionHistorico(unitId, {
+        fecha: last.fecha,
+        periodo: last.periodo,
+        acumuladoMwh: avg(x => x.acumuladoMwh),
+        currentMw: avg(x => x.currentMw),
+        redespachoMw: last.redespachoMw,
+        proyeccionMwh: avg(x => x.projection),
+        desviacionPct: avgDev,
+        fraction: last.fraction,
+        samples: n,
+        windowStart,
+        windowEnd,
+      })
+    } catch (err) {
+      console.error(`[Server] Error guardando proyección histórico ${unitId}:`, err.message)
+    }
+  }
+}, PROY_FLUSH_MS)
 
 // ── Scraper ──────────────────────────────────────────────────────────────────
 const scraper = new PMEScraper({ pme: PME, units: UNITS, onData: broadcast })
@@ -285,6 +385,7 @@ start()
 process.on('SIGINT', async () => {
   console.log('\n[Server] Apagando…')
   clearInterval(projectionSaveInterval)
+  clearInterval(proyHistFlushInterval)
   await emailDispatch.stop()
   redespScraper.stop()
   despScraper.stop()

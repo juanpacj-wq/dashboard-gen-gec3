@@ -15,6 +15,7 @@ export function useRealtimeData() {
   const [despachoFinal, setDespachoFinal] = useState({});
   const [projection, setProjection] = useState({});
   const [desviacionPeriodos, setDesviacionPeriodos] = useState({});
+  const [proyeccionPeriodos, setProyeccionPeriodos] = useState({});
 
   const ws = useRef(null);
   const timer = useRef(null);
@@ -58,6 +59,11 @@ export function useRealtimeData() {
         }
         setProjection(prev => ({ ...mapped, ...prev }));
       })
+      .catch(() => {});
+
+    fetch('/api/proyeccion-periodos/today')
+      .then(r => r.ok ? r.json() : {})
+      .then(data => setProyeccionPeriodos(data || {}))
       .catch(() => {});
 
     fetch('/api/desviacion-periodos/today')
@@ -158,5 +164,5 @@ export function useRealtimeData() {
     };
   }, [handleMessage]);
 
-  return { units, status, lastUpdate, accumulated, minuteAvgs, completedPeriods, despachoFinal, projection, desviacionPeriodos };
+  return { units, status, lastUpdate, accumulated, minuteAvgs, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos };
 }

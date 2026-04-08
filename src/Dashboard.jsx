@@ -21,7 +21,7 @@ export default function Dashboard() {
   const [showChart, setShowChart] = useState(false);
   const [vh, setVh] = useState(window.innerHeight);
   const [vw, setVw] = useState(window.innerWidth);
-  const { units: rtUnits, status: wsStatus, lastUpdate, accumulated, minuteAvgs, completedPeriods, despachoFinal, projection, desviacionPeriodos } = useRealtimeData();
+  const { units: rtUnits, status: wsStatus, lastUpdate, accumulated, minuteAvgs, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos } = useRealtimeData();
   const { dispatchData: xmDispatch } = useXmDispatch();
 
   useEffect(()=>{const t=setInterval(()=>setTime(new Date()),1000);return()=>clearInterval(t);},[]);
@@ -87,7 +87,7 @@ export default function Dashboard() {
 
         <div style={{flex:1,display:"flex",gap,minHeight:0}}>
           <div style={{flex:showChart?"60 1 0":"80 1 0",minWidth:0,transition:"flex 0.3s ease"}}>
-            <Table unitId={sel} xmDispatch={xmDispatch} pmeAccumulated={accumulated} completedPeriods={completedPeriods} despachoFinal={despachoFinal} projection={projection} desviacionPeriodos={desviacionPeriodos} horizontal={!showChart} showChart={showChart} onToggleChart={()=>setShowChart(v=>!v)}/>
+            <Table unitId={sel} xmDispatch={xmDispatch} pmeAccumulated={accumulated} completedPeriods={completedPeriods} despachoFinal={despachoFinal} projection={projection} desviacionPeriodos={desviacionPeriodos} proyeccionPeriodos={proyeccionPeriodos} horizontal={!showChart} showChart={showChart} onToggleChart={()=>setShowChart(v=>!v)}/>
           </div>
           <div style={{flex:showChart?"40 1 0":"20 1 0",minWidth:0,transition:"flex 0.3s ease"}}>
             <Chart unitId={sel} width={chartW} height={Math.max(150,mainH)} minuteAvgs={minuteAvgs} xmDispatch={xmDispatch}/>
