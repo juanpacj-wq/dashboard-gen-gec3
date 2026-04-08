@@ -62,7 +62,15 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
     if (isFuture) {
       dev = null;
     } else if (isCurrent) {
-      dev = liveProjection?.deviation ?? null;
+      // Recompute deviation using projection clamped to >=0 (PME negative spikes
+      // would otherwise yield bogus deviations even when generation is 0).
+      const rawProj = liveProjection?.projection;
+      if (rawProj != null && redespacho > 0) {
+        const clampedProj = Math.max(0, rawProj);
+        dev = ((clampedProj - redespacho) / redespacho) * 100;
+      } else {
+        dev = liveProjection?.deviation ?? null;
+      }
     } else {
       const histEntry = unitDesvHist[periodo];
       if (histEntry?.desviacion_pct != null) {

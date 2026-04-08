@@ -5,7 +5,7 @@ import { UNITS, //ALL_DATA, calcStats
 } from "../data/units";
 import { MiniGauge } from "./MiniGauge";
 
-function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, projection }) {
+function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, projection, xmDispatch }) {
   // Generación actual (PME acumulado del periodo actual)
   const pmeGen = Math.max(0, pmeAccumulated?.[u.id] ?? 0);
   const currentMW = realtimeUnit?.valueMW != null ? Math.max(0, realtimeUnit.valueMW) : pmeGen;
@@ -17,8 +17,17 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
   [currentMW, maxMW]
   );
 
-  // Desviación: lógica VB6 (proyección a fin de hora vs redespacho), calculada en el backend
-  const dev = projection?.[u.id]?.deviation ?? 0;
+  // Desviación: lógica VB6 (proyección a fin de hora vs redespacho), calculada en el backend.
+  // Recalculamos con la proyección clamped a >=0 para evitar desviaciones espurias por
+  // picos negativos del PME (consistente con la generación que también se clampa a 0).
+  const currentIdx = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Bogota" })).getHours();
+  const redespacho = xmDispatch?.[u.id]?.redespacho?.[currentIdx];
+  const rawProj = projection?.[u.id]?.projection;
+  let dev = projection?.[u.id]?.deviation ?? 0;
+  if (rawProj != null && redespacho != null && redespacho > 0) {
+    const clampedProj = Math.max(0, rawProj);
+    dev = ((clampedProj - redespacho) / redespacho) * 100;
+  }
 
   return (
     <div onClick={() => onSelect(isSel ? null : u.id)} style={{
@@ -65,7 +74,7 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
   );
 }
 
-export function UnitCards({ selected, onSelect, height, realtimeUnits = [], pmeAccumulated, projection }) {
+export function UnitCards({ selected, onSelect, height, realtimeUnits = [], pmeAccumulated, projection, xmDispatch }) {
   return (
     <div style={{ display: "flex", gap: 8, height }}>
       {UNITS.map(u => (
@@ -78,6 +87,7 @@ export function UnitCards({ selected, onSelect, height, realtimeUnits = [], pmeA
           realtimeUnit={realtimeUnits.find(r => r.id === u.id) ?? null}
           pmeAccumulated={pmeAccumulated}
           projection={projection}
+          xmDispatch={xmDispatch}
         />
       ))}
     </div>
