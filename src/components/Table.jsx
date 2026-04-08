@@ -84,6 +84,7 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
     } else {
       proyGeneracion = unitProyHist[periodo]?.proyeccion_cierre_mwh ?? null;
     }
+    if (proyGeneracion != null) proyGeneracion = Math.max(0, proyGeneracion);
 
     return { ...row, despacho, redespacho, final: final_, despFinal, despFinalSource, despSimulated, redespSimulated, hasRedespacho, dev, proyGeneracion };
   });
