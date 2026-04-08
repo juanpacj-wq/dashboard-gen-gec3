@@ -1,18 +1,11 @@
 import { useMemo } from "react";
 import { C, MONO, FONT } from "../theme";
-import { UNITS, ALL_DATA, //calcStats 
+import { UNITS, //ALL_DATA, calcStats
 
 } from "../data/units";
 import { MiniGauge } from "./MiniGauge";
 
-function UnitCard({ u, isSel, onSelect, height, realtimeUnit, xmDispatch, pmeAccumulated }) {
-  const data = ALL_DATA[u.id];
-
-  // Periodo actual Colombia (UTC-5)
-  const currentIdx = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Bogota" })).getHours();
-  const minuteNow = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Bogota" })).getMinutes();
-  const fraction = (minuteNow + 1) / 60;
-
+function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, projection }) {
   // Generación actual (PME acumulado del periodo actual)
   const pmeGen = Math.max(0, pmeAccumulated?.[u.id] ?? 0);
   const currentMW = realtimeUnit?.valueMW != null ? Math.max(0, realtimeUnit.valueMW) : pmeGen;
@@ -24,18 +17,8 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, xmDispatch, pmeAcc
   [currentMW, maxMW]
   );
 
-  // Desviación: misma lógica que la tabla para el periodo actual
-  const dev = useMemo(() => {
-    const xmRedesp = xmDispatch?.[u.id]?.redespacho?.[currentIdx];
-    const redespacho = xmRedesp ?? data[currentIdx].redespacho;
-    if (!redespacho) return 0;
-    const expectedMWh = redespacho * fraction;
-    return expectedMWh !== 0 ? ((pmeGen - expectedMWh) / expectedMWh) * 100 : 0;
-  }, [xmDispatch, u.id, currentIdx, fraction, pmeGen, data]);
-  
-  
-  //const devs = useMemo(() => data.map(r => ((r.final - r.redespacho) / r.redespacho) * 100), [data]);
-  //const unitSt = useMemo(() => isSel ? calcStats(devs) : null, [isSel, devs]);
+  // Desviación: lógica VB6 (proyección a fin de hora vs redespacho), calculada en el backend
+  const dev = projection?.[u.id]?.deviation ?? 0;
 
   return (
     <div onClick={() => onSelect(isSel ? null : u.id)} style={{
@@ -82,7 +65,7 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, xmDispatch, pmeAcc
   );
 }
 
-export function UnitCards({ selected, onSelect, height, realtimeUnits = [], xmDispatch, pmeAccumulated }) {
+export function UnitCards({ selected, onSelect, height, realtimeUnits = [], pmeAccumulated, projection }) {
   return (
     <div style={{ display: "flex", gap: 8, height }}>
       {UNITS.map(u => (
@@ -93,8 +76,8 @@ export function UnitCards({ selected, onSelect, height, realtimeUnits = [], xmDi
           onSelect={onSelect}
           height={height}
           realtimeUnit={realtimeUnits.find(r => r.id === u.id) ?? null}
-          xmDispatch={xmDispatch}
           pmeAccumulated={pmeAccumulated}
+          projection={projection}
         />
       ))}
     </div>

@@ -2,19 +2,57 @@ import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
 import { PMEScraper } from './scraper.js'
 import { UNITS, PME } from './config.js'
-import { initDB, getTodayPeriods } from './db.js'
+import {
+  initDB,
+  getTodayPeriods,
+  saveProyeccionActual,
+  loadProyeccionActual,
+  saveDesviacionPeriodo,
+  getTodayDesviacionPeriodos,
+} from './db.js'
 import { EnergyAccumulator } from './accumulator.js'
 import { EmailDispatchService } from './emailDispatch.js'
 import { RedespachoscraperService } from './redespachoscraper.js'
 import { DespachoscraperService } from './despachoscraper.js'
+import { computeLive, computeClosed } from './projectionCalculator.js'
 
 const PORT = parseInt(process.env.WS_PORT, 10) || 3001
 
-// ── Energy accumulator ────────────────────────────────────────────────────────
-const accumulator = new EnergyAccumulator()
+// Colombia (UTC-5) date/hour helpers
+function colombiaNow(date = new Date()) {
+  const utcMs = date.getTime() + date.getTimezoneOffset() * 60_000
+  const col = new Date(utcMs - 5 * 3_600_000)
+  return {
+    hour: col.getHours(),
+    period: col.getHours() + 1,
+    dateStr: col.toISOString().slice(0, 10),
+  }
+}
+
+// ── Services ──────────────────────────────────────────────────────────────────
 const emailDispatch = new EmailDispatchService()
 const redespScraper = new RedespachoscraperService()
 const despScraper = new DespachoscraperService()
+
+// Accumulator with closing-period callback that persists deviation history
+const accumulator = new EnergyAccumulator({
+  onPeriodComplete: async (unitId, date, hour, mwh) => {
+    const periodo = hour + 1
+    const redespacho = redespScraper.getState()?.[unitId]?.[hour] ?? null
+    const dfEntry = emailDispatch.getState()?.[unitId]?.[periodo]
+    const despFinalEmail = dfEntry?.valor_mw ?? null
+    const result = computeClosed({ generacionMwh: mwh, despFinalEmail, redespachoMw: redespacho })
+    try {
+      await saveDesviacionPeriodo(unitId, date, periodo, result)
+      console.log(`[Server] Desviación periodo guardada: ${unitId} p=${periodo} dev=${result.desviacionPct?.toFixed(2)}% src=${result.despFinalSource}`)
+    } catch (err) {
+      console.error('[Server] Error guardando desviación periodo:', err.message)
+    }
+  },
+})
+
+// Latest live projection snapshot per unit (for throttled persistence)
+let lastProjection = {}
 
 // ── HTTP + WebSocket server ──────────────────────────────────────────────────
 const httpServer = createServer(async (req, res) => {
@@ -74,6 +112,46 @@ const httpServer = createServer(async (req, res) => {
     return
   }
 
+  // REST endpoint: live projection state per unit (for first paint after page reload)
+  if (req.url === '/api/proyeccion/today' && req.method === 'GET') {
+    try {
+      const rows = await loadProyeccionActual()
+      const data = {}
+      for (const row of rows) {
+        data[row.unit_id] = {
+          fecha: row.fecha,
+          periodo: row.periodo,
+          acumulado_mwh: row.acumulado_mwh,
+          current_mw: row.current_mw,
+          redespacho_mw: row.redespacho_mw,
+          proyeccion_mwh: row.proyeccion_mwh,
+          desviacion_pct: row.desviacion_pct,
+          fraction: row.fraction,
+        }
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(data))
+    } catch (err) {
+      console.error('[API] Error fetching proyeccion:', err.message)
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: err.message }))
+    }
+    return
+  }
+
+  // REST endpoint: closed-period deviation history for today
+  if (req.url === '/api/desviacion-periodos/today' && req.method === 'GET') {
+    try {
+      const rows = await getTodayDesviacionPeriodos()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(rows))
+    } catch (err) {
+      console.error('[API] Error fetching desviacion periodos:', err.message)
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: err.message }))
+    }
+    return
+  }
 
   res.writeHead(404).end()
 })
@@ -109,6 +187,30 @@ function broadcast(payload) {
   payload.minuteAvgs = minuteAvgs
   payload.despachoFinal = emailDispatch.getState()
 
+  // ── Compute live projection / deviation per unit (VB6 logic) ──
+  const now = new Date()
+  const { hour: currentHour, period: currentPeriod, dateStr: todayStr } = colombiaNow(now)
+  const redespState = redespScraper.getState() ?? {}
+  const projection = {}
+  for (const unit of payload.units) {
+    const acumulado = accumulated[unit.id] ?? 0
+    const currentMw = unit.valueMW ?? 0
+    const redespacho = redespState?.[unit.id]?.[currentHour] ?? null
+    const live = computeLive({ acumuladoMwh: acumulado, currentMw, redespachoMw: redespacho, now })
+    projection[unit.id] = {
+      fecha: todayStr,
+      periodo: currentPeriod,
+      acumulado_mwh: acumulado,
+      current_mw: currentMw,
+      redespacho_mw: redespacho,
+      proyeccion_mwh: live.projection,
+      desviacion_pct: live.deviation,
+      fraction: live.fraction,
+    }
+  }
+  payload.projection = projection
+  lastProjection = projection
+
   lastPayload = payload
   const msg = JSON.stringify(payload)
   let sent = 0
@@ -122,6 +224,26 @@ function broadcast(payload) {
     console.warn('[WS] Ningún cliente listo para recibir datos.')
   }
 }
+
+// Persist live projection snapshot every 30s (mirror of accumulator persist cadence)
+const projectionSaveInterval = setInterval(async () => {
+  for (const [unitId, snap] of Object.entries(lastProjection)) {
+    try {
+      await saveProyeccionActual(unitId, {
+        fecha: snap.fecha,
+        periodo: snap.periodo,
+        acumuladoMwh: snap.acumulado_mwh,
+        currentMw: snap.current_mw,
+        redespachoMw: snap.redespacho_mw,
+        proyeccionMwh: snap.proyeccion_mwh,
+        desviacionPct: snap.desviacion_pct,
+        fraction: snap.fraction,
+      })
+    } catch (err) {
+      console.error(`[Server] Error persistiendo proyección ${unitId}:`, err.message)
+    }
+  }
+}, 30_000)
 
 // ── Scraper ──────────────────────────────────────────────────────────────────
 const scraper = new PMEScraper({ pme: PME, units: UNITS, onData: broadcast })
@@ -162,6 +284,7 @@ start()
 // ── Apagado limpio ───────────────────────────────────────────────────────────
 process.on('SIGINT', async () => {
   console.log('\n[Server] Apagando…')
+  clearInterval(projectionSaveInterval)
   await emailDispatch.stop()
   redespScraper.stop()
   despScraper.stop()

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { C, FONT, MONO } from "../theme";
 import { UNITS, ALL_DATA } from "../data/units";
 
-function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal) {
+function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos) {
   const baseData = ALL_DATA[unitId];
   const unit = UNITS.find(u=>u.id===unitId);
   const currentIdx = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Bogota" })).getHours();
@@ -12,6 +12,8 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
   const hasXmRedesp = !!xmUnit?.redespacho;
   const pmeGenMWh = pmeAccumulated?.[unitId] ?? 0;
   const unitCompleted = completedPeriods?.[unitId] || {};
+  const liveProjection = projection?.[unitId] ?? null;
+  const unitDesvHist = desviacionPeriodos?.[unitId] || {};
 
   const data = baseData.map((row, i) => {
     const xmDesp = hasXmDesp ? xmUnit.despacho[i] : undefined;
@@ -35,21 +37,6 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
     const redespSimulated = hasXmRedesp && xmRedesp == null;
     const hasRedespacho = Math.abs(despacho - redespacho) > 0.05;
 
-    // Deviation
-    const isCurrent = i === currentIdx;
-    const isFuture = i > currentIdx;
-    let dev = null;
-    if (!isFuture && redespacho !== 0) {
-      if (isCurrent) {
-        const minuteNow = new Date().getMinutes();
-        const fraction = (minuteNow + 1) / 60;
-        const expectedMWh = redespacho * fraction;
-        dev = expectedMWh !== 0 ? ((final_ - expectedMWh) / expectedMWh) * 100 : 0;
-      } else {
-        dev = ((final_ - redespacho) / redespacho) * 100;
-      }
-    }
-
     // D. Final: email first, fallback to P. Despacho (redespacho) if no email
     const periodo = i + 1;
     const dfEntry = despachoFinal?.[unitId]?.[periodo];
@@ -61,6 +48,27 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
     } else if (i <= currentIdx) {
       despFinal = redespacho;
       despFinalSource = 'redespacho';
+    }
+
+    // Deviation:
+    //  - future:  null
+    //  - current: live projection from backend (VB6 logic: tProyeccion vs redespacho)
+    //  - past:    historical row from desviacion_periodos (denominator = D. Final)
+    //             fallback: local compute against despFinal
+    const isCurrent = i === currentIdx;
+    const isFuture = i > currentIdx;
+    let dev = null;
+    if (isFuture) {
+      dev = null;
+    } else if (isCurrent) {
+      dev = liveProjection?.deviation ?? null;
+    } else {
+      const histEntry = unitDesvHist[periodo];
+      if (histEntry?.desviacion_pct != null) {
+        dev = histEntry.desviacion_pct;
+      } else if (despFinal != null && despFinal > 0) {
+        dev = ((final_ - despFinal) / despFinal) * 100;
+      }
     }
 
     return { ...row, despacho, redespacho, final: final_, despFinal, despFinalSource, despSimulated, redespSimulated, hasRedespacho, dev };
@@ -361,8 +369,8 @@ function VerticalTable({ data, unit, currentIdx }) {
 }
 
 /* ─── Componente principal ─── */
-export function Table({ unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, horizontal, showChart, onToggleChart }) {
-  const { data, unit, currentIdx, isXmLive } = useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal);
+export function Table({ unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, horizontal, showChart, onToggleChart }) {
+  const { data, unit, currentIdx, isXmLive } = useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos);
 
   return (
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",height:"100%",display:"flex",flexDirection:"column"}}>

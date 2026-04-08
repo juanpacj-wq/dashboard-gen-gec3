@@ -13,6 +13,8 @@ export function useRealtimeData() {
   const [minuteAvgs, setMinuteAvgs] = useState({});
   const [completedPeriods, setCompletedPeriods] = useState({});
   const [despachoFinal, setDespachoFinal] = useState({});
+  const [projection, setProjection] = useState({});
+  const [desviacionPeriodos, setDesviacionPeriodos] = useState({});
 
   const ws = useRef(null);
   const timer = useRef(null);
@@ -36,6 +38,44 @@ export function useRealtimeData() {
       .then(r => r.ok ? r.json() : {})
       .then(data => setDespachoFinal(data))
       .catch(() => {});
+
+    fetch('/api/proyeccion/today')
+      .then(r => r.ok ? r.json() : {})
+      .then(data => {
+        // Map snake_case → camelCase fields used by components
+        const mapped = {};
+        for (const [unitId, snap] of Object.entries(data || {})) {
+          mapped[unitId] = {
+            fecha: snap.fecha,
+            periodo: snap.periodo,
+            acumulado: snap.acumulado_mwh,
+            currentMw: snap.current_mw,
+            redespacho: snap.redespacho_mw,
+            projection: snap.proyeccion_mwh,
+            deviation: snap.desviacion_pct,
+            fraction: snap.fraction,
+          };
+        }
+        setProjection(prev => ({ ...mapped, ...prev }));
+      })
+      .catch(() => {});
+
+    fetch('/api/desviacion-periodos/today')
+      .then(r => r.ok ? r.json() : [])
+      .then(rows => {
+        const map = {};
+        for (const row of rows || []) {
+          if (!map[row.unit_id]) map[row.unit_id] = {};
+          map[row.unit_id][row.periodo] = {
+            generacion_mwh: row.generacion_mwh,
+            desp_final_mw: row.desp_final_mw,
+            desp_final_source: row.desp_final_source,
+            desviacion_pct: row.desviacion_pct,
+          };
+        }
+        setDesviacionPeriodos(map);
+      })
+      .catch(() => {});
   }, []);
 
   const handleMessage = useCallback((msg) => {
@@ -57,6 +97,23 @@ export function useRealtimeData() {
       });
     }
     if (msg.despachoFinal) setDespachoFinal(msg.despachoFinal);
+    if (msg.projection) {
+      // Server sends snake_case; normalize to camelCase
+      const mapped = {};
+      for (const [unitId, snap] of Object.entries(msg.projection)) {
+        mapped[unitId] = {
+          fecha: snap.fecha,
+          periodo: snap.periodo,
+          acumulado: snap.acumulado_mwh,
+          currentMw: snap.current_mw,
+          redespacho: snap.redespacho_mw,
+          projection: snap.proyeccion_mwh,
+          deviation: snap.desviacion_pct,
+          fraction: snap.fraction,
+        };
+      }
+      setProjection(mapped);
+    }
   }, []);
 
   useEffect(() => {
@@ -101,5 +158,5 @@ export function useRealtimeData() {
     };
   }, [handleMessage]);
 
-  return { units, status, lastUpdate, accumulated, minuteAvgs, completedPeriods, despachoFinal };
+  return { units, status, lastUpdate, accumulated, minuteAvgs, completedPeriods, despachoFinal, projection, desviacionPeriodos };
 }

@@ -134,6 +134,42 @@ export async function initDB() {
       CREATE INDEX IX_redesp_hist_fecha ON dashboard.redespacho_historico (fecha, unit_id, periodo);
   `)
 
+  // Proyección actual — estado vivo del cálculo de proyección/desviación por unidad
+  await db.request().query(`
+    IF OBJECT_ID('dashboard.proyeccion_actual', 'U') IS NULL
+    CREATE TABLE dashboard.proyeccion_actual (
+      unit_id         VARCHAR(10)   NOT NULL PRIMARY KEY,
+      fecha           DATE          NOT NULL,
+      periodo         TINYINT       NOT NULL,
+      acumulado_mwh   FLOAT         NOT NULL DEFAULT 0,
+      current_mw      FLOAT         NULL,
+      redespacho_mw   FLOAT         NULL,
+      proyeccion_mwh  FLOAT         NOT NULL DEFAULT 0,
+      desviacion_pct  FLOAT         NULL,
+      fraction        FLOAT         NOT NULL DEFAULT 0,
+      updated_at      DATETIME2     DEFAULT GETDATE(),
+      CONSTRAINT CK_proy_actual_periodo CHECK (periodo BETWEEN 1 AND 24)
+    );
+  `)
+
+  // Desviación por periodo cerrado — histórico (mirror de generacion_periodos)
+  await db.request().query(`
+    IF OBJECT_ID('dashboard.desviacion_periodos', 'U') IS NULL
+    CREATE TABLE dashboard.desviacion_periodos (
+      id                 INT IDENTITY(1,1) PRIMARY KEY,
+      unit_id            VARCHAR(10)   NOT NULL,
+      fecha              DATE          NOT NULL,
+      periodo            TINYINT       NOT NULL,
+      generacion_mwh     FLOAT         NOT NULL,
+      desp_final_mw      FLOAT         NULL,
+      desp_final_source  VARCHAR(20)   NULL,
+      desviacion_pct     FLOAT         NULL,
+      created_at         DATETIME2     DEFAULT GETDATE(),
+      CONSTRAINT UQ_desv_periodos UNIQUE (unit_id, fecha, periodo),
+      CONSTRAINT CK_desv_periodos_periodo CHECK (periodo BETWEEN 1 AND 24)
+    );
+  `)
+
   console.log('[DB] Schema y tablas verificadas')
 }
 
@@ -352,6 +388,90 @@ export async function loadRedespachoProg(fecha) {
     data[row.unit_id][row.periodo - 1] = row.valor_mw
   }
   return data
+}
+
+// ── Proyección actual / Desviación periodos ─────────────────────────────────
+
+/**
+ * Save (UPSERT) the live projection state for a unit.
+ * payload = { fecha, periodo, acumuladoMwh, currentMw, redespachoMw, proyeccionMwh, desviacionPct, fraction }
+ */
+export async function saveProyeccionActual(unitId, payload) {
+  const db = await getDB()
+  await db.request()
+    .input('unitId', sql.VarChar, unitId)
+    .input('fecha', sql.Date, payload.fecha)
+    .input('periodo', sql.TinyInt, payload.periodo)
+    .input('acumulado', sql.Float, payload.acumuladoMwh ?? 0)
+    .input('currentMw', sql.Float, payload.currentMw ?? null)
+    .input('redespacho', sql.Float, payload.redespachoMw ?? null)
+    .input('proyeccion', sql.Float, payload.proyeccionMwh ?? 0)
+    .input('desviacion', sql.Float, payload.desviacionPct ?? null)
+    .input('fraction', sql.Float, payload.fraction ?? 0)
+    .query(`
+      MERGE dashboard.proyeccion_actual AS target
+      USING (SELECT @unitId AS unit_id) AS source
+      ON target.unit_id = source.unit_id
+      WHEN MATCHED THEN UPDATE SET fecha = @fecha, periodo = @periodo,
+                                   acumulado_mwh = @acumulado, current_mw = @currentMw,
+                                   redespacho_mw = @redespacho, proyeccion_mwh = @proyeccion,
+                                   desviacion_pct = @desviacion, fraction = @fraction,
+                                   updated_at = GETDATE()
+      WHEN NOT MATCHED THEN INSERT (unit_id, fecha, periodo, acumulado_mwh, current_mw, redespacho_mw, proyeccion_mwh, desviacion_pct, fraction)
+                              VALUES (@unitId, @fecha, @periodo, @acumulado, @currentMw, @redespacho, @proyeccion, @desviacion, @fraction);
+    `)
+}
+
+/** Load all live projection rows (for restart recovery / first paint) */
+export async function loadProyeccionActual() {
+  const db = await getDB()
+  const result = await db.request().query('SELECT * FROM dashboard.proyeccion_actual')
+  return result.recordset
+}
+
+/**
+ * Save (UPSERT) the closing-period deviation for a unit.
+ * payload = { generacionMwh, despFinalMw, despFinalSource, desviacionPct }
+ */
+export async function saveDesviacionPeriodo(unitId, fecha, periodo, payload) {
+  const db = await getDB()
+  await db.request()
+    .input('unitId', sql.VarChar, unitId)
+    .input('fecha', sql.Date, fecha)
+    .input('periodo', sql.TinyInt, periodo)
+    .input('generacion', sql.Float, payload.generacionMwh)
+    .input('despFinal', sql.Float, payload.despFinalMw ?? null)
+    .input('source', sql.VarChar, payload.despFinalSource ?? null)
+    .input('desviacion', sql.Float, payload.desviacionPct ?? null)
+    .query(`
+      MERGE dashboard.desviacion_periodos AS target
+      USING (SELECT @unitId AS unit_id, @fecha AS fecha, @periodo AS periodo) AS source_tbl
+      ON target.unit_id = source_tbl.unit_id AND target.fecha = source_tbl.fecha AND target.periodo = source_tbl.periodo
+      WHEN MATCHED THEN UPDATE SET generacion_mwh = @generacion, desp_final_mw = @despFinal,
+                                   desp_final_source = @source, desviacion_pct = @desviacion,
+                                   created_at = GETDATE()
+      WHEN NOT MATCHED THEN INSERT (unit_id, fecha, periodo, generacion_mwh, desp_final_mw, desp_final_source, desviacion_pct)
+                              VALUES (@unitId, @fecha, @periodo, @generacion, @despFinal, @source, @desviacion);
+    `)
+}
+
+/** Get desviacion records for a date */
+export async function getDesviacionPeriodosByDate(fecha) {
+  const db = await getDB()
+  const result = await db.request()
+    .input('fecha', sql.Date, fecha)
+    .query(`SELECT unit_id, periodo, generacion_mwh, desp_final_mw, desp_final_source, desviacion_pct
+            FROM dashboard.desviacion_periodos WHERE fecha = @fecha`)
+  return result.recordset
+}
+
+/** Shortcut: desviacion records for today */
+export async function getTodayDesviacionPeriodos() {
+  const db = await getDB()
+  const result = await db.request()
+    .query(`SELECT unit_id, periodo, generacion_mwh, desp_final_mw, desp_final_source, desviacion_pct
+            FROM dashboard.desviacion_periodos WHERE fecha = CAST(GETDATE() AS DATE)`)
+  return result.recordset
 }
 
 /** Check if a despacho final record exists for a unit/date/period */

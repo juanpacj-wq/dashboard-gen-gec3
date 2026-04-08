@@ -17,6 +17,11 @@ export class EnergyAccumulator {
   #completed = {}   // { unitId: { [hour]: mwhValue } }  — keyed by hour (0-23)
   #minuteBuckets = {} // { unitId: { hour, buckets: [{ sum, count } × 60] } }
   #saveInterval = null
+  #onPeriodComplete = null
+
+  constructor({ onPeriodComplete } = {}) {
+    this.#onPeriodComplete = onPeriodComplete ?? null
+  }
 
   async init() {
     const rows = await loadAccumState()
@@ -101,6 +106,14 @@ export class EnergyAccumulator {
       console.log(`[Accumulator] Periodo guardado: ${unitId} hora=${hour} periodo=${hour + 1} energia=${mwh.toFixed(3)} MWh`)
     } catch (err) {
       console.error(`[Accumulator] Error guardando periodo:`, err.message)
+    }
+
+    if (this.#onPeriodComplete) {
+      try {
+        await this.#onPeriodComplete(unitId, date, hour, mwh)
+      } catch (err) {
+        console.error(`[Accumulator] Error en onPeriodComplete:`, err.message)
+      }
     }
   }
 

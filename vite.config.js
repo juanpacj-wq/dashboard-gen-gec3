@@ -27,6 +27,12 @@ export default defineConfig({
       "/api/redespacho": {
         target: "http://localhost:3001",
       },
+      "/api/proyeccion": {
+        target: "http://localhost:3001",
+      },
+      "/api/desviacion-periodos": {
+        target: "http://localhost:3001",
+      },
     },
   },
 })
