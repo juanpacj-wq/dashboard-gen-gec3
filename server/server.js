@@ -32,6 +32,15 @@ function colombiaNow(date = new Date()) {
   }
 }
 
+/**
+ * Return a Date whose UTC representation equals the Colombia wall clock.
+ * Used when persisting DATETIME2 columns so that SSMS/queries show local time
+ * regardless of whether the host runs in UTC or Colombia TZ.
+ */
+function colombiaWallClockDate(date = new Date()) {
+  return new Date(date.getTime() - 5 * 3_600_000)
+}
+
 // ── Services ──────────────────────────────────────────────────────────────────
 const emailDispatch = new EmailDispatchService()
 const redespScraper = new RedespachoscraperService()
@@ -55,13 +64,22 @@ const accumulator = new EnergyAccumulator({
     // Persist closing projection snapshot for the period
     try {
       const lastSnap = lastProjection[unitId]
+      const proyCierre = lastSnap?.proyeccion_mwh ?? mwh
+      const desv = lastSnap?.desviacion_pct ?? result.desviacionPct
       await saveProyeccionPeriodo(unitId, date, periodo, {
-        proyeccionCierreMwh: lastSnap?.proyeccion_mwh ?? mwh,
+        proyeccionCierreMwh: proyCierre,
         generacionRealMwh: mwh,
         redespachoMw: redespacho,
-        desviacionPct: lastSnap?.desviacion_pct ?? result.desviacionPct,
+        desviacionPct: desv,
       })
-      console.log(`[Server] Proyección cierre guardada: ${unitId} p=${periodo} proy=${(lastSnap?.proyeccion_mwh ?? mwh).toFixed(2)} real=${mwh.toFixed(2)}`)
+      // Feed in-memory map so the next broadcast pushes this to all clients
+      ;(closingProjections[unitId] ||= {})[periodo] = {
+        proyeccion_cierre_mwh: proyCierre,
+        generacion_real_mwh: mwh,
+        redespacho_mw: redespacho,
+        desviacion_pct: desv,
+      }
+      console.log(`[Server] Proyección cierre guardada: ${unitId} p=${periodo} proy=${proyCierre.toFixed(2)} real=${mwh.toFixed(2)}`)
     } catch (err) {
       console.error('[Server] Error guardando proyección cierre:', err.message)
     }
@@ -75,6 +93,11 @@ let lastProjection = {}
 // as an aggregated row into dashboard.proyeccion_historico for audit trail.
 const proyBuffer = {}
 let proyWindowStart = new Date()
+
+// In-memory map of closing projection per unit/period so the broadcast
+// payload can push this history to the frontend live without a refetch.
+// Shape: { [unitId]: { [periodo]: { proyeccion_cierre_mwh, generacion_real_mwh, redespacho_mw, desviacion_pct } } }
+const closingProjections = {}
 
 // ── HTTP + WebSocket server ──────────────────────────────────────────────────
 const httpServer = createServer(async (req, res) => {
@@ -232,6 +255,7 @@ function broadcast(payload) {
   payload.completedPeriods = completedPeriods
   payload.minuteAvgs = minuteAvgs
   payload.despachoFinal = emailDispatch.getState()
+  payload.proyeccionPeriodos = closingProjections
 
   // ── Compute live projection / deviation per unit (VB6 logic) ──
   const now = new Date()
@@ -336,8 +360,8 @@ const proyHistFlushInterval = setInterval(async () => {
         desviacionPct: avgDev,
         fraction: last.fraction,
         samples: n,
-        windowStart,
-        windowEnd,
+        windowStart: colombiaWallClockDate(windowStart),
+        windowEnd: colombiaWallClockDate(windowEnd),
       })
     } catch (err) {
       console.error(`[Server] Error guardando proyección histórico ${unitId}:`, err.message)
@@ -356,6 +380,21 @@ async function start() {
     await accumulator.init()
     console.log('[DB] Conexión OK')
     await emailDispatch.init()
+    // Preload closing projections from DB so broadcasts include today's history after restart
+    try {
+      const rows = await getTodayProyeccionPeriodos()
+      for (const row of rows) {
+        ;(closingProjections[row.unit_id] ||= {})[row.periodo] = {
+          proyeccion_cierre_mwh: row.proyeccion_cierre_mwh,
+          generacion_real_mwh: row.generacion_real_mwh,
+          redespacho_mw: row.redespacho_mw,
+          desviacion_pct: row.desviacion_pct,
+        }
+      }
+      console.log(`[Server] Proyección cierre precargada: ${rows.length} filas`)
+    } catch (err) {
+      console.warn('[Server] No se pudo precargar proyección cierre:', err.message)
+    }
     dbOk = true
   } catch (err) {
     console.error('[DB] Error de conexión:', err.message)

@@ -103,6 +103,15 @@ export function useRealtimeData() {
       });
     }
     if (msg.despachoFinal) setDespachoFinal(msg.despachoFinal);
+    if (msg.proyeccionPeriodos) {
+      setProyeccionPeriodos(prev => {
+        const merged = { ...prev };
+        for (const [unitId, periods] of Object.entries(msg.proyeccionPeriodos)) {
+          merged[unitId] = { ...merged[unitId], ...periods };
+        }
+        return merged;
+      });
+    }
     if (msg.projection) {
       // Server sends snake_case; normalize to camelCase
       const mapped = {};
