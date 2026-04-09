@@ -1,9 +1,22 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { C, FONT, MONO } from "../theme";
 import { UNITS } from "../data/units";
 
-export function Chart({ unitId, width, height, minuteDeviations }) {
+export function Chart({ unitId, width, height, minuteDeviations, realtimeUnit }) {
   const [tip, setTip] = useState(null);
+  const containerRef = useRef(null);
+  const [containerSize, setContainerSize] = useState(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      const { width: w, height: h } = entries[0].contentRect;
+      if (w > 0 && h > 0) setContainerSize({ w: Math.round(w), h: Math.round(h) });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const unit = UNITS.find(u => u.id === unitId);
 
@@ -29,8 +42,8 @@ export function Chart({ unitId, width, height, minuteDeviations }) {
   const yMin = Math.min(lcl - margin, ...allY.length ? allY : [lcl]);
   const yMax = Math.max(ucl + margin, ...allY.length ? allY : [ucl]);
 
-  const pad = { t: 22, r: 30, b: 28, l: 50 };
-  const W = width, H = height;
+  const pad = { t: 22, r: 30, b: 20, l: 10 };
+  const W = containerSize?.w || width, H = containerSize?.h || height;
   const pW = W - pad.l - pad.r, pH = H - pad.t - pad.b;
 
   const tX = m => pad.l + (m / 59) * pW;
@@ -68,7 +81,7 @@ export function Chart({ unitId, width, height, minuteDeviations }) {
 
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 10px 6px", height: "100%", display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4, paddingLeft: 4, flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: realtimeUnit?.valueMW != null ? 0 : 4, paddingLeft: 4, flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <div style={{ width: 7, height: 7, borderRadius: "50%", background: unit.color, boxShadow: `0 0 5px ${unit.color}60` }} />
           <span style={{ fontSize: 12, fontWeight: 700, color: C.text, fontFamily: FONT }}>Desviación {unitId} </span>
@@ -82,8 +95,14 @@ export function Chart({ unitId, width, height, minuteDeviations }) {
           ))}
         </div>
       </div>
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: "block", cursor: "crosshair" }} onMouseMove={handleMove} onMouseLeave={() => setTip(null)}>
+      {realtimeUnit?.valueMW != null && (
+        <div style={{ display: "flex", alignItems: "baseline", gap: 3, paddingLeft: 17, marginBottom: 2, flexShrink: 0 }}>
+          <span style={{ fontSize: 22, fontWeight: 800, color: unit.color, fontFamily: MONO }}>{Math.max(0, realtimeUnit.valueMW).toFixed(1)}</span>
+          <span style={{ fontSize: 14, fontWeight: 500, color: C.textMuted, fontFamily: MONO }}>MW</span>
+        </div>
+      )}
+      <div ref={containerRef} style={{ flex: 1, minHeight: 0 }}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block", cursor: "crosshair" }} onMouseMove={handleMove} onMouseLeave={() => setTip(null)}>
           <defs>
             <linearGradient id="dzT" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={C.red} stopOpacity="0.05" /><stop offset="100%" stopColor={C.red} stopOpacity="0.01" /></linearGradient>
             <linearGradient id="dzB" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={C.cyan} stopOpacity="0.01" /><stop offset="100%" stopColor={C.cyan} stopOpacity="0.05" /></linearGradient>
@@ -116,8 +135,7 @@ export function Chart({ unitId, width, height, minuteDeviations }) {
             return <g key={i}>{out && <circle cx={tX(d.x)} cy={tY(d.y)} r={6} fill={C.red} opacity={0.08} vectorEffect="non-scaling-stroke"><animate attributeName="r" values="4;9;4" dur="2s" repeatCount="indefinite" /></circle>}<circle cx={tX(d.x)} cy={tY(d.y)} r={out ? 3 : 2.2} fill={C.card} stroke={col} strokeWidth={1.5} vectorEffect="non-scaling-stroke" /></g>;
           })}
 
-          {yTicks.map(v => <text key={"yl" + v} x={pad.l - 5} y={tY(v) + 3} fill={C.textMuted} fontSize={14} fontFamily={MONO} textAnchor="end">{v.toFixed(1)}%</text>)}
-          {xTicks.map(m => <text key={"xl" + m} x={tX(m)} y={H - pad.b + 12} fill={C.textMuted} fontSize={14} fontFamily={MONO} textAnchor="middle">{m}</text>)}
+          {xTicks.map(m => <text key={"xl" + m} x={tX(m)} y={H - pad.b + 10} fill={C.textMuted} fontSize={9} fontFamily={MONO} textAnchor="middle">{m}</text>)}
 
           {chartData.length === 0 && <text x={pad.l + pW / 2} y={pad.t + pH / 2} fill={C.textMuted} fontSize={12} fontFamily={FONT} textAnchor="middle">Esperando datos PME...</text>}
 

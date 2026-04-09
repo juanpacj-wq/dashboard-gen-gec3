@@ -34,11 +34,11 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
       border: `1px solid ${isSel ? u.color + "40" : C.border}`,
       borderRadius: 12, padding: isSel ? "10px 14px" : "10px 14px",
       cursor: "pointer", transition: "all 0.3s ease",
-      display: "flex", alignItems: isSel ? "center" : "flex-start",
-      gap: isSel ? 10 : 0, flexDirection: isSel ? "row" : "column",
+      display: "flex", alignItems: "center",
+      gap: isSel ? 10 : 8, flexDirection: "row",
       overflow: "hidden", minWidth: 0,
     }}>
-      {isSel && <MiniGauge value={pctCap} max={100} color={u.color} size={Math.min(100, height * 0.95)} displayValue={currentMW} displayUnit="MW" />}
+      <MiniGauge value={pctCap} max={100} color={u.color} size={Math.min(100, height * 0.95)} displayValue={currentMW} displayUnit="MW" />
       <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: isSel ? 4 : 3 }}>
           <div style={{ width: isSel ? 9 : 7, height: isSel ? 9 : 7, borderRadius: "50%", background: u.color, boxShadow: `0 0 ${isSel ? 7 : 3}px ${u.color}60`, flexShrink: 0 }} />
@@ -62,8 +62,6 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
           </div>
         ) : (
           <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-            <span style={{ fontSize: 18, fontWeight: 800, color: u.color, fontFamily: MONO }}>{currentMW.toFixed(0)}</span>
-            <span style={{ fontSize: 12, color: C.textMuted, fontFamily: MONO }}>MW</span>
             <span style={{ fontSize: 12, fontWeight: 700, color: Math.abs(dev) > 2 ? C.red : C.green, fontFamily: MONO, marginLeft: "auto" }}>{dev >= 0 ? "+" : ""}{dev.toFixed(1)}%</span>
           </div>
         )}

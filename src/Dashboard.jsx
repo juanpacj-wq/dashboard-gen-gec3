@@ -90,7 +90,7 @@ export default function Dashboard() {
             <Table unitId={sel} xmDispatch={xmDispatch} pmeAccumulated={accumulated} completedPeriods={completedPeriods} despachoFinal={despachoFinal} projection={projection} desviacionPeriodos={desviacionPeriodos} proyeccionPeriodos={proyeccionPeriodos} horizontal={!showChart} showChart={showChart} onToggleChart={()=>setShowChart(v=>!v)}/>
           </div>
           <div style={{flex:showChart?"40 1 0":"20 1 0",minWidth:0,transition:"flex 0.3s ease"}}>
-            <Chart unitId={sel} width={chartW} height={Math.max(150,mainH)} minuteDeviations={minuteDeviations} xmDispatch={xmDispatch}/>
+            <Chart unitId={sel} width={chartW} height={Math.max(150,mainH)} minuteDeviations={minuteDeviations} xmDispatch={xmDispatch} realtimeUnit={rtUnits.find(r => r.id === sel) ?? null}/>
           </div>
         </div>
         <GenerationTicker height={tickerH}/>
