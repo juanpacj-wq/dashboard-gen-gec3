@@ -1,8 +1,6 @@
 import { useMemo } from "react";
 import { C, MONO, FONT } from "../theme";
-import { UNITS, //ALL_DATA, calcStats
-
-} from "../data/units";
+import { UNITS } from "../data/units";
 import { MiniGauge } from "./MiniGauge";
 
 function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, projection, xmDispatch }) {

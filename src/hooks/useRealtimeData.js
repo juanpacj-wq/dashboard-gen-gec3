@@ -11,6 +11,7 @@ export function useRealtimeData() {
   const [lastUpdate, setLastUpdate] = useState(null);
   const [accumulated, setAccumulated] = useState({});
   const [minuteAvgs, setMinuteAvgs] = useState({});
+  const [minuteDeviations, setMinuteDeviations] = useState({});
   const [completedPeriods, setCompletedPeriods] = useState({});
   const [despachoFinal, setDespachoFinal] = useState({});
   const [projection, setProjection] = useState({});
@@ -93,6 +94,7 @@ export function useRealtimeData() {
     // Server sends accumulated, minuteAvgs, completedPeriods
     if (msg.accumulated) setAccumulated(msg.accumulated);
     if (msg.minuteAvgs) setMinuteAvgs(msg.minuteAvgs);
+    if (msg.minuteDeviations) setMinuteDeviations(msg.minuteDeviations);
     if (msg.completedPeriods) {
       setCompletedPeriods(prev => {
         const merged = { ...prev };
@@ -173,5 +175,5 @@ export function useRealtimeData() {
     };
   }, [handleMessage]);
 
-  return { units, status, lastUpdate, accumulated, minuteAvgs, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos };
+  return { units, status, lastUpdate, accumulated, minuteAvgs, minuteDeviations, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos };
 }

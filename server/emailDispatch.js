@@ -4,11 +4,9 @@ import { saveDespachoFinal, getDespachoFinalByDate, existsDespachoFinal } from '
 const TENANT   = process.env.GRAPH_TENANT_ID
 const CLIENT   = process.env.GRAPH_CLIENT_ID
 const SECRET   = process.env.GRAPH_CLIENT_SECRET
-const MAILBOX  = process.env.GRAPH_MAILBOX
 const TOKEN_URL = `https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/token`
 
 const INTERVAL_MS = 5 * 60 * 1000  // 5 minutes
-const UNITS_MAP = { 'GECELCA 32': 'GEC32', 'GECELCA 3': 'GEC3' }
 const SUBJECT_RE = /periodo\s+(\d+)\s+del\s+d[i\u00ed]a\s+(\d{2}\/\d{2}\/\d{4})/i
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -57,148 +55,84 @@ async function getGraphToken() {
   return cachedToken
 }
 
-// ── Email Fetch ─────────────────────────────────────────────────────────────
-async function fetchRedespachoEmails(dateStr) {
-  const token = await getGraphToken()
-  // Start searching from 8 PM previous day Colombia (01:00 UTC same day)
-  // to capture emails for early periods (1, 2) sent the evening before
-  const startOfDayUTC = `${dateStr}T01:00:00Z`
-  const filter = `contains(subject,'Redespacho Periodo') and receivedDateTime ge ${startOfDayUTC}`
-  const select = 'id,subject,body,receivedDateTime'
-  const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(MAILBOX)}/messages?$filter=${encodeURIComponent(filter)}&$select=${select}&$top=50`
-
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) throw new Error(`Graph API error: ${res.status} ${await res.text()}`)
-  const json = await res.json()
-  return json.value || []
-}
-
-// ── Email Parsing ───────────────────────────────────────────────────────────
-function parseRedespachoEmail(email) {
-    const subject = email.subject || ''
-    const match = subject.match(SUBJECT_RE)
-    console.log('[Parse] Subject:', subject, '| Match:', match?.[0])
-    if (!match) return null
-
-  const periodo = parseInt(match[1], 10)
-  const fechaISO = toISO(match[2])
-
-  const htmlBody = email.body?.content || ''
-
-  // Take content before CONF.ORIG
-  const beforeConf = htmlBody.split(/CONF\.ORIG/i)[0]
-
-  // Strip HTML to get table-like text, preserving row boundaries
-  const rows = beforeConf
-    .split(/<\/tr>/gi)
-    .map(row => row
-      .replace(/<\/td>/gi, '\t')
-      .replace(/<[^>]+>/g, '')
-      .replace(/&nbsp;/gi, ' ')
-      .replace(/&amp;/gi, '&')
-      .trim()
-    )
-    .filter(Boolean)
-
-  const results = []
-
-  for (const row of rows) {
-    // Check GECELCA 32 first (avoid false match with GECELCA 3)
-    let plantName = null
-    if (/GECELCA\s+32/i.test(row)) {
-      plantName = 'GECELCA 32'
-    } else if (/GECELCA\s+3(?!\d)/i.test(row)) {
-      plantName = 'GECELCA 3'
-    }
-    if (!plantName) continue
-
-    const unitId = UNITS_MAP[plantName]
-    if (!unitId) continue
-
-    // Extract decimal numbers from the row
-    const numbers = row.match(/(\d+\.?\d*)/g)
-    console.log('[Row]', row.slice(0, 80), '→ numbers:', numbers)
-    if (!numbers || numbers.length < 3) continue
-
-    // numbers[0]=unit code, numbers[1]=despacho original, numbers[2]=redespacho (modified)
-    const valorMw = parseFloat(numbers[2])
-    if (isNaN(valorMw)) continue
-
-    results.push({ unitId, periodo, fechaISO, valorMw })
-  }
-  console.log('[Parse] Resultado:', results)
-  return results.length > 0
-    ? { periodo, fechaISO, units: results, subject, emailId: email.id, emailDate: email.receivedDateTime }
-    : null
-}
-
 // ── XM Fallback ─────────────────────────────────────────────────────────────
 const XM_URL = 'https://servapibi.xm.com.co/hourly'
-let xmCache = { date: null, data: null }
+let xmCache = { date: null, byCode: null }
 
-async function fetchXmRedespacho(dateStr) {
-  if (xmCache.date === dateStr && xmCache.data) return xmCache.data
-
-  const res = await fetch(XM_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      MetricId: 'GeneProgRedesp',
-      StartDate: dateStr,
-      EndDate: dateStr,
-      Entity: 'Recurso',
-      Filter: [],
-    }),
-  })
-  if (!res.ok) throw new Error(`XM API error: ${res.status}`)
-  const json = await res.json()
-  const records = json?.Items || []
-
-  const codeMap = { GEC3: ['GEC3'], GEC32: ['GE32'] }
-  const byCode = {}
-  for (const item of records) {
-    const vals = item.HourlyEntities?.[0]?.Values
-    if (!vals) continue
-    const code = (vals.code || '').trim()
-    byCode[code] = Array.from({ length: 24 }, (_, i) => {
-      const raw = vals[`Hour${String(i + 1).padStart(2, '0')}`]
-      return raw != null && raw !== '' ? parseFloat(raw) / 1000 : 0
+async function fetchXmRedespacho(dateStr, codeMap) {
+  // Fetch raw data (cached per date, shared across instances)
+  if (xmCache.date !== dateStr || !xmCache.byCode) {
+    const res = await fetch(XM_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        MetricId: 'GeneProgRedesp',
+        StartDate: dateStr,
+        EndDate: dateStr,
+        Entity: 'Recurso',
+        Filter: [],
+      }),
     })
+    if (!res.ok) throw new Error(`XM API error: ${res.status}`)
+    const json = await res.json()
+    const records = json?.Items || []
+
+    const byCode = {}
+    for (const item of records) {
+      const vals = item.HourlyEntities?.[0]?.Values
+      if (!vals) continue
+      const code = (vals.code || '').trim()
+      byCode[code] = Array.from({ length: 24 }, (_, i) => {
+        const raw = vals[`Hour${String(i + 1).padStart(2, '0')}`]
+        return raw != null && raw !== '' ? parseFloat(raw) / 1000 : 0
+      })
+    }
+    xmCache = { date: dateStr, byCode }
   }
 
+  // Apply codeMap transformation per caller
   const result = {}
   for (const [unitId, codes] of Object.entries(codeMap)) {
-    const arrays = codes.map(c => byCode[c]).filter(Boolean)
+    const arrays = codes.map(c => xmCache.byCode[c]).filter(Boolean)
     if (arrays.length === 0) { result[unitId] = Array(24).fill(0); continue }
     result[unitId] = Array.from({ length: 24 }, (_, i) =>
       Math.round(arrays.reduce((s, a) => s + (a[i] || 0), 0) * 10) / 10
     )
   }
-
-  xmCache = { date: dateStr, data: result }
   return result
 }
 
 // ── Main Service ────────────────────────────────────────────────────────────
 export class EmailDispatchService {
   #interval = null
-  #state = {}    // { GEC3: { 1: {valor_mw, source}, ... }, GEC32: {...} }
+  #state = {}
+  #mailbox
+  #unitsMap
+  #xmCodeMap
+  #unitIds
+  // Sorted keys (longest first) for safe regex matching
+  #unitKeys
+
+  constructor({ mailbox, unitsMap, xmCodeMap, unitIds }) {
+    this.#mailbox = mailbox
+    this.#unitsMap = unitsMap
+    this.#xmCodeMap = xmCodeMap
+    this.#unitIds = unitIds
+    // Sort keys by length descending to avoid partial matches (e.g. "GECELCA 3" matching before "GECELCA 32")
+    this.#unitKeys = Object.keys(unitsMap).sort((a, b) => b.length - a.length)
+  }
 
   async init() {
-    // Load today's data from DB
     await this.#loadState()
-    console.log('[EmailDispatch] Estado cargado desde DB')
+    console.log(`[EmailDispatch:${this.#unitIds}] Estado cargado desde DB`)
   }
 
   start() {
-    // Run immediately, then every 5 min
-    this.fetchAndProcess().catch(e => console.error('[EmailDispatch] Error inicial:', e.message))
+    this.fetchAndProcess().catch(e => console.error(`[EmailDispatch:${this.#unitIds}] Error inicial:`, e.message))
     this.#interval = setInterval(() => {
-      this.fetchAndProcess().catch(e => console.error('[EmailDispatch] Error en ciclo:', e.message))
+      this.fetchAndProcess().catch(e => console.error(`[EmailDispatch:${this.#unitIds}] Error en ciclo:`, e.message))
     }, INTERVAL_MS)
-    console.log('[EmailDispatch] Servicio iniciado — intervalo 5min')
+    console.log(`[EmailDispatch:${this.#unitIds}] Servicio iniciado — intervalo 5min`)
   }
 
   async stop() {
@@ -210,6 +144,85 @@ export class EmailDispatchService {
     return this.#state
   }
 
+  // ── Private: fetch emails from configured mailbox ─────────────────────────
+  async #fetchEmails(dateStr) {
+    const token = await getGraphToken()
+    const startOfDayUTC = `${dateStr}T01:00:00Z`
+    const filter = `contains(subject,'Redespacho Periodo') and receivedDateTime ge ${startOfDayUTC}`
+    const select = 'id,subject,body,receivedDateTime'
+    const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(this.#mailbox)}/messages?$filter=${encodeURIComponent(filter)}&$select=${select}&$top=50`
+
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) throw new Error(`Graph API error: ${res.status} ${await res.text()}`)
+    const json = await res.json()
+    return json.value || []
+  }
+
+  // ── Private: parse a single email using configured unitsMap ────────────────
+  #parseEmail(email) {
+    const subject = email.subject || ''
+    const match = subject.match(SUBJECT_RE)
+    console.log('[Parse] Subject:', subject, '| Match:', match?.[0])
+    if (!match) return null
+
+    const periodo = parseInt(match[1], 10)
+    const fechaISO = toISO(match[2])
+
+    const htmlBody = email.body?.content || ''
+
+    // Take content before CONF.ORIG
+    const beforeConf = htmlBody.split(/CONF\.ORIG/i)[0]
+
+    // Strip HTML to get table-like text, preserving row boundaries
+    const rows = beforeConf
+      .split(/<\/tr>/gi)
+      .map(row => row
+        .replace(/<\/td>/gi, '\t')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .trim()
+      )
+      .filter(Boolean)
+
+    const results = []
+
+    for (const row of rows) {
+      // Check each unit key (sorted longest first to avoid partial matches)
+      let plantName = null
+      for (const key of this.#unitKeys) {
+        const escaped = key.replace(/\s+/g, '\\s+')
+        if (new RegExp(escaped + '(?!\\d)', 'i').test(row)) {
+          plantName = key
+          break
+        }
+      }
+      if (!plantName) continue
+
+      const unitId = this.#unitsMap[plantName]
+      if (!unitId) continue
+
+      // Skip greeting/intro rows (contain long text, not tabular data)
+      // Real data rows are tab-separated with few fields; greeting rows have 5+ numbers (dates, etc.)
+      const numbers = row.match(/(\d+\.?\d*)/g)
+      console.log('[Row]', row.slice(0, 80), '→ numbers:', numbers)
+      if (!numbers || numbers.length < 3 || numbers.length > 4) continue
+
+      // numbers[0]=unit code, numbers[1]=despacho original, numbers[2]=redespacho (modified)
+      const valorMw = parseFloat(numbers[2])
+      if (isNaN(valorMw)) continue
+
+      results.push({ unitId, periodo, fechaISO, valorMw })
+    }
+    console.log('[Parse] Resultado:', results)
+    return results.length > 0
+      ? { periodo, fechaISO, units: results, subject, emailId: email.id, emailDate: email.receivedDateTime }
+      : null
+  }
+
+  // ── Private: load state from DB filtered by unitIds ───────────────────────
   async #loadState() {
     const { dateStr, tomorrowStr, hour } = colombiaTime()
     const datesToLoad = [dateStr]
@@ -219,6 +232,7 @@ export class EmailDispatchService {
     for (const fecha of datesToLoad) {
       const rows = await getDespachoFinalByDate(fecha)
       for (const row of rows) {
+        if (!this.#unitIds.includes(row.unit_id)) continue
         if (!this.#state[row.unit_id]) this.#state[row.unit_id] = {}
         this.#state[row.unit_id][row.periodo] = {
           valor_mw: row.valor_mw,
@@ -229,8 +243,8 @@ export class EmailDispatchService {
   }
 
   async fetchAndProcess() {
-    if (!TENANT || !CLIENT || !SECRET || !MAILBOX) {
-      console.warn('[EmailDispatch] Variables GRAPH_* no configuradas, omitiendo')
+    if (!TENANT || !CLIENT || !SECRET || !this.#mailbox) {
+      console.warn(`[EmailDispatch:${this.#unitIds}] Variables GRAPH_* no configuradas, omitiendo`)
       return
     }
 
@@ -241,17 +255,17 @@ export class EmailDispatchService {
     // 1. Fetch and parse emails
     let emails
     try {
-      emails = await fetchRedespachoEmails(dateStr)
-      console.log(`[EmailDispatch] ${emails.length} correos encontrados`)
+      emails = await this.#fetchEmails(dateStr)
+      console.log(`[EmailDispatch:${this.#unitIds}] ${emails.length} correos encontrados`)
       emails.forEach(e => console.log(' -', e.subject, '|', e.receivedDateTime))
     } catch (e) {
-      console.error('[EmailDispatch] Error leyendo correos:', e.message)
+      console.error(`[EmailDispatch:${this.#unitIds}] Error leyendo correos:`, e.message)
       return
     }
 
     let saved = 0
     for (const email of emails) {
-      const parsed = parseRedespachoEmail(email)
+      const parsed = this.#parseEmail(email)
       if (!parsed) continue
       console.log(`[DEBUG] Parseado OK: P${parsed.periodo} fecha=${parsed.fechaISO} | validDates=${validDates}`)
       if (!validDates.includes(parsed.fechaISO)) {
@@ -272,7 +286,7 @@ export class EmailDispatchService {
       }
     }
 
-    if (saved > 0) console.log(`[EmailDispatch] ${saved} registros guardados desde correos`)
+    if (saved > 0) console.log(`[EmailDispatch:${this.#unitIds}] ${saved} registros guardados desde correos`)
 
     // 2. Fallback: at minute >= 55, fill missing next-period with XM redespacho
     if (minute >= 55) {
@@ -291,13 +305,13 @@ export class EmailDispatchService {
 
     let xmData
     try {
-      xmData = await fetchXmRedespacho(targetDate)
+      xmData = await fetchXmRedespacho(targetDate, this.#xmCodeMap)
     } catch (e) {
-      console.error('[EmailDispatch] Error fetch XM fallback:', e.message)
+      console.error(`[EmailDispatch:${this.#unitIds}] Error fetch XM fallback:`, e.message)
       return
     }
 
-    for (const unitId of ['GEC3', 'GEC32']) {
+    for (const unitId of this.#unitIds) {
       try {
         const exists = await existsDespachoFinal(unitId, targetDate, targetPeriodo)
         if (exists) continue

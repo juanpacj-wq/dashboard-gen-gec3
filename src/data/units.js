@@ -24,8 +24,3 @@ export function genUnitData(unit, seed) {
 export const ALL_DATA = {};
 UNITS.forEach((u, i) => { ALL_DATA[u.id] = genUnitData(u, 1000 + i * 777); });
 
-export function calcStats(vals) {
-  const m = vals.reduce((a, b) => a + b, 0) / vals.length;
-  const s = Math.sqrt(vals.reduce((a, b) => a + (b - m) ** 2, 0) / vals.length);
-  return { mean: +(m.toFixed(2)), ucl: 5, lcl: -5, uwl: +((m + 2 * s).toFixed(2)), lwl: +((m - 2 * s).toFixed(2)), std: +(s.toFixed(2)) };
-}

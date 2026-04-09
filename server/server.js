@@ -42,7 +42,22 @@ function colombiaWallClockDate(date = new Date()) {
 }
 
 // ── Services ──────────────────────────────────────────────────────────────────
-const emailDispatch = new EmailDispatchService()
+const emailDispatchGEC = new EmailDispatchService({
+  mailbox: process.env.GRAPH_MAILBOX,
+  unitsMap: { 'GECELCA 32': 'GEC32', 'GECELCA 3': 'GEC3' },
+  xmCodeMap: { GEC3: ['GEC3'], GEC32: ['GE32'] },
+  unitIds: ['GEC3', 'GEC32'],
+})
+const emailDispatchTGJ = new EmailDispatchService({
+  mailbox: process.env.GRAPH_MAILBOXTEG,
+  unitsMap: { 'GUAJIRA 2': 'TGJ2', 'GUAJIRA 1': 'TGJ1' },
+  xmCodeMap: { TGJ1: ['TGJ1'], TGJ2: ['TGJ2'] },
+  unitIds: ['TGJ1', 'TGJ2'],
+})
+
+function getMergedDespachoFinal() {
+  return { ...emailDispatchGEC.getState(), ...emailDispatchTGJ.getState() }
+}
 const redespScraper = new RedespachoscraperService()
 const despScraper = new DespachoscraperService()
 
@@ -51,7 +66,7 @@ const accumulator = new EnergyAccumulator({
   onPeriodComplete: async (unitId, date, hour, mwh, closingProjection) => {
     const periodo = hour + 1
     const redespacho = redespScraper.getState()?.[unitId]?.[hour] ?? null
-    const dfEntry = emailDispatch.getState()?.[unitId]?.[periodo]
+    const dfEntry = getMergedDespachoFinal()?.[unitId]?.[periodo]
     const despFinalEmail = dfEntry?.valor_mw ?? null
     const result = computeClosed({ generacionMwh: mwh, despFinalEmail, redespachoMw: redespacho })
     try {
@@ -128,7 +143,7 @@ const httpServer = createServer(async (req, res) => {
   // REST endpoint: despacho final for today
   if (req.url === '/api/despacho-final/today' && req.method === 'GET') {
     try {
-      const data = emailDispatch.getState()
+      const data = getMergedDespachoFinal()
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(data))
     } catch (err) {
@@ -252,21 +267,16 @@ function broadcast(payload) {
   // Feed units to the accumulator
   accumulator.update(payload.units)
 
-  // Enrich payload with accumulation data
-  const { accumulated, completedPeriods, minuteAvgs } = accumulator.getState()
-  payload.accumulated = accumulated
-  payload.completedPeriods = completedPeriods
-  payload.minuteAvgs = minuteAvgs
-  payload.despachoFinal = emailDispatch.getState()
-  payload.proyeccionPeriodos = closingProjections
-
   // ── Compute live projection / deviation per unit (VB6 logic) ──
+  // Must run BEFORE getState() so feedDeviation populates the minute buckets
   const now = new Date()
   const { hour: currentHour, period: currentPeriod, dateStr: todayStr } = colombiaNow(now)
+  const colMinute = new Date(now.getTime() + now.getTimezoneOffset() * 60_000 - 5 * 3_600_000).getMinutes()
   const redespState = redespScraper.getState() ?? {}
+  const { accumulated: accSnap } = accumulator.getState()
   const projection = {}
   for (const unit of payload.units) {
-    const acumulado = accumulated[unit.id] ?? 0
+    const acumulado = accSnap[unit.id] ?? 0
     const currentMw = unit.valueMW ?? 0
     const redespacho = redespState?.[unit.id]?.[currentHour] ?? null
     const live = computeLive({ acumuladoMwh: acumulado, currentMw, redespachoMw: redespacho, now })
@@ -280,6 +290,9 @@ function broadcast(payload) {
       desviacion_pct: live.deviation,
       fraction: live.fraction,
     }
+
+    // Feed deviation minute bucket (same deviation formula as Table.jsx current period)
+    accumulator.feedDeviation(unit.id, currentHour, colMinute, live.deviation)
 
     // Feed the 3-min aggregation buffer for audit history
     ;(proyBuffer[unit.id] ||= []).push({
@@ -295,6 +308,15 @@ function broadcast(payload) {
   }
   payload.projection = projection
   lastProjection = projection
+
+  // Enrich payload with accumulation data (after feedDeviation so minuteDeviations is populated)
+  const { accumulated, completedPeriods, minuteAvgs, minuteDeviations } = accumulator.getState()
+  payload.accumulated = accumulated
+  payload.completedPeriods = completedPeriods
+  payload.minuteAvgs = minuteAvgs
+  payload.minuteDeviations = minuteDeviations
+  payload.despachoFinal = getMergedDespachoFinal()
+  payload.proyeccionPeriodos = closingProjections
 
   lastPayload = payload
   const msg = JSON.stringify(payload)
@@ -382,7 +404,8 @@ async function start() {
     await initDB()
     await accumulator.init()
     console.log('[DB] Conexión OK')
-    await emailDispatch.init()
+    await emailDispatchGEC.init()
+    await emailDispatchTGJ.init()
     // Preload closing projections from DB so broadcasts include today's history after restart
     try {
       const rows = await getTodayProyeccionPeriodos()
@@ -404,7 +427,8 @@ async function start() {
     console.log('[DB] Continuando sin persistencia — datos solo en memoria')
   }
 
-  emailDispatch.start()
+  emailDispatchGEC.start()
+  emailDispatchTGJ.start()
 
   await redespScraper.init(dbOk)
   redespScraper.start()
@@ -428,7 +452,8 @@ process.on('SIGINT', async () => {
   console.log('\n[Server] Apagando…')
   clearInterval(projectionSaveInterval)
   clearInterval(proyHistFlushInterval)
-  await emailDispatch.stop()
+  await emailDispatchGEC.stop()
+  await emailDispatchTGJ.stop()
   redespScraper.stop()
   despScraper.stop()
   await accumulator.stop()

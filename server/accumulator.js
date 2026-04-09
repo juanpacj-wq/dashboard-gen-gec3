@@ -17,6 +17,7 @@ export class EnergyAccumulator {
   #state = {}       // { unitId: { mwh, lastMW, lastTime, hour, date } }
   #completed = {}   // { unitId: { [hour]: mwhValue } }  — keyed by hour (0-23)
   #minuteBuckets = {} // { unitId: { hour, buckets: [{ sum, count } × 60] } }
+  #minuteDevBuckets = {} // { unitId: { hour, buckets: [{ sum, count } × 60] } }
   #saveInterval = null
   #onPeriodComplete = null
 
@@ -90,6 +91,19 @@ export class EnergyAccumulator {
     }
   }
 
+  /** Feed a deviation sample for the given unit/minute (called from server.js after computing live deviation) */
+  feedDeviation(unitId, hour, minute, deviation) {
+    let mb = this.#minuteDevBuckets[unitId]
+    if (!mb || mb.hour !== hour) {
+      mb = { hour, buckets: Array.from({ length: 60 }, () => ({ sum: 0, count: 0 })) }
+      this.#minuteDevBuckets[unitId] = mb
+    }
+    if (deviation != null) {
+      mb.buckets[minute].sum += deviation
+      mb.buckets[minute].count += 1
+    }
+  }
+
   /** Get state to broadcast to clients */
   getState() {
     const accumulated = {}
@@ -102,7 +116,12 @@ export class EnergyAccumulator {
       minuteAvgs[id] = mb.buckets.map(b => b.count > 0 ? Math.round((b.sum / b.count) * 10) / 10 : null)
     }
 
-    return { accumulated, completedPeriods: this.#completed, minuteAvgs }
+    const minuteDeviations = {}
+    for (const [id, mb] of Object.entries(this.#minuteDevBuckets)) {
+      minuteDeviations[id] = mb.buckets.map(b => b.count > 0 ? Math.round((b.sum / b.count) * 100) / 100 : null)
+    }
+
+    return { accumulated, completedPeriods: this.#completed, minuteAvgs, minuteDeviations }
   }
 
   // hour is 0-23, stored in DB as 0-23 (maps to period hour+1 on the client)
