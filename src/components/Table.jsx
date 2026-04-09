@@ -232,14 +232,14 @@ function HorizontalTable({ data, unit, currentIdx }) {
                 } else if(rd.key==="proyGeneracion"){
                   if(val != null){
                     color = isCurrent ? C.cyan : isFuture ? C.textDark : `${C.cyan}aa`;
-                    content = <>{Math.round(val)}{isCurrent && <span style={{fontSize:9,fontWeight:500,color:`${C.cyan}90`,marginLeft:2}}>MWh</span>}</>;
+                    content = <>{val.toFixed(2)}{isCurrent && <span style={{fontSize:9,fontWeight:500,color:`${C.cyan}90`,marginLeft:2}}>MWh</span>}</>;
                   } else {
                     color = C.textMuted;
                     content = "—";
                   }
                 } else if(rd.key==="final"){
                   color = isFuture?C.textDark:unit.color;
-                  content = <>{Math.round(val)}{isCurrent && <span style={{fontSize:9,fontWeight:500,color:`${unit.color}90`,marginLeft:2}}>MW</span>}</>;
+                  content = <>{val.toFixed(2)}{isCurrent && <span style={{fontSize:9,fontWeight:500,color:`${unit.color}90`,marginLeft:2}}>MW</span>}</>;
                 } else if(rd.key==="dev"){
                   if(val !== null){
                     const dA = Math.abs(val);
@@ -379,14 +379,14 @@ function VerticalTable({ data, unit, currentIdx }) {
                 </td>
                 {/* Generacion */}
                 <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?28:20,fontWeight:900,color:unit.color,letterSpacing:isCurrent?-0.5:0,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",lineHeight:1}}>
-                  {Math.round(row.final)}
+                  {row.final.toFixed(2)}
                   {isCurrent && <span style={{fontSize:11,fontWeight:500,color:`${unit.color}90`,marginLeft:3}}>MW</span>}
                 </td>
                 {/* P. Generacion (proyección VB6) */}
                 <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?26:18,fontWeight:isCurrent?800:600,color:row.proyGeneracion!=null?(isCurrent?C.cyan:`${C.cyan}aa`):C.textMuted,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",lineHeight:1}}>
                   {row.proyGeneracion != null ? (
                     <span title="Proyección VB6: acumulado + potencia * (tiempo restante / 3600)">
-                      {Math.round(row.proyGeneracion)}
+                      {row.proyGeneracion.toFixed(2)}
                       {isCurrent && <span style={{fontSize:11,fontWeight:500,color:`${C.cyan}90`,marginLeft:3}}>MWh</span>}
                     </span>
                   ) : (

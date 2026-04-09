@@ -1,4 +1,5 @@
 import { savePeriod, saveAccumState, loadAccumState } from './db.js'
+import { computeLive } from './projectionCalculator.js'
 
 // Colombia is UTC-5 (no daylight saving)
 function colombiaTime(date = new Date()) {
@@ -57,8 +58,16 @@ export class EnergyAccumulator {
       const prev = this.#state[unit.id]
 
       if (prev && (prev.hour !== currentHour || prev.date !== todayStr)) {
-        // Hour changed → save completed period
-        this.#completePeriod(unit.id, prev.date, prev.hour, prev.mwh)
+        // Compute closing projection SYNCHRONOUSLY before reset (VB6 parity:
+        // at the last reading of the old period, projection ≈ acumulado)
+        const closingLive = computeLive({
+          acumuladoMwh: prev.mwh,
+          currentMw: prev.lastMW,
+          redespachoMw: null,
+          now: prev.lastTime,
+        })
+        // Hour changed → save completed period with its closing projection
+        this.#completePeriod(unit.id, prev.date, prev.hour, prev.mwh, closingLive.projection)
         this.#state[unit.id] = { mwh: 0, lastMW: mw, lastTime: now, hour: currentHour, date: todayStr }
       } else if (!prev) {
         this.#state[unit.id] = { mwh: 0, lastMW: mw, lastTime: now, hour: currentHour, date: todayStr }
@@ -97,20 +106,20 @@ export class EnergyAccumulator {
   }
 
   // hour is 0-23, stored in DB as 0-23 (maps to period hour+1 on the client)
-  async #completePeriod(unitId, date, hour, mwh) {
+  async #completePeriod(unitId, date, hour, mwh, closingProjection) {
     if (!this.#completed[unitId]) this.#completed[unitId] = {}
     this.#completed[unitId][hour] = Math.round(mwh * 10) / 10
 
     try {
       await savePeriod(unitId, date, hour, mwh)
-      console.log(`[Accumulator] Periodo guardado: ${unitId} hora=${hour} periodo=${hour + 1} energia=${mwh.toFixed(3)} MWh`)
+      console.log(`[Accumulator] Periodo guardado: ${unitId} hora=${hour} periodo=${hour + 1} energia=${mwh.toFixed(3)} MWh proyCierre=${closingProjection?.toFixed(3)}`)
     } catch (err) {
       console.error(`[Accumulator] Error guardando periodo:`, err.message)
     }
 
     if (this.#onPeriodComplete) {
       try {
-        await this.#onPeriodComplete(unitId, date, hour, mwh)
+        await this.#onPeriodComplete(unitId, date, hour, mwh, closingProjection)
       } catch (err) {
         console.error(`[Accumulator] Error en onPeriodComplete:`, err.message)
       }

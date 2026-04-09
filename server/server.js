@@ -48,7 +48,7 @@ const despScraper = new DespachoscraperService()
 
 // Accumulator with closing-period callback that persists deviation history
 const accumulator = new EnergyAccumulator({
-  onPeriodComplete: async (unitId, date, hour, mwh) => {
+  onPeriodComplete: async (unitId, date, hour, mwh, closingProjection) => {
     const periodo = hour + 1
     const redespacho = redespScraper.getState()?.[unitId]?.[hour] ?? null
     const dfEntry = emailDispatch.getState()?.[unitId]?.[periodo]
@@ -62,10 +62,13 @@ const accumulator = new EnergyAccumulator({
     }
 
     // Persist closing projection snapshot for the period
+    // closingProjection was computed synchronously in accumulator.update()
+    // BEFORE the broadcast overwrites lastProjection with the new period's data.
     try {
-      const lastSnap = lastProjection[unitId]
-      const proyCierre = lastSnap?.proyeccion_mwh ?? mwh
-      const desv = lastSnap?.desviacion_pct ?? result.desviacionPct
+      const proyCierre = closingProjection ?? mwh
+      const desv = redespacho != null && redespacho > 0
+        ? ((Math.max(0, proyCierre) - redespacho) / redespacho) * 100
+        : result.desviacionPct
       await saveProyeccionPeriodo(unitId, date, periodo, {
         proyeccionCierreMwh: proyCierre,
         generacionRealMwh: mwh,
