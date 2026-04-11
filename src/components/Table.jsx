@@ -232,14 +232,14 @@ function HorizontalTable({ data, unit, currentIdx }) {
                 } else if(rd.key==="proyGeneracion"){
                   if(val != null){
                     color = isCurrent ? C.cyan : isFuture ? C.textDark : `${C.cyan}aa`;
-                    content = <>{val.toFixed(2)}{isCurrent && <span style={{fontSize:9,fontWeight:500,color:`${C.cyan}90`,marginLeft:2}}>MWh</span>}</>;
+                    content = <>{val.toFixed(1)}{isCurrent && <span style={{fontSize:9,fontWeight:500,color:`${C.cyan}90`,marginLeft:2}}></span>}</>;
                   } else {
                     color = C.textMuted;
                     content = "—";
                   }
                 } else if(rd.key==="final"){
                   color = isFuture?C.textDark:unit.color;
-                  content = <>{val.toFixed(2)}{isCurrent && <span style={{fontSize:9,fontWeight:500,color:`${unit.color}90`,marginLeft:2}}>MW</span>}</>;
+                  content = <>{val.toFixed(1)}{isCurrent && <span style={{fontSize:9,fontWeight:500,color:`${unit.color}90`,marginLeft:2}}></span>}</>;
                 } else if(rd.key==="dev"){
                   if(val !== null){
                     const dA = Math.abs(val);
@@ -250,7 +250,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
                       border:`1px solid ${dC}${isCurrent?"55":"28"}`,
                       borderRadius:isCurrent?5:2,
                       padding:isCurrent?"2px 6px":"0px 2px",
-                      fontSize:isCurrent?13:11,
+                      fontSize:isCurrent?16:15,
                       fontWeight:700,
                       color:dC,
                       whiteSpace:"nowrap",
@@ -298,7 +298,7 @@ function VerticalTable({ data, unit, currentIdx }) {
     "Despacho (MW)",
     <><span>Proyeccion</span><br/><span>Despacho (MW)</span></>,
     <><span>Despacho</span><br/><span>Final (MW)</span></>,
-    "Generacion (MW)",
+    "Generacion (MWH)",
     <><span>Proyeccion</span><br/><span>Generacion (MWh)</span></>,
     "Desviacion %",
   ];
@@ -388,7 +388,7 @@ function VerticalTable({ data, unit, currentIdx }) {
                 {/* Generacion */}
                 <td style={{padding:isCurrent?"10px 8px":"3px 6px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?34:26,fontWeight:900,color:unit.color,letterSpacing:isCurrent?-0.5:0,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",lineHeight:1}}>
                   {row.final.toFixed(2)}
-                  {isCurrent && <span style={{fontSize:11,fontWeight:500,color:`${unit.color}90`,marginLeft:3}}>MW</span>}
+                  {isCurrent && <span style={{fontSize:11,fontWeight:500,color:`${unit.color}90`,marginLeft:3}}>MWH</span>}
                 </td>
                 {/* P. Generacion (proyección VB6) */}
                 <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?26:18,fontWeight:isCurrent?800:600,color:row.proyGeneracion!=null?(isCurrent?C.cyan:`${C.cyan}aa`):C.textMuted,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",lineHeight:1}}>
@@ -404,7 +404,7 @@ function VerticalTable({ data, unit, currentIdx }) {
                 {/* Desviacion */}
                 <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",borderTop:cBt,borderBottom:cBb,borderRight:isCurrent?`2px solid ${unit.color}70`:"none",verticalAlign:"middle"}}>
                   {dev !== null ? (
-                    <span style={{display:"inline-block",background:`${dC}${isCurrent?"22":"12"}`,border:`1px solid ${dC}${isCurrent?"55":"28"}`,borderRadius:6,padding:isCurrent?"5px 12px":"2px 7px",fontFamily:MONO,fontSize:isCurrent?18:12,fontWeight:700,color:dC}}>{dev>=0?"+":""}{dev.toFixed(2)}%</span>
+                    <span style={{display:"inline-block",background:`${dC}${isCurrent?"22":"12"}`,border:`1px solid ${dC}${isCurrent?"55":"28"}`,borderRadius:6,padding:isCurrent?"5px 12px":"2px 7px",fontFamily:MONO,fontSize:isCurrent?22:16,fontWeight:700,color:dC}}>{dev>=0?"+":""}{dev.toFixed(2)}%</span>
                   ) : (
                     <span style={{fontFamily:MONO,fontSize:12,color:C.textMuted}}>—</span>
                   )}
