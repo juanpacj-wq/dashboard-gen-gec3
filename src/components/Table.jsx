@@ -169,7 +169,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
       <table style={{borderCollapse:"separate",borderSpacing:0,fontFamily:FONT,minWidth:"100%",height:"100%"}}>
         <thead>
           <tr style={{height:`${100/numRows}%`}}>
-            <th style={{padding:"2px 4px",textAlign:"left",fontSize:19,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.3,borderBottom:`1px solid ${C.border}`,fontFamily:MONO,position:"sticky",left:0,background:C.card,zIndex:3}}>Periodo</th>
+            <th style={{padding:"2px 4px",textAlign:"left",fontSize:14,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.3,borderBottom:`1px solid ${C.border}`,fontFamily:MONO,position:"sticky",left:0,background:C.card,zIndex:3}}>Periodo</th>
             {data.map((row,i)=>{
               const isCurrent = i===currentIdx;
               const isFuture = i > currentIdx;
@@ -180,7 +180,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
                   style={{
                     padding: isCurrent ? "6px 4px" : "4px 2px",
                     textAlign:"center",
-                    fontSize: isCurrent ? 28 : 22,
+                    fontSize: isCurrent ? 24 : 18,
                     fontWeight: isCurrent ? 900 : 700,
                     color:isCurrent?unit.color:isFuture?C.textDark:C.textSec,
                     fontFamily:MONO,borderBottom:`1px solid ${C.border}`,
@@ -192,7 +192,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
                     transition:"background 0.15s",
                     verticalAlign:"middle"
                   }}>
-                  {isCurrent && <div style={{fontSize:10,background:`${unit.color}30`,color:unit.color,padding:"1px 4px",borderRadius:20,letterSpacing:1,textTransform:"uppercase",fontWeight:800,lineHeight:1.4,marginBottom:1}}>AHORA</div>}
+                  {isCurrent && <div style={{fontSize:8,background:`${unit.color}30`,color:unit.color,padding:"1px 4px",borderRadius:20,letterSpacing:1,textTransform:"uppercase",fontWeight:800,lineHeight:1.4,marginBottom:1}}>AHORA</div>}
                   {row.periodo}
                 </th>
               );
@@ -202,7 +202,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
         <tbody>
           {rowDefs.slice(1).map((rd)=>(
             <tr key={rd.key} style={{height:`${100/numRows}%`}}>
-              <td style={{padding:"2px 4px",fontSize:20,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.2,fontFamily:MONO,borderBottom:`1px solid ${C.border}`,position:"sticky",left:0,background:C.card,zIndex:2,lineHeight:1.15}}>{rd.label}</td>
+              <td style={{padding:"2px 4px",fontSize:14,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.2,fontFamily:MONO,borderBottom:`1px solid ${C.border}`,position:"sticky",left:0,background:C.card,zIndex:2,lineHeight:1.15}}>{rd.label}</td>
               {data.map((row,i)=>{
                 const isCurrent = i===currentIdx;
                 const isFuture = i > currentIdx;
@@ -232,14 +232,14 @@ function HorizontalTable({ data, unit, currentIdx }) {
                 } else if(rd.key==="proyGeneracion"){
                   if(val != null){
                     color = isCurrent ? C.cyan : isFuture ? C.textDark : `${C.cyan}aa`;
-                    content = <>{val.toFixed(1)}{isCurrent && <span style={{fontSize:16,fontWeight:500,color:`${C.cyan}90`,marginLeft:2}}></span>}</>;
+                    content = <>{val.toFixed(1)}{isCurrent && <span style={{fontSize:9,fontWeight:500,color:`${C.cyan}90`,marginLeft:2}}></span>}</>;
                   } else {
                     color = C.textMuted;
                     content = "—";
                   }
                 } else if(rd.key==="final"){
                   color = isFuture?C.textDark:unit.color;
-                  content = <>{val.toFixed(1)}{isCurrent && <span style={{fontSize:11,fontWeight:500,color:`${unit.color}90`,marginLeft:2}}></span>}</>;
+                  content = <>{val.toFixed(1)}{isCurrent && <span style={{fontSize:9,fontWeight:500,color:`${unit.color}90`,marginLeft:2}}></span>}</>;
                 } else if(rd.key==="dev"){
                   if(val !== null){
                     const dA = Math.abs(val);
@@ -250,7 +250,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
                       border:`1px solid ${dC}${isCurrent?"55":"28"}`,
                       borderRadius:isCurrent?5:2,
                       padding:isCurrent?"2px 6px":"0px 2px",
-                      fontSize:isCurrent?25:20,
+                      fontSize:isCurrent?20:16,
                       fontWeight:700,
                       color:dC,
                       whiteSpace:"nowrap",
@@ -267,7 +267,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
                     style={{
                       padding: isCurrent ? "4px 4px" : "1px 2px",
                       textAlign:"center",fontFamily:MONO,
-                      fontSize: isCurrent ? 21 : 15,
+                      fontSize: isCurrent ? 24 : 14,
                       fontWeight: rd.key==="final" ? (isCurrent ? 900 : 800) : (isCurrent ? 700 : 600),
                       color,
                       borderBottom: isCurrent && isLastRow ? `3px solid ${unit.color}` : `1px solid ${C.border}`,
@@ -321,7 +321,7 @@ function VerticalTable({ data, unit, currentIdx }) {
       <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontFamily:FONT}}>
         <thead>
           <tr>{headers.map((h,i)=>(
-            <th key={i} style={{padding:"5px 6px",textAlign:i===0?"center":"right",fontSize:13,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${C.border}`,fontFamily:MONO,position:"sticky",top:0,background:C.card,zIndex:1,lineHeight:1.3}}>{h}</th>
+            <th key={i} style={{padding:"5px 6px",textAlign:i===0?"center":"right",fontSize:11,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${C.border}`,fontFamily:MONO,position:"sticky",top:0,background:C.card,zIndex:1,lineHeight:1.3}}>{h}</th>
           ))}</tr>
         </thead>
         <tbody>
@@ -352,50 +352,50 @@ function VerticalTable({ data, unit, currentIdx }) {
                 }}>
                   {isCurrent ? (
                     <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                      <span style={{fontSize:11,background:`${unit.color}30`,color:unit.color,padding:"1px 6px",borderRadius:20,letterSpacing:1.5,textTransform:"uppercase",fontWeight:800,lineHeight:1.4}}>AHORA</span>
-                      <span style={{fontSize:32,fontWeight:900,color:unit.color,lineHeight:1}}>{row.periodo}</span>
+                      <span style={{fontSize:9,background:`${unit.color}30`,color:unit.color,padding:"1px 6px",borderRadius:20,letterSpacing:1.5,textTransform:"uppercase",fontWeight:800,lineHeight:1.4}}>AHORA</span>
+                      <span style={{fontSize:28,fontWeight:900,color:unit.color,lineHeight:1}}>{row.periodo}</span>
                     </div>
                   ) : (
-                    <span style={{fontSize:23,fontWeight:700,color:C.textSec}}>{row.periodo}</span>
+                    <span style={{fontSize:20,fontWeight:700,color:C.textSec}}>{row.periodo}</span>
                   )}
                 </td>
                 {/* Despacho */}
-                <td style={{padding:isCurrent?"10px 8px":"3px 6px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?38:30,color:row.hasRedespacho?(isCurrent?`${C.textMuted}aa`:C.textDark):row.despSimulated?(isCurrent?`${C.amber}cc`:C.amber):(isCurrent?C.text:C.textSec),fontWeight:isCurrent?700:600,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",textDecoration:row.hasRedespacho?"line-through":"none",opacity:row.hasRedespacho?0.5:1,lineHeight:1}}>
+                <td style={{padding:isCurrent?"10px 8px":"3px 6px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?34:26,color:row.hasRedespacho?(isCurrent?`${C.textMuted}aa`:C.textDark):row.despSimulated?(isCurrent?`${C.amber}cc`:C.amber):(isCurrent?C.text:C.textSec),fontWeight:isCurrent?700:600,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",textDecoration:row.hasRedespacho?"line-through":"none",opacity:row.hasRedespacho?0.5:1,lineHeight:1}}>
                   <span title={row.hasRedespacho?"Valor reemplazado por redespacho":row.despSimulated?"Valor aleatorio, no extraido correctamente de XM":undefined} style={{cursor:(row.hasRedespacho||row.despSimulated)?"help":undefined,borderBottom:row.despSimulated&&!row.hasRedespacho?`1px dashed ${C.amber}60`:undefined}}>
                     {Math.round(row.despacho)}
-                    {row.despSimulated && !row.hasRedespacho && <span style={{fontSize:14,marginLeft:3,color:C.amber}}>⚠</span>}
+                    {row.despSimulated && !row.hasRedespacho && <span style={{fontSize:12,marginLeft:3,color:C.amber}}>⚠</span>}
                   </span>
                 </td>
                 {/* Redespacho */}
-                <td style={{padding:isCurrent?"10px 8px":"3px 6px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?38:30,color:row.hasRedespacho?(isCurrent?C.cyan:C.cyan):row.redespSimulated?(isCurrent?`${C.amber}cc`:C.amber):(isCurrent?C.text:C.textSec),fontWeight:row.hasRedespacho?(isCurrent?800:700):(isCurrent?700:600),borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",background:row.hasRedespacho?`${C.cyan}08`:"transparent",lineHeight:1}}>
+                <td style={{padding:isCurrent?"10px 8px":"3px 6px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?34:26,color:row.hasRedespacho?(isCurrent?C.cyan:C.cyan):row.redespSimulated?(isCurrent?`${C.amber}cc`:C.amber):(isCurrent?C.text:C.textSec),fontWeight:row.hasRedespacho?(isCurrent?800:700):(isCurrent?700:600),borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",background:row.hasRedespacho?`${C.cyan}08`:"transparent",lineHeight:1}}>
                   <span title={row.hasRedespacho?"Redespacho activo":row.redespSimulated?"Valor aleatorio, no extraido correctamente de XM":undefined} style={{cursor:(row.hasRedespacho||row.redespSimulated)?"help":undefined,borderBottom:row.redespSimulated&&!row.hasRedespacho?`1px dashed ${C.amber}60`:undefined}}>
                     {Math.round(row.redespacho)}
-                    {row.hasRedespacho && <span style={{fontSize:11,marginLeft:3,color:C.cyan}}>▸</span>}
-                    {row.redespSimulated && !row.hasRedespacho && <span style={{fontSize:11,marginLeft:3,color:C.amber}}>⚠</span>}
+                    {row.hasRedespacho && <span style={{fontSize:9,marginLeft:3,color:C.cyan}}>▸</span>}
+                    {row.redespSimulated && !row.hasRedespacho && <span style={{fontSize:9,marginLeft:3,color:C.amber}}>⚠</span>}
                   </span>
                 </td>
                 {/* D. Final */}
-                <td style={{padding:isCurrent?"10px 8px":"3px 6px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?38:30,fontWeight:isCurrent?700:600,color:row.despFinal!=null?(row.despFinalSource==='email'?C.cyan:isCurrent?C.text:C.textSec):C.textMuted,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",background:row.despFinalSource==='email'?`${C.cyan}08`:"transparent",lineHeight:1}}>
+                <td style={{padding:isCurrent?"10px 8px":"3px 6px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?34:26,fontWeight:isCurrent?700:600,color:row.despFinal!=null?(row.despFinalSource==='email'?C.cyan:isCurrent?C.text:C.textSec):C.textMuted,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",background:row.despFinalSource==='email'?`${C.cyan}08`:"transparent",lineHeight:1}}>
                   {row.despFinal != null ? (
                     <span>
                       {Math.round(row.despFinal)}
-                      {row.despFinalSource === 'email' && <span style={{fontSize:11,marginLeft:3,color:C.cyan}}>&#9993;</span>}
+                      {row.despFinalSource === 'email' && <span style={{fontSize:9,marginLeft:3,color:C.cyan}}>&#9993;</span>}
                     </span>
                   ) : (
                     <span style={{color:C.textMuted}}>—</span>
                   )}
                 </td>
                 {/* Generacion */}
-                <td style={{padding:isCurrent?"10px 8px":"3px 6px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?38:30,fontWeight:900,color:unit.color,letterSpacing:isCurrent?-0.5:0,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",lineHeight:1}}>
+                <td style={{padding:isCurrent?"10px 8px":"3px 6px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?34:26,fontWeight:900,color:unit.color,letterSpacing:isCurrent?-0.5:0,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",lineHeight:1}}>
                   {row.final.toFixed(2)}
-                  {isCurrent && <span style={{fontSize:13,fontWeight:500,color:`${unit.color}90`,marginLeft:3}}>MWH</span>}
+                  {isCurrent && <span style={{fontSize:11,fontWeight:500,color:`${unit.color}90`,marginLeft:3}}>MWH</span>}
                 </td>
                 {/* P. Generacion (proyección VB6) */}
-                <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?30:22,fontWeight:isCurrent?800:600,color:row.proyGeneracion!=null?(isCurrent?C.cyan:`${C.cyan}aa`):C.textMuted,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",lineHeight:1}}>
+                <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?26:18,fontWeight:isCurrent?800:600,color:row.proyGeneracion!=null?(isCurrent?C.cyan:`${C.cyan}aa`):C.textMuted,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",lineHeight:1}}>
                   {row.proyGeneracion != null ? (
                     <span title="Proyección VB6: acumulado + potencia * (tiempo restante / 3600)">
                       {row.proyGeneracion.toFixed(2)}
-                      {isCurrent && <span style={{fontSize:13,fontWeight:500,color:`${C.cyan}90`,marginLeft:3}}>MWh</span>}
+                      {isCurrent && <span style={{fontSize:11,fontWeight:500,color:`${C.cyan}90`,marginLeft:3}}>MWh</span>}
                     </span>
                   ) : (
                     <span style={{color:C.textMuted}}>—</span>
@@ -404,9 +404,9 @@ function VerticalTable({ data, unit, currentIdx }) {
                 {/* Desviacion */}
                 <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",borderTop:cBt,borderBottom:cBb,borderRight:isCurrent?`2px solid ${unit.color}70`:"none",verticalAlign:"middle"}}>
                   {dev !== null ? (
-                    <span style={{display:"inline-block",background:`${dC}${isCurrent?"22":"12"}`,border:`1px solid ${dC}${isCurrent?"55":"28"}`,borderRadius:6,padding:isCurrent?"5px 12px":"2px 7px",fontFamily:MONO,fontSize:isCurrent?26:19,fontWeight:700,color:dC}}>{dev>=0?"+":""}{dev.toFixed(2)}%</span>
+                    <span style={{display:"inline-block",background:`${dC}${isCurrent?"22":"12"}`,border:`1px solid ${dC}${isCurrent?"55":"28"}`,borderRadius:6,padding:isCurrent?"5px 12px":"2px 7px",fontFamily:MONO,fontSize:isCurrent?22:16,fontWeight:700,color:dC}}>{dev>=0?"+":""}{dev.toFixed(2)}%</span>
                   ) : (
-                    <span style={{fontFamily:MONO,fontSize:14,color:C.textMuted}}>—</span>
+                    <span style={{fontFamily:MONO,fontSize:12,color:C.textMuted}}>—</span>
                   )}
                 </td>
               </tr>
