@@ -250,7 +250,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
                       border:`1px solid ${dC}${isCurrent?"55":"28"}`,
                       borderRadius:isCurrent?5:2,
                       padding:isCurrent?"2px 6px":"0px 2px",
-                      fontSize:isCurrent?18:17,
+                      fontSize:isCurrent?25:20,
                       fontWeight:700,
                       color:dC,
                       whiteSpace:"nowrap",
