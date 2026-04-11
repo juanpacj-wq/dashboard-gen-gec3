@@ -169,7 +169,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
       <table style={{borderCollapse:"separate",borderSpacing:0,fontFamily:FONT,minWidth:"100%",height:"100%"}}>
         <thead>
           <tr style={{height:`${100/numRows}%`}}>
-            <th style={{padding:"2px 4px",textAlign:"left",fontSize:11,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.3,borderBottom:`1px solid ${C.border}`,fontFamily:MONO,position:"sticky",left:0,background:C.card,zIndex:3}}>Periodo</th>
+            <th style={{padding:"2px 4px",textAlign:"left",fontSize:19,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.3,borderBottom:`1px solid ${C.border}`,fontFamily:MONO,position:"sticky",left:0,background:C.card,zIndex:3}}>Periodo</th>
             {data.map((row,i)=>{
               const isCurrent = i===currentIdx;
               const isFuture = i > currentIdx;
@@ -180,7 +180,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
                   style={{
                     padding: isCurrent ? "6px 4px" : "4px 2px",
                     textAlign:"center",
-                    fontSize: isCurrent ? 21 : 16,
+                    fontSize: isCurrent ? 28 : 22,
                     fontWeight: isCurrent ? 900 : 700,
                     color:isCurrent?unit.color:isFuture?C.textDark:C.textSec,
                     fontFamily:MONO,borderBottom:`1px solid ${C.border}`,
@@ -202,7 +202,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
         <tbody>
           {rowDefs.slice(1).map((rd)=>(
             <tr key={rd.key} style={{height:`${100/numRows}%`}}>
-              <td style={{padding:"2px 4px",fontSize:11,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.2,fontFamily:MONO,borderBottom:`1px solid ${C.border}`,position:"sticky",left:0,background:C.card,zIndex:2,lineHeight:1.15}}>{rd.label}</td>
+              <td style={{padding:"2px 4px",fontSize:20,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.2,fontFamily:MONO,borderBottom:`1px solid ${C.border}`,position:"sticky",left:0,background:C.card,zIndex:2,lineHeight:1.15}}>{rd.label}</td>
               {data.map((row,i)=>{
                 const isCurrent = i===currentIdx;
                 const isFuture = i > currentIdx;
@@ -232,7 +232,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
                 } else if(rd.key==="proyGeneracion"){
                   if(val != null){
                     color = isCurrent ? C.cyan : isFuture ? C.textDark : `${C.cyan}aa`;
-                    content = <>{val.toFixed(1)}{isCurrent && <span style={{fontSize:11,fontWeight:500,color:`${C.cyan}90`,marginLeft:2}}></span>}</>;
+                    content = <>{val.toFixed(1)}{isCurrent && <span style={{fontSize:16,fontWeight:500,color:`${C.cyan}90`,marginLeft:2}}></span>}</>;
                   } else {
                     color = C.textMuted;
                     content = "—";
