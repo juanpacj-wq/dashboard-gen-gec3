@@ -175,6 +175,13 @@ const httpServer = createServer(async (req, res) => {
     return
   }
 
+  // REST endpoint: despacho de mañana from dDEC file (next day)
+  if (req.url === '/api/despacho/tomorrow' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(despScraper.getStateTomorrow()))
+    return
+  }
+
   // REST endpoint: live projection state per unit (for first paint after page reload)
   if (req.url === '/api/proyeccion/today' && req.method === 'GET') {
     try {

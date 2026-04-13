@@ -26,12 +26,15 @@ function getColombiaDate() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }))
 }
 
-function buildFilePath() {
-  const now = getColombiaDate()
-  const yyyy = now.getFullYear()
-  const mm   = String(now.getMonth() + 1).padStart(2, '0')
-  const dd   = String(now.getDate()).padStart(2, '0')
+function buildFilePathForDate(date) {
+  const yyyy = date.getFullYear()
+  const mm   = String(date.getMonth() + 1).padStart(2, '0')
+  const dd   = String(date.getDate()).padStart(2, '0')
   return `Energia y Mercado/DESPACHO/TIES/Despachos/${yyyy}-${mm}/dDEC${mm}${dd}_TIES.txt`
+}
+
+function buildFilePath() {
+  return buildFilePathForDate(getColombiaDate())
 }
 
 function formatValue(num) {
@@ -72,6 +75,12 @@ async function downloadFile(ruta) {
   return response.text()
 }
 
+function getTomorrowColombiaDate() {
+  const now = getColombiaDate()
+  now.setDate(now.getDate() + 1)
+  return now
+}
+
 // Returns { found: boolean, Items: [...] }
 async function scrapeDespacho() {
   const ruta = buildFilePath()
@@ -82,6 +91,38 @@ async function scrapeDespacho() {
     content = await downloadFile(ruta)
   } catch (err) {
     console.warn(`[DespScraper] Archivo no disponible (${err.message}), asignando 0 a todas las horas.`)
+    return { found: false, Items: buildEmptyItems() }
+  }
+
+  const items = []
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine.trim()
+    if (!line) continue
+    const parsed = parseLine(line)
+    if (!parsed) continue
+    const code = PLANT_CODE_MAP[parsed.plantName]
+    if (!code) continue
+    const hourValues = { code }
+    for (let i = 0; i < 24; i++) {
+      const key = `Hour${String(i + 1).padStart(2, '0')}`
+      hourValues[key] = i < parsed.values.length ? formatValue(parsed.values[i]) : ''
+    }
+    items.push({ HourlyEntities: [{ Values: hourValues }] })
+  }
+
+  return { found: items.length > 0, Items: items }
+}
+
+async function scrapeTomorrow() {
+  const tomorrow = getTomorrowColombiaDate()
+  const ruta = buildFilePathForDate(tomorrow)
+  console.log(`[DespScraper] Consultando mañana: ${ruta}`)
+
+  let content
+  try {
+    content = await downloadFile(ruta)
+  } catch (err) {
+    console.log(`[DespScraper] Archivo de mañana no disponible aún (${err.message})`)
     return { found: false, Items: buildEmptyItems() }
   }
 
@@ -138,6 +179,9 @@ export class DespachoscraperService {
   #found = false
   #dateLoaded = null // fecha (YYYY-MM-DD) del archivo cargado
   #dbAvailable = false
+  #cacheTomorrow = null
+  #foundTomorrow = false
+  #dateTomorrow = null
 
   async init(dbAvailable = false) {
     this.#dbAvailable = dbAvailable
@@ -159,6 +203,10 @@ export class DespachoscraperService {
 
   getState() {
     return this.#cache
+  }
+
+  getStateTomorrow() {
+    return this.#foundTomorrow ? this.#cacheTomorrow : null
   }
 
   async #refresh() {
@@ -208,5 +256,29 @@ export class DespachoscraperService {
     // 3. Ni scraper ni DB → usar zeros de parseItems
     this.#cache = parseItems(raw.Items)
     console.log(`[DespScraper] Archivo no disponible aún para ${todayStr}, reintentando en ${RETRY_MS / 1000}s...`)
+
+    // ── Intentar archivo de mañana ──
+    await this.#refreshTomorrow()
+  }
+
+  async #refreshTomorrow() {
+    const tomorrow = getTomorrowColombiaDate()
+    const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth()+1).padStart(2,'0')}-${String(tomorrow.getDate()).padStart(2,'0')}`
+
+    // Nuevo día de "mañana" → resetear
+    if (this.#dateTomorrow !== tomorrowStr) {
+      this.#foundTomorrow = false
+      this.#dateTomorrow = tomorrowStr
+      this.#cacheTomorrow = null
+    }
+
+    if (this.#foundTomorrow) return
+
+    const raw = await scrapeTomorrow()
+    if (raw.found) {
+      this.#cacheTomorrow = parseItems(raw.Items)
+      this.#foundTomorrow = true
+      console.log(`[DespScraper] Archivo de mañana encontrado para ${tomorrowStr}`)
+    }
   }
 }
