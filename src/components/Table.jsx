@@ -131,7 +131,7 @@ function TableHeader({ unit, isXmLive, showChart, onToggleChart }) {
 }
 
 /* ─── Modo HORIZONTAL (periodos como columnas) ─── */
-function HorizontalTable({ data, unit, currentIdx }) {
+function HorizontalTable({ data, unit, currentIdx, despachoManana }) {
   const scrollRef = useRef(null);
   const [hov, setHov] = useState(-1);
 
@@ -158,6 +158,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
     { key:"final", label:"Generacion" },
     { key:"proyGeneracion", label:<>Proyeccion<br/>Generacion</> },
     { key:"dev", label:"Desviacion" },
+    { key:"despachoManana", label:<>Despacho<br/>Mañana</> },
   ];
   const numRows = rowDefs.length;
 
@@ -259,6 +260,15 @@ function HorizontalTable({ data, unit, currentIdx }) {
                     content = <span style={{color:C.textMuted}}>—</span>;
                   }
                   color = undefined;
+                } else if(rd.key==="despachoManana"){
+                  const mVal = despachoManana?.[i];
+                  if(mVal != null){
+                    color = C.textSec;
+                    content = Math.round(mVal);
+                  } else {
+                    color = C.textMuted;
+                    content = "-";
+                  }
                 }
 
                 return (
@@ -290,7 +300,7 @@ function HorizontalTable({ data, unit, currentIdx }) {
 }
 
 /* ─── Modo VERTICAL (periodos como filas — actual) ─── */
-function VerticalTable({ data, unit, currentIdx }) {
+function VerticalTable({ data, unit, currentIdx, despachoManana }) {
   const [hov, setHov] = useState(-1);
   const scrollRef = useRef(null);
   const headers = [
@@ -301,6 +311,7 @@ function VerticalTable({ data, unit, currentIdx }) {
     "Generacion (MWH)",
     <><span>Proyeccion</span><br/><span>Generacion (MWh)</span></>,
     "Desviacion %",
+    <><span>Despacho</span><br/><span>Mañana (MW)</span></>,
   ];
 
   useEffect(()=>{
@@ -402,12 +413,16 @@ function VerticalTable({ data, unit, currentIdx }) {
                   )}
                 </td>
                 {/* Desviacion */}
-                <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",borderTop:cBt,borderBottom:cBb,borderRight:isCurrent?`2px solid ${unit.color}70`:"none",verticalAlign:"middle"}}>
+                <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",borderTop:cBt,borderBottom:cBb,verticalAlign:"middle"}}>
                   {dev !== null ? (
                     <span style={{display:"inline-block",background:`${dC}${isCurrent?"22":"12"}`,border:`1px solid ${dC}${isCurrent?"55":"28"}`,borderRadius:6,padding:isCurrent?"5px 12px":"2px 7px",fontFamily:MONO,fontSize:isCurrent?22:16,fontWeight:700,color:dC}}>{dev>=0?"+":""}{dev.toFixed(2)}%</span>
                   ) : (
                     <span style={{fontFamily:MONO,fontSize:12,color:C.textMuted}}>—</span>
                   )}
+                </td>
+                {/* Despacho Mañana */}
+                <td style={{padding:isCurrent?"10px 8px":"3px 6px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?34:26,fontWeight:isCurrent?700:600,color:despachoManana?.[i]!=null?C.textSec:C.textMuted,borderTop:cBt,borderBottom:cBb,borderRight:isCurrent?`2px solid ${unit.color}70`:"none",verticalAlign:"middle",lineHeight:1}}>
+                  {despachoManana?.[i] != null ? Math.round(despachoManana[i]) : <span style={{color:C.textMuted}}>-</span>}
                 </td>
               </tr>
             );
@@ -419,15 +434,18 @@ function VerticalTable({ data, unit, currentIdx }) {
 }
 
 /* ─── Componente principal ─── */
-export function Table({ unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos, horizontal, showChart, onToggleChart }) {
+export function Table({ unitId, xmDispatch, despachoManana, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos, horizontal, showChart, onToggleChart }) {
   const { data, unit, currentIdx, isXmLive } = useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos);
+
+  // despachoManana is { GEC3: [24], GEC32: [24], ... } or null
+  const unitDespachoManana = despachoManana?.[unitId] || null;
 
   return (
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",height:"100%",display:"flex",flexDirection:"column"}}>
       <TableHeader unit={unit} isXmLive={isXmLive} showChart={showChart} onToggleChart={onToggleChart} />
       {horizontal
-        ? <HorizontalTable data={data} unit={unit} currentIdx={currentIdx} />
-        : <VerticalTable data={data} unit={unit} currentIdx={currentIdx} />
+        ? <HorizontalTable data={data} unit={unit} currentIdx={currentIdx} despachoManana={unitDespachoManana} />
+        : <VerticalTable data={data} unit={unit} currentIdx={currentIdx} despachoManana={unitDespachoManana} />
       }
     </div>
   );
