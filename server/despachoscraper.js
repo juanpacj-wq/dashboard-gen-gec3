@@ -213,51 +213,51 @@ export class DespachoscraperService {
     const now = getColombiaDate()
     const todayStr = now.toISOString().slice(0, 10)
 
-    // Ya encontrado para hoy → no volver a consultar
-    if (this.#found && this.#dateLoaded === todayStr) return
-
-    // Nuevo día → resetear
-    if (this.#dateLoaded !== todayStr) {
-      this.#found = false
-      this.#dateLoaded = todayStr
-      console.log(`[DespScraper] Nuevo día ${todayStr} — buscando archivo de despacho`)
-    }
-
-    // 1. Intentar scraper (fuente primaria — siempre tiene las 4 unidades)
-    const raw = await scrapeDespacho()
-
-    if (raw.found) {
-      this.#cache = parseItems(raw.Items)
-      this.#found = true
-      console.log(`[DespScraper] Archivo encontrado y cargado para ${todayStr}`)
-      if (this.#dbAvailable) {
-        try {
-          await saveDespachoProgBulk(todayStr, this.#cache)
-          console.log(`[DespScraper] Datos persistidos en DB para ${todayStr}`)
-        } catch (e) {
-          console.error('[DespScraper] Error guardando en DB:', e.message)
-        }
+    // ── Archivo de hoy ──
+    if (!(this.#found && this.#dateLoaded === todayStr)) {
+      // Nuevo día → resetear
+      if (this.#dateLoaded !== todayStr) {
+        this.#found = false
+        this.#dateLoaded = todayStr
+        console.log(`[DespScraper] Nuevo día ${todayStr} — buscando archivo de despacho`)
       }
-      return
-    }
 
-    // 2. Scraper no encontró archivo → intentar DB como fallback
-    if (this.#dbAvailable && !this.#cache) {
-      try {
-        const cached = await loadDespachoProg(todayStr)
-        if (cached) {
-          this.#cache = cached
-          console.log(`[DespScraper] Datos de ${todayStr} cargados desde DB (fallback)`)
-          return
+      // 1. Intentar scraper (fuente primaria — siempre tiene las 4 unidades)
+      const raw = await scrapeDespacho()
+
+      if (raw.found) {
+        this.#cache = parseItems(raw.Items)
+        this.#found = true
+        console.log(`[DespScraper] Archivo encontrado y cargado para ${todayStr}`)
+        if (this.#dbAvailable) {
+          try {
+            await saveDespachoProgBulk(todayStr, this.#cache)
+            console.log(`[DespScraper] Datos persistidos en DB para ${todayStr}`)
+          } catch (e) {
+            console.error('[DespScraper] Error guardando en DB:', e.message)
+          }
         }
-      } catch { /* ignore */ }
+      } else {
+        // 2. Scraper no encontró archivo → intentar DB como fallback
+        if (this.#dbAvailable && !this.#cache) {
+          try {
+            const cached = await loadDespachoProg(todayStr)
+            if (cached) {
+              this.#cache = cached
+              console.log(`[DespScraper] Datos de ${todayStr} cargados desde DB (fallback)`)
+            }
+          } catch { /* ignore */ }
+        }
+
+        // 3. Ni scraper ni DB → usar zeros de parseItems
+        if (!this.#cache) {
+          this.#cache = parseItems(raw.Items)
+        }
+        console.log(`[DespScraper] Archivo no disponible aún para ${todayStr}, reintentando en ${RETRY_MS / 1000}s...`)
+      }
     }
 
-    // 3. Ni scraper ni DB → usar zeros de parseItems
-    this.#cache = parseItems(raw.Items)
-    console.log(`[DespScraper] Archivo no disponible aún para ${todayStr}, reintentando en ${RETRY_MS / 1000}s...`)
-
-    // ── Intentar archivo de mañana ──
+    // ── Siempre intentar archivo de mañana ──
     await this.#refreshTomorrow()
   }
 
