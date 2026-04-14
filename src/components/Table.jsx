@@ -244,7 +244,7 @@ function HorizontalTable({ data, unit, currentIdx, despachoManana }) {
                 } else if(rd.key==="dev"){
                   if(val !== null){
                     const dA = Math.abs(val);
-                    const dC = dA > 3 ? C.red : dA > 1.5 ? C.amber : C.green;
+                    const dC = dA > 5 ? C.red : C.green;
                     const devText = isCurrent ? val.toFixed(1) : (dA >= 100 ? Math.round(val).toString() : val.toFixed(0));
                     content = <span style={{
                       background:`${dC}${isCurrent?"22":"12"}`,
@@ -340,7 +340,7 @@ function VerticalTable({ data, unit, currentIdx, despachoManana }) {
             const isCurrent = i===currentIdx;
             const dev = row.dev;
             const dA = dev !== null ? Math.abs(dev) : 0;
-            const dC = dev === null ? C.textMuted : dA > 3 ? C.red : dA > 1.5 ? C.amber : C.green;
+            const dC = dev === null ? C.textMuted : dA > 5 ? C.red : C.green;
             const cBt = isCurrent?`2px solid ${unit.color}70`:`1px solid ${C.border}`;
             const cBb = isCurrent?`2px solid ${unit.color}70`:`1px solid ${C.border}`;
             return (

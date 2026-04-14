@@ -50,7 +50,7 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
             {[
               { l: "Capacidad", v: pctCap + "%", c: C.text },
-              { l: "Desviación", v: (dev >= 0 ? "+" : "") + dev.toFixed(2) + "%", c: Math.abs(dev) > 2 ? C.red : C.green },
+              { l: "Desviación", v: (dev >= 0 ? "+" : "") + dev.toFixed(2) + "%", c: Math.abs(dev) > 5 ? C.red : C.green },
               //{ l: "Media", v: unitSt.mean.toFixed(2) + "%", c: C.text },
               //{ l: "Std Dev", v: unitSt.std.toFixed(2) + "%", c: u.color },
             ].map((x, i) => (
@@ -62,7 +62,7 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
           </div>
         ) : (
           <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: Math.abs(dev) > 2 ? C.red : C.green, fontFamily: MONO, marginLeft: "auto" }}>{dev >= 0 ? "+" : ""}{dev.toFixed(1)}%</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: Math.abs(dev) > 5 ? C.red : C.green, fontFamily: MONO, marginLeft: "auto" }}>{dev >= 0 ? "+" : ""}{dev.toFixed(1)}%</span>
           </div>
         )}
       </div>
