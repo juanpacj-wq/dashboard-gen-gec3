@@ -7,6 +7,7 @@ import { Chart } from "./components/Chart";
 import { Table } from "./components/Table";
 import { useRealtimeData } from "./hooks/useRealtimeData";
 import { useXmDispatch } from "./hooks/useXmDispatch";
+import { useAutorizaciones } from "./hooks/useAutorizaciones";
 
 
 const STATUS_CFG = {
@@ -23,6 +24,7 @@ export default function Dashboard() {
   const [vw, setVw] = useState(window.innerWidth);
   const { units: rtUnits, status: wsStatus, lastUpdate, accumulated, minuteDeviations, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos } = useRealtimeData();
   const { dispatchData: xmDispatch, despachoManana } = useXmDispatch();
+  const { autorizaciones } = useAutorizaciones();
 
   useEffect(()=>{const t=setInterval(()=>setTime(new Date()),1000);return()=>clearInterval(t);},[]);
   useEffect(()=>{const h=()=>{setVh(window.innerHeight);setVw(window.innerWidth);};window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);},[]);
@@ -32,16 +34,22 @@ export default function Dashboard() {
 
   // Totales globales reales del periodo actual
   // Gen Total = suma de los valores instantáneos PME (valueMW), negativos cuentan como 0
+  // Las unidades con autorización vigente en el periodo actual se excluyen del cálculo
+  // (no contribuyen ni al numerador ni al denominador).
+  const currentPeriodo = currentIdx + 1;
+  const isUnitAuthorized = (uid) => !!autorizaciones?.[`${uid}_${currentPeriodo}`];
   const totalGen = UNITS.reduce((s, u) => {
+    if (isUnitAuthorized(u.id)) return s;
     const rt = rtUnits.find(r => r.id === u.id);
     return s + Math.max(0, rt?.valueMW ?? 0);
   }, 0);
   const totalRedesp = UNITS.reduce((s, u) => {
+    if (isUnitAuthorized(u.id)) return s;
     const xmRedesp = xmDispatch?.[u.id]?.redespacho?.[currentIdx];
     return s + (xmRedesp ?? ALL_DATA[u.id][currentIdx].redespacho);
   }, 0);
-  // Desviación global = comparación directa MW generados vs MW redespachados
   const gDev = totalRedesp !== 0 ? ((totalGen - totalRedesp) / totalRedesp) * 100 : 0;
+  const hasAnyAuthNow = UNITS.some(u => isUnitAuthorized(u.id));
 
   const navH = 55;
   const tickerH = 52;
@@ -61,10 +69,17 @@ export default function Dashboard() {
           <img src="/G3 blanco.png" alt="Gecelca" style={{height:40,objectFit:"contain",marginLeft: px}}/>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:14}}>
-          {[{l:"Gen Total",v:totalGen.toFixed(0)+" MW",c:C.green},{l:"Redespacho",v:totalRedesp.toFixed(0)+" MW",c:C.cyan},{l:"Desv Global",v:(gDev>=0?"+":"")+gDev.toFixed(2)+"%",c:Math.abs(gDev)>2?C.red:C.green}].map((s,i)=>(
+          {[
+            {l:"Gen Total",v:totalGen.toFixed(0)+" MW",c:C.green},
+            {l:"Redespacho",v:totalRedesp.toFixed(0)+" MW",c:C.cyan},
+            {l:"Desv Global",v:(gDev>=0?"+":"")+gDev.toFixed(2)+"%",c:hasAnyAuthNow?C.green:(Math.abs(gDev)>2?C.red:C.green),flag:hasAnyAuthNow},
+          ].map((s,i)=>(
             <div key={i} style={{textAlign:"right"}}>
               <div style={{fontSize: 10,color:C.textMuted,fontFamily:MONO,letterSpacing:0.5}}>{s.l}</div>
-              <div style={{fontSize: 14,fontWeight:800,color:s.c,fontFamily:MONO}}>{s.v}</div>
+              <div style={{fontSize: 14,fontWeight:800,color:s.c,fontFamily:MONO}}>
+                {s.v}
+                {s.flag && <span title="Una o más unidades con autorización vigente — excluidas del cálculo" style={{marginLeft:4,color:C.green}}>⚑</span>}
+              </div>
             </div>
           ))}
           <div style={{width:1,height:20,background:C.border}}/>
@@ -83,11 +98,11 @@ export default function Dashboard() {
 
       {/* Content */}
       <div style={{flex:1,padding:px,display:"flex",flexDirection:"column",gap,overflow:"hidden",minHeight:0}}>
-        <UnitCards selected={sel} onSelect={id=>setSel(id||"GEC3")} height={unitRowH} realtimeUnits={rtUnits} pmeAccumulated={accumulated} projection={projection} xmDispatch={xmDispatch}/>
+        <UnitCards selected={sel} onSelect={id=>setSel(id||"GEC3")} height={unitRowH} realtimeUnits={rtUnits} pmeAccumulated={accumulated} projection={projection} xmDispatch={xmDispatch} autorizaciones={autorizaciones}/>
 
         <div style={{flex:1,display:"flex",gap,minHeight:0}}>
           <div style={{flex:showChart?"60 1 0":"80 1 0",minWidth:0,transition:"flex 0.3s ease"}}>
-            <Table unitId={sel} xmDispatch={xmDispatch} despachoManana={despachoManana} pmeAccumulated={accumulated} completedPeriods={completedPeriods} despachoFinal={despachoFinal} projection={projection} desviacionPeriodos={desviacionPeriodos} proyeccionPeriodos={proyeccionPeriodos} horizontal={!showChart} showChart={showChart} onToggleChart={()=>setShowChart(v=>!v)}/>
+            <Table unitId={sel} xmDispatch={xmDispatch} despachoManana={despachoManana} pmeAccumulated={accumulated} completedPeriods={completedPeriods} despachoFinal={despachoFinal} projection={projection} desviacionPeriodos={desviacionPeriodos} proyeccionPeriodos={proyeccionPeriodos} autorizaciones={autorizaciones} horizontal={!showChart} showChart={showChart} onToggleChart={()=>setShowChart(v=>!v)}/>
           </div>
           <div style={{flex:showChart?"40 1 0":"20 1 0",minWidth:0,transition:"flex 0.3s ease"}}>
             <Chart unitId={sel} width={chartW} height={Math.max(150,mainH)} minuteDeviations={minuteDeviations} xmDispatch={xmDispatch} realtimeUnit={rtUnits.find(r => r.id === sel) ?? null}/>

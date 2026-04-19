@@ -3,7 +3,7 @@ import { C, MONO, FONT } from "../theme";
 import { UNITS } from "../data/units";
 import { MiniGauge } from "./MiniGauge";
 
-function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, projection, xmDispatch }) {
+function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, projection, xmDispatch, autorizaciones }) {
   // Generación actual (PME acumulado del periodo actual)
   const pmeGen = Math.max(0, pmeAccumulated?.[u.id] ?? 0);
   const currentMW = realtimeUnit?.valueMW != null ? Math.max(0, realtimeUnit.valueMW) : pmeGen;
@@ -26,6 +26,12 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
     const clampedProj = Math.max(0, rawProj);
     dev = ((clampedProj - redespacho) / redespacho) * 100;
   }
+
+  // Autorización vigente: suprime la desviación (dev=0, verde, banderita).
+  const currentPeriodo = currentIdx + 1;
+  const isAutorizado = !!autorizaciones?.[`${u.id}_${currentPeriodo}`];
+  if (isAutorizado) dev = 0;
+  const devColor = isAutorizado ? C.green : (Math.abs(dev) > 5 ? C.red : C.green);
 
   return (
     <div onClick={() => onSelect(isSel ? null : u.id)} style={{
@@ -50,19 +56,25 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
             {[
               { l: "Capacidad", v: pctCap + "%", c: C.text },
-              { l: "Desviación", v: (dev >= 0 ? "+" : "") + dev.toFixed(2) + "%", c: Math.abs(dev) > 5 ? C.red : C.green },
+              { l: "Desviación", v: (dev >= 0 ? "+" : "") + dev.toFixed(2) + "%", c: devColor, flag: isAutorizado },
               //{ l: "Media", v: unitSt.mean.toFixed(2) + "%", c: C.text },
               //{ l: "Std Dev", v: unitSt.std.toFixed(2) + "%", c: u.color },
             ].map((x, i) => (
               <div key={i}>
                 <div style={{ fontSize: 11, color: C.textMuted, fontFamily: MONO, letterSpacing: 0.5 }}>{x.l}</div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: x.c, fontFamily: MONO }}>{x.v}</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: x.c, fontFamily: MONO }}>
+                  {x.v}
+                  {x.flag && <span title="Autorizado por JdT" style={{ marginLeft: 4, color: C.green }}>⚑</span>}
+                </div>
               </div>
             ))}
           </div>
         ) : (
           <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: Math.abs(dev) > 5 ? C.red : C.green, fontFamily: MONO, marginLeft: "auto" }}>{dev >= 0 ? "+" : ""}{dev.toFixed(1)}%</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: devColor, fontFamily: MONO, marginLeft: "auto" }}>
+              {dev >= 0 ? "+" : ""}{dev.toFixed(1)}%
+              {isAutorizado && <span title="Autorizado por JdT" style={{ marginLeft: 3, color: C.green }}>⚑</span>}
+            </span>
           </div>
         )}
       </div>
@@ -70,7 +82,7 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
   );
 }
 
-export function UnitCards({ selected, onSelect, height, realtimeUnits = [], pmeAccumulated, projection, xmDispatch }) {
+export function UnitCards({ selected, onSelect, height, realtimeUnits = [], pmeAccumulated, projection, xmDispatch, autorizaciones }) {
   return (
     <div style={{ display: "flex", gap: 8, height }}>
       {UNITS.map(u => (
@@ -84,6 +96,7 @@ export function UnitCards({ selected, onSelect, height, realtimeUnits = [], pmeA
           pmeAccumulated={pmeAccumulated}
           projection={projection}
           xmDispatch={xmDispatch}
+          autorizaciones={autorizaciones}
         />
       ))}
     </div>

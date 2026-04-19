@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { C, FONT, MONO } from "../theme";
 import { UNITS, ALL_DATA } from "../data/units";
 
-function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos) {
+function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos, autorizaciones) {
   const baseData = ALL_DATA[unitId];
   const unit = UNITS.find(u=>u.id===unitId);
   const currentIdx = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Bogota" })).getHours();
@@ -94,7 +94,12 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
     }
     if (proyGeneracion != null) proyGeneracion = Math.max(0, proyGeneracion);
 
-    return { ...row, despacho, redespacho, final: final_, despFinal, despFinalSource, despSimulated, redespSimulated, hasRedespacho, dev, proyGeneracion };
+    // Autorización de bitácora: si hay orden del CND para este periodo,
+    // la desviación se suprime (0% verde + ⚑), incluso en periodos futuros.
+    const isAutorizado = !!autorizaciones?.[`${unitId}_${periodo}`];
+    if (isAutorizado) dev = 0;
+
+    return { ...row, despacho, redespacho, final: final_, despFinal, despFinalSource, despSimulated, redespSimulated, hasRedespacho, dev, proyGeneracion, isAutorizado };
   });
 
   const hasEmailRedesp = despachoFinal?.[unitId] && Object.keys(despachoFinal[unitId]).length > 0;
@@ -244,9 +249,9 @@ function HorizontalTable({ data, unit, currentIdx, despachoManana }) {
                 } else if(rd.key==="dev"){
                   if(val !== null){
                     const dA = Math.abs(val);
-                    const dC = dA > 5 ? C.red : C.green;
+                    const dC = row.isAutorizado ? C.green : (dA > 5 ? C.red : C.green);
                     const devText = isCurrent ? val.toFixed(1) : (dA >= 100 ? Math.round(val).toString() : val.toFixed(0));
-                    content = <span style={{
+                    content = <span title={row.isAutorizado?"Autorizado por JdT":undefined} style={{
                       background:`${dC}${isCurrent?"22":"12"}`,
                       border:`1px solid ${dC}${isCurrent?"55":"28"}`,
                       borderRadius:isCurrent?5:2,
@@ -255,7 +260,7 @@ function HorizontalTable({ data, unit, currentIdx, despachoManana }) {
                       fontWeight:700,
                       color:dC,
                       whiteSpace:"nowrap",
-                    }}>{devText}%</span>;
+                    }}>{devText}%{row.isAutorizado && <span style={{marginLeft:3}}>⚑</span>}</span>;
                   } else {
                     content = <span style={{color:C.textMuted}}>—</span>;
                   }
@@ -340,7 +345,7 @@ function VerticalTable({ data, unit, currentIdx, despachoManana }) {
             const isCurrent = i===currentIdx;
             const dev = row.dev;
             const dA = dev !== null ? Math.abs(dev) : 0;
-            const dC = dev === null ? C.textMuted : dA > 5 ? C.red : C.green;
+            const dC = dev === null ? C.textMuted : row.isAutorizado ? C.green : dA > 5 ? C.red : C.green;
             const cBt = isCurrent?`2px solid ${unit.color}70`:`1px solid ${C.border}`;
             const cBb = isCurrent?`2px solid ${unit.color}70`:`1px solid ${C.border}`;
             return (
@@ -415,7 +420,10 @@ function VerticalTable({ data, unit, currentIdx, despachoManana }) {
                 {/* Desviacion */}
                 <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",borderTop:cBt,borderBottom:cBb,verticalAlign:"middle"}}>
                   {dev !== null ? (
-                    <span style={{display:"inline-block",background:`${dC}${isCurrent?"22":"12"}`,border:`1px solid ${dC}${isCurrent?"55":"28"}`,borderRadius:6,padding:isCurrent?"5px 12px":"2px 7px",fontFamily:MONO,fontSize:isCurrent?22:16,fontWeight:700,color:dC}}>{dev>=0?"+":""}{dev.toFixed(2)}%</span>
+                    <span title={row.isAutorizado?"Autorizado por JdT":undefined} style={{display:"inline-block",background:`${dC}${isCurrent?"22":"12"}`,border:`1px solid ${dC}${isCurrent?"55":"28"}`,borderRadius:6,padding:isCurrent?"5px 12px":"2px 7px",fontFamily:MONO,fontSize:isCurrent?22:16,fontWeight:700,color:dC}}>
+                      {dev>=0?"+":""}{dev.toFixed(2)}%
+                      {row.isAutorizado && <span style={{marginLeft:4}}>⚑</span>}
+                    </span>
                   ) : (
                     <span style={{fontFamily:MONO,fontSize:12,color:C.textMuted}}>—</span>
                   )}
@@ -434,8 +442,8 @@ function VerticalTable({ data, unit, currentIdx, despachoManana }) {
 }
 
 /* ─── Componente principal ─── */
-export function Table({ unitId, xmDispatch, despachoManana, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos, horizontal, showChart, onToggleChart }) {
-  const { data, unit, currentIdx, isXmLive } = useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos);
+export function Table({ unitId, xmDispatch, despachoManana, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos, autorizaciones, horizontal, showChart, onToggleChart }) {
+  const { data, unit, currentIdx, isXmLive } = useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos, autorizaciones);
 
   // despachoManana is { GEC3: [24], GEC32: [24], ... } or null
   const unitDespachoManana = despachoManana?.[unitId] || null;

@@ -15,6 +15,10 @@ export default defineConfig({
         target: "http://localhost:3001",
         ws: true,
       },
+      "/api/autorizaciones": {
+        target: "http://localhost:3002",
+        changeOrigin: true,
+      },
       "/api/periods": {
         target: "http://localhost:3001",
       },
