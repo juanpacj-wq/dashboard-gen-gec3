@@ -121,8 +121,14 @@ const closingProjections = {}
 const httpServer = createServer(async (req, res) => {
   // Health check
   if (req.url === '/health') {
+    const pme = scraper.getStatus()
     res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ status: 'ok', clients: clients.size }))
+    res.end(JSON.stringify({
+      status: pme.stale ? 'degraded' : 'ok',
+      clients: clients.size,
+      uptime: process.uptime(),
+      pme,
+    }))
     return
   }
 
@@ -258,8 +264,16 @@ wss.on('connection', (ws, req) => {
   clients.add(ws)
   console.log(`[WS] Cliente conectado — IP: ${req.socket.remoteAddress} | Total: ${clients.size}`)
 
-  // Send last known data immediately
-  if (lastPayload) ws.send(JSON.stringify(lastPayload))
+  // Send last known data immediately. Si el scraper está rancio, marcamos el
+  // payload como tal para que el frontend pueda mostrar un indicador en lugar
+  // de presentar valores estáticos como si fueran en vivo.
+  if (lastPayload) {
+    const pmeStatus = scraper.getStatus()
+    const snapshot = pmeStatus.stale
+      ? { ...lastPayload, stale: true, staleSeconds: pmeStatus.secondsSinceUpdate }
+      : lastPayload
+    ws.send(JSON.stringify(snapshot))
+  }
 
   ws.on('close', () => {
     clients.delete(ws)

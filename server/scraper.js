@@ -6,12 +6,26 @@ const RECONNECT_MS = 5_000
 const FALLBACK_MS  = 3_000
 const DEBOUNCE_MS  = 300
 
+const WATCHDOG_INTERVAL_MS = 10_000   // chequeo cada 10s
+const STALE_WARNING_MS     = 30_000   // aviso a los 30s
+const STALE_RESTART_MS     = 60_000   // restart forzado a los 60s
+const HEARTBEAT_MS         = 60_000   // log periódico de vida
+const PME_LOG_THROTTLE_MS  = 30_000   // throttle del resumen [PME]
+
 // HEADLESS=false para ventana visible (debug local), cualquier otro valor = headless nuevo
 const HEADLESS = process.env.HEADLESS === 'false' ? false : true
 
 export class PMEScraper {
   #pme; #units; #onData
   #browser = null; #page = null; #running = false
+  #lastDataAt = 0
+  #updateCount = 0
+  #errorCount = 0
+  #warming = false
+  #lastPmeLogAt = 0
+  #updateCountAtLastLog = 0
+  #watchdogTimer = null
+  #heartbeatTimer = null
 
   constructor({ pme, units, onData }) {
     this.#pme   = pme
@@ -19,10 +33,25 @@ export class PMEScraper {
     this.#onData = onData
   }
 
+  getStatus() {
+    const now = Date.now()
+    return {
+      running: this.#running,
+      warming: this.#warming,
+      lastDataAt: this.#lastDataAt || null,
+      secondsSinceUpdate: this.#lastDataAt ? Math.floor((now - this.#lastDataAt) / 1000) : null,
+      updateCount: this.#updateCount,
+      errorCount: this.#errorCount,
+      stale: this.#lastDataAt > 0 && (now - this.#lastDataAt) > STALE_RESTART_MS,
+    }
+  }
+
   // ── API pública ─────────────────────────────────────────────────────────────
 
   async start() {
     this.#running = true
+    this.#startWatchdog()
+    this.#startHeartbeat()
     while (this.#running) {
       try {
         await this.#run()
@@ -38,7 +67,48 @@ export class PMEScraper {
 
   async stop() {
     this.#running = false
+    if (this.#watchdogTimer)  { clearInterval(this.#watchdogTimer);  this.#watchdogTimer  = null }
+    if (this.#heartbeatTimer) { clearInterval(this.#heartbeatTimer); this.#heartbeatTimer = null }
     await this.#teardown()
+  }
+
+  // ── Watchdog / Heartbeat ────────────────────────────────────────────────────
+
+  #startWatchdog() {
+    if (this.#watchdogTimer) return
+    this.#watchdogTimer = setInterval(() => {
+      // No chequear durante setup ni mientras no haya browser activo
+      if (this.#warming || !this.#browser || !this.#page) return
+      if (this.#lastDataAt === 0) return // aún sin primera lectura
+
+      const gap = Date.now() - this.#lastDataAt
+      if (gap > STALE_RESTART_MS) {
+        this.#errorCount++
+        console.error(
+          `[Scraper] WATCHDOG: sin datos hace ${(gap / 1000).toFixed(0)}s. ` +
+          `Forzando reinicio del navegador (errorCount=${this.#errorCount})…`
+        )
+        // Cerrar el browser desencadena el cierre de page, lo que resuelve el
+        // waitForEvent('close') en #observe(); #run() retorna y el while loop
+        // de start() reabre todo desde cero.
+        this.#teardown().catch(() => {})
+      } else if (gap > STALE_WARNING_MS) {
+        console.warn(`[Scraper] sin datos hace ${(gap / 1000).toFixed(0)}s (warning)`)
+      }
+    }, WATCHDOG_INTERVAL_MS)
+  }
+
+  #startHeartbeat() {
+    if (this.#heartbeatTimer) return
+    this.#heartbeatTimer = setInterval(() => {
+      const status = this.getStatus()
+      const ago = status.secondsSinceUpdate != null ? `${status.secondsSinceUpdate}s` : 'nunca'
+      console.log(
+        `[PME Heartbeat] última lectura hace ${ago} · ` +
+        `${status.updateCount} actualizaciones · ` +
+        `running=${status.running} warming=${status.warming} errors=${status.errorCount}`
+      )
+    }, HEARTBEAT_MS)
   }
 
   // ── Ciclo de vida ───────────────────────────────────────────────────────────
@@ -50,6 +120,7 @@ export class PMEScraper {
   }
 
   async #run() {
+    this.#warming = true
     console.log(`[Scraper] Iniciando navegador (headless=${HEADLESS})…`)
     const args = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage']
     if (HEADLESS) args.push('--headless=new')
@@ -217,16 +288,25 @@ export class PMEScraper {
       const anyValid = rawUnits.some(u => u.valueMW !== null)
       if (!anyValid) return
 
+      this.#lastDataAt = Date.now()
+      this.#updateCount++
+
       this.#onData({
         type:      'update',
         units:     rawUnits,
         timestamp: new Date().toISOString(),
       })
 
-      const summary = rawUnits
-        .map(u => `${u.label}: ${u.valueMW !== null ? u.valueMW.toFixed(1) + ' MW' : '?'}`)
-        .join(' | ')
-      console.log('[PME]', summary)
+      // Throttle: 1 línea cada PME_LOG_THROTTLE_MS con resumen de la ventana
+      if (this.#lastDataAt - this.#lastPmeLogAt >= PME_LOG_THROTTLE_MS) {
+        const delta = this.#updateCount - this.#updateCountAtLastLog
+        const summary = rawUnits
+          .map(u => `${u.label}: ${u.valueMW !== null ? u.valueMW.toFixed(1) + ' MW' : '?'}`)
+          .join(' | ')
+        console.log(`[PME] ${summary} · (+${delta} updates en ventana)`)
+        this.#lastPmeLogAt = this.#lastDataAt
+        this.#updateCountAtLastLog = this.#updateCount
+      }
     })
 
     await this.#page.evaluate(
@@ -307,6 +387,10 @@ export class PMEScraper {
     )
 
     console.log('[Scraper] Observación activa…')
+    // Resetear el timestamp para dar al observer un ciclo de gracia antes de
+    // que el watchdog lo evalúe (la primera mutación llega dentro de FALLBACK_MS).
+    this.#lastDataAt = Date.now()
+    this.#warming = false
     await this.#page.waitForEvent('close', { timeout: 0 }).catch(() => {})
   }
 }
