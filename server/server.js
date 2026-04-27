@@ -12,6 +12,8 @@ import {
   saveProyeccionHistorico,
   saveProyeccionPeriodo,
   getTodayProyeccionPeriodos,
+  getLastHistoricoPerPeriodToday,
+  savePeriod,
 } from './db.js'
 import { EnergyAccumulator } from './accumulator.js'
 import { EmailDispatchService } from './emailDispatch.js'
@@ -136,6 +138,25 @@ const httpServer = createServer(async (req, res) => {
   if (req.url === '/api/periods/today' && req.method === 'GET') {
     try {
       const periods = await getTodayPeriods()
+      // Fallback: rellenar periodos pasados ausentes desde proyeccion_historico
+      // (caso típico: scraper colgado entre límites de hora; ver fallback-historico-recovery.md)
+      const { hour: currentHour } = colombiaNow()
+      const historico = await getLastHistoricoPerPeriodToday()
+      const present = new Set(periods.map(r => `${r.unit_id}_${r.hora}`))
+      for (const [unitId, byPeriod] of Object.entries(historico)) {
+        for (const [periodoStr, hist] of Object.entries(byPeriod)) {
+          const periodo = parseInt(periodoStr, 10)
+          const hora = periodo - 1
+          if (hora >= currentHour) continue
+          if (present.has(`${unitId}_${hora}`)) continue
+          periods.push({
+            unit_id: unitId,
+            hora,
+            energia_mwh: hist.acumulado_mwh ?? 0,
+            source: 'historico_fallback',
+          })
+        }
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(periods))
     } catch (err) {
@@ -229,6 +250,25 @@ const httpServer = createServer(async (req, res) => {
           desviacion_pct: row.desviacion_pct,
         }
       }
+      // Fallback: completar periodos pasados ausentes desde proyeccion_historico
+      const { hour: currentHour } = colombiaNow()
+      const historico = await getLastHistoricoPerPeriodToday()
+      for (const [unitId, byPeriod] of Object.entries(historico)) {
+        for (const [periodoStr, hist] of Object.entries(byPeriod)) {
+          const periodo = parseInt(periodoStr, 10)
+          const hora = periodo - 1
+          if (hora >= currentHour) continue
+          if (data[unitId]?.[periodo]) continue
+          if (!data[unitId]) data[unitId] = {}
+          data[unitId][periodo] = {
+            proyeccion_cierre_mwh: hist.proyeccion_mwh,
+            generacion_real_mwh:   hist.acumulado_mwh,
+            redespacho_mw:         hist.redespacho_mw,
+            desviacion_pct:        hist.desviacion_pct,
+            source: 'historico_fallback',
+          }
+        }
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(data))
     } catch (err) {
@@ -243,6 +283,26 @@ const httpServer = createServer(async (req, res) => {
   if (req.url === '/api/desviacion-periodos/today' && req.method === 'GET') {
     try {
       const rows = await getTodayDesviacionPeriodos()
+      // Fallback: completar periodos pasados ausentes desde proyeccion_historico
+      const { hour: currentHour } = colombiaNow()
+      const historico = await getLastHistoricoPerPeriodToday()
+      const present = new Set(rows.map(r => `${r.unit_id}_${r.periodo}`))
+      for (const [unitId, byPeriod] of Object.entries(historico)) {
+        for (const [periodoStr, hist] of Object.entries(byPeriod)) {
+          const periodo = parseInt(periodoStr, 10)
+          const hora = periodo - 1
+          if (hora >= currentHour) continue
+          if (present.has(`${unitId}_${periodo}`)) continue
+          rows.push({
+            unit_id: unitId,
+            periodo,
+            generacion_mwh:    hist.acumulado_mwh ?? 0,
+            desp_final_mw:     hist.redespacho_mw ?? null,
+            desp_final_source: 'historico_fallback',
+            desviacion_pct:    hist.desviacion_pct,
+          })
+        }
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(rows))
     } catch (err) {
@@ -418,6 +478,91 @@ const proyHistFlushInterval = setInterval(async () => {
 // ── Scraper ──────────────────────────────────────────────────────────────────
 const scraper = new PMEScraper({ pme: PME, units: UNITS, onData: broadcast })
 
+/**
+ * Rellena en `generacion_periodos`/`proyeccion_periodos`/`desviacion_periodos`
+ * los periodos pasados que faltan, usando la última fila por (unit, periodo)
+ * de `proyeccion_historico`. Idempotente: corre una vez por arranque y los
+ * MERGE evitan pisar datos canónicos auténticos.
+ *
+ * Necesario porque cuando el scraper se cuelga atravesando uno o más límites
+ * de hora, accumulator.update() no detecta el cambio y #completePeriod nunca
+ * se ejecuta para esos periodos. El watchdog del scraper previene huecos
+ * largos a futuro, pero esta recovery cierra los gaps históricos.
+ */
+async function recoverSkippedPeriods() {
+  try {
+    const { hour: currentHour, dateStr: today } = colombiaNow()
+    const [periods, proyPeriodos, desvPeriodos, historico] = await Promise.all([
+      getTodayPeriods(),
+      getTodayProyeccionPeriodos(),
+      getTodayDesviacionPeriodos(),
+      getLastHistoricoPerPeriodToday(),
+    ])
+    const presentGen  = new Set(periods.map(r => `${r.unit_id}_${r.hora}`))
+    const presentProy = new Set(proyPeriodos.map(r => `${r.unit_id}_${r.periodo}`))
+    const presentDesv = new Set(desvPeriodos.map(r => `${r.unit_id}_${r.periodo}`))
+    const redespState = redespScraper.getState() ?? {}
+    const dfState = getMergedDespachoFinal()
+
+    let recovered = 0
+    for (const [unitId, byPeriod] of Object.entries(historico)) {
+      for (const [periodoStr, hist] of Object.entries(byPeriod)) {
+        const periodo = parseInt(periodoStr, 10)
+        const hora = periodo - 1
+        if (hora >= currentHour) continue
+
+        const missingGen  = !presentGen.has(`${unitId}_${hora}`)
+        const missingProy = !presentProy.has(`${unitId}_${periodo}`)
+        const missingDesv = !presentDesv.has(`${unitId}_${periodo}`)
+        if (!missingGen && !missingProy && !missingDesv) continue
+
+        const proyCierre = hist.proyeccion_mwh ?? 0
+        const generacion = hist.acumulado_mwh ?? 0
+        const redespacho = redespState?.[unitId]?.[hora] ?? hist.redespacho_mw ?? null
+        const dfEntry = dfState?.[unitId]?.[periodo]
+        const despFinal = dfEntry?.valor_mw ?? null
+        const denom = despFinal != null ? despFinal : redespacho
+        const desv = (denom != null && denom > 0)
+          ? ((Math.max(0, proyCierre) - denom) / denom) * 100
+          : (hist.desviacion_pct ?? null)
+
+        try {
+          if (missingGen)  await savePeriod(unitId, today, hora, generacion)
+          if (missingProy) {
+            await saveProyeccionPeriodo(unitId, today, periodo, {
+              proyeccionCierreMwh: proyCierre,
+              generacionRealMwh: generacion,
+              redespachoMw: redespacho,
+              desviacionPct: desv,
+            })
+            ;(closingProjections[unitId] ||= {})[periodo] = {
+              proyeccion_cierre_mwh: proyCierre,
+              generacion_real_mwh: generacion,
+              redespacho_mw: redespacho,
+              desviacion_pct: desv,
+            }
+          }
+          if (missingDesv) {
+            await saveDesviacionPeriodo(unitId, today, periodo, {
+              generacionMwh: generacion,
+              despFinalMw: despFinal,
+              despFinalSource: dfEntry?.source ?? (redespacho != null ? 'redespacho' : null),
+              desviacionPct: desv,
+            })
+          }
+          recovered++
+          console.log(`[Recovery] ${unitId} periodo=${periodo} proy=${proyCierre.toFixed(2)} gen=${generacion.toFixed(2)} desv=${desv?.toFixed(2)}%`)
+        } catch (err) {
+          console.error(`[Recovery] Error ${unitId} periodo=${periodo}:`, err.message)
+        }
+      }
+    }
+    console.log(`[Server] Recovery: ${recovered} periodo(s) recuperados desde proyeccion_historico`)
+  } catch (err) {
+    console.error('[Server] Recovery falló:', err.message)
+  }
+}
+
 // ── Arranque ─────────────────────────────────────────────────────────────────
 async function start() {
   let dbOk = false
@@ -456,6 +601,11 @@ async function start() {
 
   await despScraper.init(dbOk)
   despScraper.start()
+
+  // Reconstruir periodos pasados que no quedaron en las tablas canónicas (típico
+  // tras un cuelgue del scraper que cruzó límites de hora). Se hace antes de
+  // levantar el scraper PME para evitar carrera con accumulator.update().
+  if (dbOk) await recoverSkippedPeriods()
 
   scraper.start()
 

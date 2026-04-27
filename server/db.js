@@ -599,6 +599,46 @@ export async function getTodayProyeccionPeriodos() {
   return result.recordset
 }
 
+/**
+ * Para cada (unit_id, periodo) presente en proyeccion_historico para HOY,
+ * devuelve la fila con window_end más reciente — la mejor aproximación al
+ * cierre de ese periodo cuando #completePeriod no llegó a ejecutarse.
+ *
+ * Estructura de retorno:
+ *   { [unit_id]: { [periodo]: { acumulado_mwh, current_mw, redespacho_mw,
+ *                                proyeccion_mwh, desviacion_pct, fraction,
+ *                                window_end } } }
+ */
+export async function getLastHistoricoPerPeriodToday() {
+  const db = await getDB()
+  const result = await db.request().query(`
+    WITH ranked AS (
+      SELECT unit_id, periodo, acumulado_mwh, current_mw, redespacho_mw,
+             proyeccion_mwh, desviacion_pct, fraction, window_end,
+             ROW_NUMBER() OVER (PARTITION BY unit_id, periodo ORDER BY window_end DESC) AS rn
+      FROM dashboard.proyeccion_historico
+      WHERE fecha = CAST(GETDATE() AS DATE)
+    )
+    SELECT unit_id, periodo, acumulado_mwh, current_mw, redespacho_mw,
+           proyeccion_mwh, desviacion_pct, fraction, window_end
+    FROM ranked WHERE rn = 1
+  `)
+  const out = {}
+  for (const row of result.recordset) {
+    if (!out[row.unit_id]) out[row.unit_id] = {}
+    out[row.unit_id][row.periodo] = {
+      acumulado_mwh:  row.acumulado_mwh,
+      current_mw:     row.current_mw,
+      redespacho_mw:  row.redespacho_mw,
+      proyeccion_mwh: row.proyeccion_mwh,
+      desviacion_pct: row.desviacion_pct,
+      fraction:       row.fraction,
+      window_end:     row.window_end,
+    }
+  }
+  return out
+}
+
 /** Check if a despacho final record exists for a unit/date/period */
 export async function existsDespachoFinal(unitId, fecha, periodo) {
   const db = await getDB()
