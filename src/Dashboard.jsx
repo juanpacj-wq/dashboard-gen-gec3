@@ -7,7 +7,7 @@ import { Chart } from "./components/Chart";
 import { Table } from "./components/Table";
 import { useRealtimeData } from "./hooks/useRealtimeData";
 import { useXmDispatch } from "./hooks/useXmDispatch";
-import { useAutorizaciones } from "./hooks/useAutorizaciones";
+import { useEventosBitacora } from "./hooks/useEventosBitacora";
 
 
 const STATUS_CFG = {
@@ -24,7 +24,19 @@ export default function Dashboard() {
   const [vw, setVw] = useState(window.innerWidth);
   const { units: rtUnits, status: wsStatus, lastUpdate, accumulated, minuteDeviations, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos } = useRealtimeData();
   const { dispatchData: xmDispatch, despachoManana } = useXmDispatch();
-  const { autorizaciones } = useAutorizaciones();
+  // F8: el hook nuevo trae AUTH/REDESP/PRUEBA. Derivamos la shape antigua (`{uid_periodo}`)
+  // sólo para AUTH para que UnitCards y los totales sigan funcionando sin cambios.
+  const { eventos: eventosBitacora } = useEventosBitacora();
+  const autorizaciones = (() => {
+    const out = {};
+    for (const planta of Object.keys(eventosBitacora || {})) {
+      for (const periodo of Object.keys(eventosBitacora[planta] || {})) {
+        const auth = eventosBitacora[planta][periodo].AUTH;
+        if (auth) out[`${planta}_${periodo}`] = auth;
+      }
+    }
+    return out;
+  })();
 
   useEffect(()=>{const t=setInterval(()=>setTime(new Date()),1000);return()=>clearInterval(t);},[]);
   useEffect(()=>{const h=()=>{setVh(window.innerHeight);setVw(window.innerWidth);};window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);},[]);
@@ -102,7 +114,7 @@ export default function Dashboard() {
 
         <div style={{flex:1,display:"flex",gap,minHeight:0}}>
           <div style={{flex:showChart?"60 1 0":"80 1 0",minWidth:0,transition:"flex 0.3s ease"}}>
-            <Table unitId={sel} xmDispatch={xmDispatch} despachoManana={despachoManana} pmeAccumulated={accumulated} completedPeriods={completedPeriods} despachoFinal={despachoFinal} projection={projection} desviacionPeriodos={desviacionPeriodos} proyeccionPeriodos={proyeccionPeriodos} autorizaciones={autorizaciones} horizontal={!showChart} showChart={showChart} onToggleChart={()=>setShowChart(v=>!v)}/>
+            <Table unitId={sel} xmDispatch={xmDispatch} despachoManana={despachoManana} pmeAccumulated={accumulated} completedPeriods={completedPeriods} despachoFinal={despachoFinal} projection={projection} desviacionPeriodos={desviacionPeriodos} proyeccionPeriodos={proyeccionPeriodos} autorizaciones={autorizaciones} eventosBitacora={eventosBitacora} horizontal={!showChart} showChart={showChart} onToggleChart={()=>setShowChart(v=>!v)}/>
           </div>
           <div style={{flex:showChart?"40 1 0":"20 1 0",minWidth:0,transition:"flex 0.3s ease"}}>
             <Chart unitId={sel} width={chartW} height={Math.max(150,mainH)} minuteDeviations={minuteDeviations} xmDispatch={xmDispatch} realtimeUnit={rtUnits.find(r => r.id === sel) ?? null}/>

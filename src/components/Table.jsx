@@ -2,7 +2,14 @@ import { useState, useEffect, useRef } from "react";
 import { C, FONT, MONO } from "../theme";
 import { UNITS, ALL_DATA } from "../data/units";
 
-function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos, autorizaciones) {
+// F8: emojis para los efectos de bitácora. Sujetos a refinamiento con el usuario; si cambia
+// el set, modificar acá y propaga a todos los renders.
+const EMOJI_AUTH = "⚑";
+const EMOJI_REDESP = "💾";
+const EMOJI_PRUEBA = "🔬";
+const EMOJI_EMAIL = "✉"; // ✉
+
+function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos, autorizaciones, eventosBitacora) {
   const baseData = ALL_DATA[unitId];
   const unit = UNITS.find(u=>u.id===unitId);
   const currentIdx = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Bogota" })).getHours();
@@ -51,6 +58,17 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
       despFinalSource = 'redespacho';
     }
 
+    // F8: REDESP de bitácora pisa al email. Si ambos coexisten (email + bitácora), el valor
+    // que se muestra es el de bitácora pero ambos emojis se superponen para no perder la
+    // señal del correo (preguntas2.md respuesta C).
+    const evCell = eventosBitacora?.[unitId]?.[periodo] || {};
+    const redespBitacora = evCell.REDESP;
+    const hasEmailDespFinal = dfEntry?.source === 'email' && dfEntry?.valor_mw != null;
+    if (redespBitacora?.valor_mw != null) {
+      despFinal = redespBitacora.valor_mw;
+      despFinalSource = hasEmailDespFinal ? 'bitacora+email' : 'bitacora';
+    }
+
     // Deviation:
     //  - future:  null
     //  - current: live projection from backend (VB6 logic: tProyeccion vs redespacho)
@@ -94,12 +112,17 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
     }
     if (proyGeneracion != null) proyGeneracion = Math.max(0, proyGeneracion);
 
-    // Autorización de bitácora: si hay orden del CND para este periodo,
-    // la desviación se suprime (0% verde + ⚑), incluso en periodos futuros.
-    const isAutorizado = !!autorizaciones?.[`${unitId}_${periodo}`];
-    if (isAutorizado) dev = 0;
+    // F8: AUTH/PRUEBA/REDESP de bitácora.
+    //  - AUTH: suprime desviación (0% + emoji autorización), incluso en futuros.
+    //  - PRUEBA: NO suprime; muestra emoji de pruebas.
+    //  - Coexistencia AUTH+PRUEBA: PRUEBA prevalece visualmente (preguntas2.md respuesta B);
+    //    desviación queda real (no se suprime) porque PRUEBA no enmascara la realidad.
+    const isAutorizado = !!evCell.AUTH || !!autorizaciones?.[`${unitId}_${periodo}`];
+    const isPrueba = !!evCell.PRUEBA;
+    if (isAutorizado && !isPrueba) dev = 0;
+    const isRedespBitacora = !!redespBitacora;
 
-    return { ...row, despacho, redespacho, final: final_, despFinal, despFinalSource, despSimulated, redespSimulated, hasRedespacho, dev, proyGeneracion, isAutorizado };
+    return { ...row, despacho, redespacho, final: final_, despFinal, despFinalSource, despSimulated, redespSimulated, hasRedespacho, dev, proyGeneracion, isAutorizado, isPrueba, isRedespBitacora };
   });
 
   const hasEmailRedesp = despachoFinal?.[unitId] && Object.keys(despachoFinal[unitId]).length > 0;
@@ -225,9 +248,14 @@ function HorizontalTable({ data, unit, currentIdx, despachoManana }) {
                   content = Math.round(val);
                 } else if(rd.key==="despFinal"){
                   if(row.despFinal != null){
-                    const isFromEmail = row.despFinalSource === 'email';
-                    color = isFromEmail ? C.cyan : isCurrent ? C.text : C.textSec;
-                    content = <>{Math.round(row.despFinal)}{isFromEmail && <span style={{fontSize:7,color:C.cyan,marginLeft:1}}>&#9993;</span>}</>;
+                    const isFromEmail = row.despFinalSource === 'email' || row.despFinalSource === 'bitacora+email';
+                    const isFromBitacora = row.isRedespBitacora;
+                    color = isFromBitacora ? C.amber : isFromEmail ? C.cyan : isCurrent ? C.text : C.textSec;
+                    content = <>
+                      {Math.round(row.despFinal)}
+                      {isFromBitacora && <span title="Redespacho desde bitácora" style={{fontSize:8,marginLeft:1}}>{EMOJI_REDESP}</span>}
+                      {isFromEmail && <span title="Despacho final del correo" style={{fontSize:8,color:C.cyan,marginLeft:1}}>{EMOJI_EMAIL}</span>}
+                    </>;
                   } else {
                     color = C.textMuted;
                     content = "—";
@@ -249,9 +277,13 @@ function HorizontalTable({ data, unit, currentIdx, despachoManana }) {
                 } else if(rd.key==="dev"){
                   if(val !== null){
                     const dA = Math.abs(val);
-                    const dC = row.isAutorizado ? C.green : (dA > 5 ? C.red : C.green);
+                    // F8: PRUEBA prevalece visualmente si coexiste con AUTH (preguntas2.md B);
+                    // su semántica es no-suprimir, así que el color sigue la realidad de la
+                    // desviación (rojo si > 5%).
+                    const dC = (row.isAutorizado && !row.isPrueba) ? C.green : (dA > 5 ? C.red : C.green);
                     const devText = isCurrent ? val.toFixed(1) : (dA >= 100 ? Math.round(val).toString() : val.toFixed(0));
-                    content = <span title={row.isAutorizado?"Autorizado por JdT":undefined} style={{
+                    const tipoLabel = row.isPrueba ? "Prueba" : (row.isAutorizado ? "Autorizado por JdT" : undefined);
+                    content = <span title={tipoLabel} style={{
                       background:`${dC}${isCurrent?"22":"12"}`,
                       border:`1px solid ${dC}${isCurrent?"55":"28"}`,
                       borderRadius:isCurrent?5:2,
@@ -260,7 +292,11 @@ function HorizontalTable({ data, unit, currentIdx, despachoManana }) {
                       fontWeight:700,
                       color:dC,
                       whiteSpace:"nowrap",
-                    }}>{devText}%{row.isAutorizado && <span style={{marginLeft:3}}>⚑</span>}</span>;
+                    }}>
+                      {devText}%
+                      {row.isPrueba && <span style={{marginLeft:3}}>{EMOJI_PRUEBA}</span>}
+                      {row.isAutorizado && !row.isPrueba && <span style={{marginLeft:3}}>{EMOJI_AUTH}</span>}
+                    </span>;
                   } else {
                     content = <span style={{color:C.textMuted}}>—</span>;
                   }
@@ -345,7 +381,11 @@ function VerticalTable({ data, unit, currentIdx, despachoManana }) {
             const isCurrent = i===currentIdx;
             const dev = row.dev;
             const dA = dev !== null ? Math.abs(dev) : 0;
-            const dC = dev === null ? C.textMuted : row.isAutorizado ? C.green : dA > 5 ? C.red : C.green;
+            // F8: PRUEBA no suprime — su color sigue la desviación real. AUTH suprime sólo si
+            // no coexiste con PRUEBA (preguntas2.md B).
+            const dC = dev === null
+              ? C.textMuted
+              : (row.isAutorizado && !row.isPrueba) ? C.green : dA > 5 ? C.red : C.green;
             const cBt = isCurrent?`2px solid ${unit.color}70`:`1px solid ${C.border}`;
             const cBb = isCurrent?`2px solid ${unit.color}70`:`1px solid ${C.border}`;
             return (
@@ -391,16 +431,27 @@ function VerticalTable({ data, unit, currentIdx, despachoManana }) {
                   </span>
                 </td>
                 {/* D. Final */}
-                <td style={{padding:isCurrent?"10px 8px":"3px 6px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?34:26,fontWeight:isCurrent?700:600,color:row.despFinal!=null?(row.despFinalSource==='email'?C.cyan:isCurrent?C.text:C.textSec):C.textMuted,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",background:row.despFinalSource==='email'?`${C.cyan}08`:"transparent",lineHeight:1}}>
-                  {row.despFinal != null ? (
-                    <span>
-                      {Math.round(row.despFinal)}
-                      {row.despFinalSource === 'email' && <span style={{fontSize:9,marginLeft:3,color:C.cyan}}>&#9993;</span>}
-                    </span>
-                  ) : (
-                    <span style={{color:C.textMuted}}>—</span>
-                  )}
-                </td>
+                {(() => {
+                  const isFromEmail = row.despFinalSource === 'email' || row.despFinalSource === 'bitacora+email';
+                  const isFromBitacora = row.isRedespBitacora;
+                  const cellColor = row.despFinal == null
+                    ? C.textMuted
+                    : isFromBitacora ? C.amber : isFromEmail ? C.cyan : isCurrent ? C.text : C.textSec;
+                  const cellBg = isFromBitacora ? `${C.amber}10` : (isFromEmail ? `${C.cyan}08` : "transparent");
+                  return (
+                    <td style={{padding:isCurrent?"10px 8px":"3px 6px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?34:26,fontWeight:isCurrent?700:600,color:cellColor,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",background:cellBg,lineHeight:1}}>
+                      {row.despFinal != null ? (
+                        <span>
+                          {Math.round(row.despFinal)}
+                          {isFromBitacora && <span title="Redespacho desde bitácora" style={{fontSize:11,marginLeft:3}}>{EMOJI_REDESP}</span>}
+                          {isFromEmail && <span title="Despacho final del correo" style={{fontSize:11,marginLeft:3,color:C.cyan}}>{EMOJI_EMAIL}</span>}
+                        </span>
+                      ) : (
+                        <span style={{color:C.textMuted}}>—</span>
+                      )}
+                    </td>
+                  );
+                })()}
                 {/* Generacion */}
                 <td style={{padding:isCurrent?"10px 8px":"3px 6px",textAlign:"right",fontFamily:MONO,fontSize:isCurrent?34:26,fontWeight:900,color:unit.color,letterSpacing:isCurrent?-0.5:0,borderTop:cBt,borderBottom:cBb,verticalAlign:"middle",lineHeight:1}}>
                   {row.final.toFixed(2)}
@@ -420,9 +471,10 @@ function VerticalTable({ data, unit, currentIdx, despachoManana }) {
                 {/* Desviacion */}
                 <td style={{padding:isCurrent?"16px 14px":"7px 10px",textAlign:"right",borderTop:cBt,borderBottom:cBb,verticalAlign:"middle"}}>
                   {dev !== null ? (
-                    <span title={row.isAutorizado?"Autorizado por JdT":undefined} style={{display:"inline-block",background:`${dC}${isCurrent?"22":"12"}`,border:`1px solid ${dC}${isCurrent?"55":"28"}`,borderRadius:6,padding:isCurrent?"5px 12px":"2px 7px",fontFamily:MONO,fontSize:isCurrent?22:16,fontWeight:700,color:dC}}>
+                    <span title={row.isPrueba ? "Prueba" : (row.isAutorizado ? "Autorizado por JdT" : undefined)} style={{display:"inline-block",background:`${dC}${isCurrent?"22":"12"}`,border:`1px solid ${dC}${isCurrent?"55":"28"}`,borderRadius:6,padding:isCurrent?"5px 12px":"2px 7px",fontFamily:MONO,fontSize:isCurrent?22:16,fontWeight:700,color:dC}}>
                       {dev>=0?"+":""}{dev.toFixed(2)}%
-                      {row.isAutorizado && <span style={{marginLeft:4}}>⚑</span>}
+                      {row.isPrueba && <span style={{marginLeft:4}}>{EMOJI_PRUEBA}</span>}
+                      {row.isAutorizado && !row.isPrueba && <span style={{marginLeft:4}}>{EMOJI_AUTH}</span>}
                     </span>
                   ) : (
                     <span style={{fontFamily:MONO,fontSize:12,color:C.textMuted}}>—</span>
@@ -442,8 +494,8 @@ function VerticalTable({ data, unit, currentIdx, despachoManana }) {
 }
 
 /* ─── Componente principal ─── */
-export function Table({ unitId, xmDispatch, despachoManana, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos, autorizaciones, horizontal, showChart, onToggleChart }) {
-  const { data, unit, currentIdx, isXmLive } = useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos, autorizaciones);
+export function Table({ unitId, xmDispatch, despachoManana, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos, autorizaciones, eventosBitacora, horizontal, showChart, onToggleChart }) {
+  const { data, unit, currentIdx, isXmLive } = useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos, autorizaciones, eventosBitacora);
 
   // despachoManana is { GEC3: [24], GEC32: [24], ... } or null
   const unitDespachoManana = despachoManana?.[unitId] || null;
