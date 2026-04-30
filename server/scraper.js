@@ -6,11 +6,12 @@ const RECONNECT_MS = 5_000
 const FALLBACK_MS  = 3_000
 const DEBOUNCE_MS  = 300
 
-const WATCHDOG_INTERVAL_MS = 10_000   // chequeo cada 10s
-const STALE_WARNING_MS     = 30_000   // aviso a los 30s
-const STALE_RESTART_MS     = 60_000   // restart forzado a los 60s
-const HEARTBEAT_MS         = 60_000   // log periódico de vida
-const PME_LOG_THROTTLE_MS  = 30_000   // throttle del resumen [PME]
+const WATCHDOG_INTERVAL_MS   = 10_000   // chequeo cada 10s
+const STALE_WARNING_MS       = 30_000   // aviso a los 30s
+const STALE_RESTART_MS       = 60_000   // restart forzado a los 60s
+const STALE_VALUE_RESTART_MS = 5 * 60_000  // 5 min sin cambio de valor → reinicio (feed PME muerto)
+const HEARTBEAT_MS           = 60_000   // log periódico de vida
+const PME_LOG_THROTTLE_MS    = 30_000   // throttle del resumen [PME]
 
 // HEADLESS=false para ventana visible (debug local), cualquier otro valor = headless nuevo
 const HEADLESS = process.env.HEADLESS === 'false' ? false : true
@@ -19,6 +20,8 @@ export class PMEScraper {
   #pme; #units; #onData
   #browser = null; #page = null; #running = false
   #lastDataAt = 0
+  #lastValueChangeAt = 0
+  #lastValuesKey = null
   #updateCount = 0
   #errorCount = 0
   #warming = false
@@ -40,9 +43,14 @@ export class PMEScraper {
       warming: this.#warming,
       lastDataAt: this.#lastDataAt || null,
       secondsSinceUpdate: this.#lastDataAt ? Math.floor((now - this.#lastDataAt) / 1000) : null,
+      lastValueChangeAt: this.#lastValueChangeAt || null,
+      secondsSinceValueChange: this.#lastValueChangeAt
+        ? Math.floor((now - this.#lastValueChangeAt) / 1000)
+        : null,
       updateCount: this.#updateCount,
       errorCount: this.#errorCount,
       stale: this.#lastDataAt > 0 && (now - this.#lastDataAt) > STALE_RESTART_MS,
+      valueStale: this.#lastValueChangeAt > 0 && (now - this.#lastValueChangeAt) > STALE_VALUE_RESTART_MS,
     }
   }
 
@@ -92,8 +100,22 @@ export class PMEScraper {
         // waitForEvent('close') en #observe(); #run() retorna y el while loop
         // de start() reabre todo desde cero.
         this.#teardown().catch(() => {})
+        return
       } else if (gap > STALE_WARNING_MS) {
         console.warn(`[Scraper] sin datos hace ${(gap / 1000).toFixed(0)}s (warning)`)
+      }
+
+      // Detección de freeze: el feed PME murió pero el setInterval de la página
+      // sigue re-leyendo el DOM estático. El watchdog basado en lastDataAt nunca
+      // dispararía. Forzamos restart si los valores no cambian por mucho tiempo.
+      const valueGap = Date.now() - this.#lastValueChangeAt
+      if (this.#lastValueChangeAt > 0 && valueGap > STALE_VALUE_RESTART_MS) {
+        this.#errorCount++
+        console.error(
+          `[Scraper] VALUE-WATCHDOG: valores congelados hace ${(valueGap / 1000) | 0}s ` +
+          `(errorCount=${this.#errorCount}). Forzando reinicio del navegador…`
+        )
+        this.#teardown().catch(() => {})
       }
     }, WATCHDOG_INTERVAL_MS)
   }
@@ -102,9 +124,11 @@ export class PMEScraper {
     if (this.#heartbeatTimer) return
     this.#heartbeatTimer = setInterval(() => {
       const status = this.getStatus()
-      const ago = status.secondsSinceUpdate != null ? `${status.secondsSinceUpdate}s` : 'nunca'
+      const ago    = status.secondsSinceUpdate      != null ? `${status.secondsSinceUpdate}s`      : 'nunca'
+      const agoVal = status.secondsSinceValueChange != null ? `${status.secondsSinceValueChange}s` : 'nunca'
       console.log(
         `[PME Heartbeat] última lectura hace ${ago} · ` +
+        `último cambio de valor hace ${agoVal} · ` +
         `${status.updateCount} actualizaciones · ` +
         `running=${status.running} warming=${status.warming} errors=${status.errorCount}`
       )
@@ -117,6 +141,10 @@ export class PMEScraper {
     try { await this.#browser?.close() } catch {}
     this.#browser = null
     this.#page    = null
+    // Resetear marcadores de freeze para que el browser nuevo no herede
+    // el timestamp viejo y se auto-reinicie de inmediato.
+    this.#lastValueChangeAt = 0
+    this.#lastValuesKey = null
   }
 
   async #run() {
@@ -291,6 +319,17 @@ export class PMEScraper {
       this.#lastDataAt = Date.now()
       this.#updateCount++
 
+      // Detección de freeze: cuantizamos a 0.01 (10 kW) para normalizar la
+      // comparación. Marcador 'x' para nulls evita que un fallo parcial de
+      // selector enmascare un freeze real.
+      const valuesKey = rawUnits
+        .map(u => u.valueMW != null ? u.valueMW.toFixed(2) : 'x')
+        .join('|')
+      if (valuesKey !== this.#lastValuesKey) {
+        this.#lastValueChangeAt = Date.now()
+        this.#lastValuesKey = valuesKey
+      }
+
       this.#onData({
         type:      'update',
         units:     rawUnits,
@@ -387,9 +426,10 @@ export class PMEScraper {
     )
 
     console.log('[Scraper] Observación activa…')
-    // Resetear el timestamp para dar al observer un ciclo de gracia antes de
+    // Resetear timestamps para dar al observer un ciclo de gracia antes de
     // que el watchdog lo evalúe (la primera mutación llega dentro de FALLBACK_MS).
     this.#lastDataAt = Date.now()
+    this.#lastValueChangeAt = Date.now()
     this.#warming = false
     await this.#page.waitForEvent('close', { timeout: 0 }).catch(() => {})
   }

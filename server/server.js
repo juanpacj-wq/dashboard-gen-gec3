@@ -126,7 +126,7 @@ const httpServer = createServer(async (req, res) => {
     const pme = scraper.getStatus()
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({
-      status: pme.stale ? 'degraded' : 'ok',
+      status: (pme.stale || pme.valueStale) ? 'degraded' : 'ok',
       clients: clients.size,
       uptime: process.uptime(),
       pme,
