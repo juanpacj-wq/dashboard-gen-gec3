@@ -1,7 +1,7 @@
 import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
-import { PMEScraper } from './scraper.js'
-import { UNITS, PME } from './config.js'
+import { ExtractorOrchestrator } from './extractorOrchestrator.js'
+import { UNITS, PME, METER_DEFAULTS } from './config.js'
 import {
   initDB,
   getTodayPeriods,
@@ -475,8 +475,16 @@ const proyHistFlushInterval = setInterval(async () => {
   }
 }, PROY_FLUSH_MS)
 
-// ── Scraper ──────────────────────────────────────────────────────────────────
-const scraper = new PMEScraper({ pme: PME, units: UNITS, onData: broadcast })
+// ── Extractor (medidores primario + PME fallback hot-standby por-unidad) ─────
+// El orquestador wrapea MeterPoller + PMEScraper. Histeresis: 3 ticks meter
+// fallidos → switch a pme; 2 ticks meter OK → recovery. Ver
+// extractorOrchestrator.js y EXTRACTION_BACKEND_MAP.md.
+const scraper = new ExtractorOrchestrator({
+  units: UNITS,
+  pme: PME,
+  onData: broadcast,
+  ...METER_DEFAULTS,
+})
 
 /**
  * Rellena en `generacion_periodos`/`proyeccion_periodos`/`desviacion_periodos`
