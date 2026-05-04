@@ -9,6 +9,14 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
   const currentMW = realtimeUnit?.valueMW != null ? Math.max(0, realtimeUnit.valueMW) : pmeGen;
   const maxMW = realtimeUnit?.maxMW ?? u.capacity;
 
+  // Badge debug: indica si el valor viene del medidor primario (ION8650) o del fallback PME.
+  const source = realtimeUnit?.source ?? null;
+  const sourceBadge = source === 'meter'
+    ? { label: 'MEDIDOR', color: C.green, bg: C.greenDim, border: C.greenBorder }
+    : source === 'pme'
+    ? { label: 'PME', color: C.amber, bg: C.amberDim, border: C.amberBorder }
+    : null;
+
   // capacidad %
   const pctCap = useMemo(
   () => Math.min(100, Math.max(0, Math.round((currentMW / maxMW) * 100))),
@@ -49,6 +57,23 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: isSel ? 4 : 3 }}>
           <div style={{ width: isSel ? 9 : 7, height: isSel ? 9 : 7, borderRadius: "50%", background: u.color, boxShadow: `0 0 ${isSel ? 7 : 3}px ${u.color}60`, flexShrink: 0 }} />
           <span style={{ fontSize: isSel ? 24 : 16, fontWeight: 800, color: isSel ? u.color : C.text, fontFamily: MONO, letterSpacing: 1 }}>{u.id}</span>
+          {sourceBadge && (
+            <span style={{
+              marginLeft: isSel ? 6 : "auto",
+              fontSize: isSel ? 11 : 10,
+              color: sourceBadge.color,
+              background: sourceBadge.bg,
+              border: `1px solid ${sourceBadge.border}`,
+              borderRadius: 5,
+              padding: "1px 6px",
+              fontFamily: MONO,
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+            }}>
+              {sourceBadge.label}
+            </span>
+          )}
           {isSel && <span style={{ marginLeft: "auto", fontSize: 11, color: C.green, background: C.greenDim, border: `1px solid ${C.greenBorder}`, borderRadius: 5, padding: "1px 6px", fontFamily: MONO, fontWeight: 700, whiteSpace: "nowrap" }}>SELECCIONADA</span>}
         </div>
         <div style={{ fontSize: 12, color: C.textMuted, fontFamily: FONT, marginBottom: isSel ? 6 : 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{isSel ? "Capacidad Instalada" : "CAPAIns"} - {u.capacity} MW</div>
