@@ -88,6 +88,8 @@ export function useRealtimeData() {
   const handleMessage = useCallback((msg) => {
     if (msg.type !== 'update') return;
 
+    // El backend (ExtractorOrchestrator) envía cada unit con shape:
+    // { id, label, valueMW, maxMW, source: 'meter' | 'pme' | null }. Lo propagamos tal cual.
     setUnits(msg.units);
     setLastUpdate(new Date());
 
