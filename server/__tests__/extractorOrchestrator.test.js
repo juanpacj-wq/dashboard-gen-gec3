@@ -177,14 +177,17 @@ describe('ExtractorOrchestrator — histeresis primario → fallback', () => {
     await emitMeterAll(null); await tick()  // error 1
     let last = onData.mock.calls.at(-1)[0]
     expect(last.units.find((u) => u.id === 'TGJ1').valueMW).toBeNull()
+    expect(last.units.find((u) => u.id === 'TGJ1').source).toBe('meter')
 
     await emitMeterAll(null); await tick()  // error 2
     last = onData.mock.calls.at(-1)[0]
     expect(last.units.find((u) => u.id === 'TGJ1').valueMW).toBeNull()
+    expect(last.units.find((u) => u.id === 'TGJ1').source).toBe('meter')
 
     await emitMeterAll(null); await tick()  // error 3 — switch, value desde pme
     last = onData.mock.calls.at(-1)[0]
     expect(last.units.find((u) => u.id === 'TGJ1').valueMW).toBe(60)
+    expect(last.units.find((u) => u.id === 'TGJ1').source).toBe('pme')
   })
 
   it('si pme tampoco tiene valor, switch no ocurre y output sigue null', async () => {
@@ -198,6 +201,22 @@ describe('ExtractorOrchestrator — histeresis primario → fallback', () => {
     expect(orch.getStatus().perUnit.TGJ1.source).toBe('meter')  // no pudo switchear
     const last = onData.mock.calls.at(-1)[0]
     expect(last.units.find((u) => u.id === 'TGJ1').valueMW).toBeNull()
+  })
+
+  it('emite source por unidad coherente con el state machine', async () => {
+    await orch.start()
+
+    // Estado normal: ambas fuentes vivas, prefiere meter
+    await emitMeterAll(50); await emitPmeAll(30); await tick()
+    let last = onData.mock.calls.at(-1)[0]
+    expect(last.units.find((u) => u.id === 'TGJ1').source).toBe('meter')
+
+    // 3 errores consecutivos del meter (pme válido) → switch a pme
+    for (let i = 0; i < 3; i++) {
+      await emitMeterAll(null); await emitPmeAll(30); await tick()
+    }
+    last = onData.mock.calls.at(-1)[0]
+    expect(last.units.find((u) => u.id === 'TGJ1').source).toBe('pme')
   })
 })
 
@@ -290,6 +309,10 @@ describe('ExtractorOrchestrator — independencia entre unidades', () => {
       const last = onData.mock.calls.at(-1)[0]
       expect(last.units.find((u) => u.id === 'TGJ1').valueMW).toBe(71)  // pme
       expect(last.units.find((u) => u.id === 'TGJ2').valueMW).toBe(60)  // meter
+      expect(last.units.find((u) => u.id === 'TGJ1').source).toBe('pme')
+      expect(last.units.find((u) => u.id === 'TGJ2').source).toBe('meter')
+      expect(last.units.find((u) => u.id === 'GEC3').source).toBe('meter')
+      expect(last.units.find((u) => u.id === 'GEC32').source).toBe('meter')
     } finally {
       await orch.stop()
       vi.useRealTimers()
