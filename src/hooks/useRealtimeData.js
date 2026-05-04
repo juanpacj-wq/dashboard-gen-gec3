@@ -22,8 +22,12 @@ export function useRealtimeData() {
   const timer = useRef(null);
   const stopped = useRef(false);
 
-  // Load completed periods and despacho final from REST API on mount
-  useEffect(() => {
+  // Snapshots REST: fetched al mount, refresh cada 5min y al reconectar el WS.
+  // One-shot on mount no era suficiente — si el backend respondía vacío al cargar
+  // (restart, transient), el state quedaba stranded hasta que el usuario hiciera
+  // Ctrl+Shift+R manualmente. desviacionPeriodos era el más afectado porque no
+  // llega por WS, solo por este path REST.
+  const loadSnapshots = useCallback(() => {
     fetch('/api/periods/today')
       .then(r => r.ok ? r.json() : [])
       .then(rows => {
@@ -84,6 +88,22 @@ export function useRealtimeData() {
       })
       .catch(() => {});
   }, []);
+
+  // Mount + cada 5min (mismo cadence que useXmDispatch / useXmGeneration).
+  useEffect(() => {
+    loadSnapshots();
+    const id = setInterval(loadSnapshots, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [loadSnapshots]);
+
+  // Refresh inmediato al transicionar WS de !live → live (post-restart del backend).
+  const prevStatusRef = useRef(status);
+  useEffect(() => {
+    if (prevStatusRef.current !== 'live' && status === 'live') {
+      loadSnapshots();
+    }
+    prevStatusRef.current = status;
+  }, [status, loadSnapshots]);
 
   const handleMessage = useCallback((msg) => {
     if (msg.type !== 'update') return;
