@@ -124,12 +124,16 @@ const httpServer = createServer(async (req, res) => {
   // Health check
   if (req.url === '/health') {
     const pme = scraper.getStatus()
+    const emailGEC = emailDispatchGEC.getStatus()
+    const emailTGJ = emailDispatchTGJ.getStatus()
+    const isDegraded = pme.stale || pme.valueStale || emailGEC.stale || emailTGJ.stale
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({
-      status: (pme.stale || pme.valueStale) ? 'degraded' : 'ok',
+      status: isDegraded ? 'degraded' : 'ok',
       clients: clients.size,
       uptime: process.uptime(),
       pme,
+      emailDispatch: { gec: emailGEC, tgj: emailTGJ },
     }))
     return
   }
