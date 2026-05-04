@@ -223,7 +223,7 @@ export class ExtractorOrchestrator {
       else if (state.source === 'pme') valueMW = pmeValid ? pme.value : null
       else valueMW = null
 
-      mergedUnits.push({ id: unit.id, label: unit.label, valueMW, maxMW: unit.maxMW })
+      mergedUnits.push({ id: unit.id, label: unit.label, valueMW, maxMW: unit.maxMW, source: state.source })
 
       if (valueMW !== null) {
         const prevVal = this.#prevValuesByUnit.get(unit.id)
