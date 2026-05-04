@@ -103,6 +103,8 @@ async function fetchXmRedespacho(dateStr, codeMap) {
 }
 
 // ── Main Service ────────────────────────────────────────────────────────────
+const STALE_THRESHOLD_MS = 15 * 60 * 1000  // /health marks degraded si #state lleva >15min sin refresh
+
 export class EmailDispatchService {
   #interval = null
   #state = {}
@@ -112,6 +114,11 @@ export class EmailDispatchService {
   #unitIds
   // Sorted keys (longest first) for safe regex matching
   #unitKeys
+  // Observability: cuándo fue el último #loadState exitoso. Si esto no se renueva
+  // y el servicio sigue sirviendo `getState()` viejo, el dashboard miente. Antes
+  // este caso era invisible (ver /health con stale=true para detectarlo).
+  #lastLoadAt = null
+  #lastLoadError = null
 
   constructor({ mailbox, unitsMap, xmCodeMap, unitIds }) {
     this.#mailbox = mailbox
@@ -142,6 +149,23 @@ export class EmailDispatchService {
 
   getState() {
     return this.#state
+  }
+
+  getStatus() {
+    const ageMs = this.#lastLoadAt ? Date.now() - this.#lastLoadAt : null
+    const cachedPeriods = {}
+    for (const [unitId, periods] of Object.entries(this.#state)) {
+      cachedPeriods[unitId] = Object.keys(periods).length
+    }
+    return {
+      unitIds: this.#unitIds,
+      mailbox: this.#mailbox,
+      lastLoadAt: this.#lastLoadAt ? new Date(this.#lastLoadAt).toISOString() : null,
+      lastLoadAgeSec: ageMs != null ? Math.round(ageMs / 1000) : null,
+      stale: this.#lastLoadAt == null || ageMs > STALE_THRESHOLD_MS,
+      lastLoadError: this.#lastLoadError,
+      cachedPeriods,
+    }
   }
 
   // ── Private: fetch emails from configured mailbox ─────────────────────────
@@ -223,23 +247,29 @@ export class EmailDispatchService {
   }
 
   // ── Private: load state from DB filtered by unitIds ───────────────────────
+  // Atomic swap: si la query DB throws a mitad, no dejamos #state vacío ni
+  // half-populated — preservamos el último snapshot bueno y dejamos que el
+  // caller decida (caller marca stale en #lastLoadError y emite warning).
   async #loadState() {
     const { dateStr, tomorrowStr, hour } = colombiaTime()
     const datesToLoad = [dateStr]
     if (hour === 23) datesToLoad.push(tomorrowStr)
 
-    this.#state = {}
+    const newState = {}
     for (const fecha of datesToLoad) {
       const rows = await getDespachoFinalByDate(fecha)
       for (const row of rows) {
         if (!this.#unitIds.includes(row.unit_id)) continue
-        if (!this.#state[row.unit_id]) this.#state[row.unit_id] = {}
-        this.#state[row.unit_id][row.periodo] = {
+        if (!newState[row.unit_id]) newState[row.unit_id] = {}
+        newState[row.unit_id][row.periodo] = {
           valor_mw: row.valor_mw,
           source: row.source,
         }
       }
     }
+    this.#state = newState
+    this.#lastLoadAt = Date.now()
+    this.#lastLoadError = null
   }
 
   async fetchAndProcess() {
@@ -252,17 +282,20 @@ export class EmailDispatchService {
     const validDates = [dateStr]
     if (hour === 23) validDates.push(tomorrowStr)
 
-    // 1. Fetch and parse emails
-    let emails
+    // 1. Try to fetch emails. Si falla (Graph 503, mailbox sin permisos, red),
+    //    NO hacemos return — el reload de DB del paso 4 sigue siendo necesario,
+    //    sino #state queda colgado con valores antiguos por horas/días (root cause
+    //    de la divergencia "deployed muestra valores fantasma" reportada).
+    let emails = []
     try {
       emails = await this.#fetchEmails(dateStr)
       console.log(`[EmailDispatch:${this.#unitIds}] ${emails.length} correos encontrados`)
       emails.forEach(e => console.log(' -', e.subject, '|', e.receivedDateTime))
     } catch (e) {
       console.error(`[EmailDispatch:${this.#unitIds}] Error leyendo correos:`, e.message)
-      return
     }
 
+    // 2. Parse + persist todos los emails recibidos
     let saved = 0
     for (const email of emails) {
       const parsed = this.#parseEmail(email)
@@ -288,13 +321,24 @@ export class EmailDispatchService {
 
     if (saved > 0) console.log(`[EmailDispatch:${this.#unitIds}] ${saved} registros guardados desde correos`)
 
-    // 2. Fallback: at minute >= 55, fill missing next-period with XM redespacho
+    // 3. Fallback: at minute >= 55, fill missing next-period with XM redespacho
     if (minute >= 55) {
-      await this.#applyFallbacks(hour, dateStr, tomorrowStr)
+      try {
+        await this.#applyFallbacks(hour, dateStr, tomorrowStr)
+      } catch (e) {
+        console.error(`[EmailDispatch:${this.#unitIds}] Error en fallback XM:`, e.message)
+      }
     }
 
-    // 3. Reload state from DB
-    await this.#loadState()
+    // 4. Reload state from DB — independent of email fetch result.
+    //    Si esto falla, registramos #lastLoadError y dejamos #state como estaba;
+    //    /health expone stale=true para que ops detecte el cuelgue.
+    try {
+      await this.#loadState()
+    } catch (e) {
+      this.#lastLoadError = { message: e.message, at: new Date().toISOString() }
+      console.error(`[EmailDispatch:${this.#unitIds}] #loadState falló (state puede estar stale):`, e.message)
+    }
   }
 
   async #applyFallbacks(hour, dateStr, tomorrowStr) {
