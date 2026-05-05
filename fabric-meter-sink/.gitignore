@@ -1,0 +1,59 @@
+# Env (NEVER commit credentials — el .env real lleva CLIENT_SECRET y passwords de medidores)
+.env
+.env.*
+*.env
+!.env.example
+
+# Secretos genéricos (defensa en profundidad)
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+credentials.json
+secrets.json
+*credentials*.json
+*-credentials.*
+*.token
+*.tokens
+
+# Caches de auth de Azure / MSAL (si en el futuro se habilita disk cache)
+.azure/
+.msal/
+msal_token_cache*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Build
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Runtime (logs pueden tener IPs, GUIDs, mensajes de error con detalles internos)
+logs/
+var/
+*.log
+*.log.*
+
+# Runbook con detalles de infraestructura — no commitear
+DEPLOY.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store

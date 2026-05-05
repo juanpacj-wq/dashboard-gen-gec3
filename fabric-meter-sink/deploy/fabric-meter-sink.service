@@ -1,0 +1,25 @@
+[Unit]
+Description=Fabric Meter Sink — ION8650 → Fabric Lakehouse Delta
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fabric-sink
+Group=fabric-sink
+WorkingDirectory=/opt/fabric-meter-sink
+EnvironmentFile=/opt/fabric-meter-sink/.env
+ExecStart=/opt/fabric-meter-sink/.venv/bin/python -m src.main
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Hardening básico
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/fabric-meter-sink/logs /var/run/fabric-meter-sink
+
+[Install]
+WantedBy=multi-user.target
