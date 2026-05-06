@@ -3,7 +3,7 @@ import { C, MONO, FONT } from "../theme";
 import { UNITS } from "../data/units";
 import { MiniGauge } from "./MiniGauge";
 
-function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, projection, xmDispatch, autorizaciones }) {
+function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, projection, xmDispatch, autorizaciones, eventosBitacora }) {
   // Generación actual (PME acumulado del periodo actual)
   const pmeGen = Math.max(0, pmeAccumulated?.[u.id] ?? 0);
   const currentMW = realtimeUnit?.valueMW != null ? Math.max(0, realtimeUnit.valueMW) : pmeGen;
@@ -41,6 +41,13 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
   if (isAutorizado) dev = 0;
   const devColor = isAutorizado ? C.green : (Math.abs(dev) > 5 ? C.red : C.green);
 
+  // Badge "EN PRUEBAS": aparece cuando hay evento PRUEBA en bitácora para el periodo actual.
+  // Coexiste con sourceBadge — son señales independientes (medición vs. estado operativo).
+  const isPruebaNow = !!eventosBitacora?.[u.id]?.[currentPeriodo]?.PRUEBA;
+  const pruebaBadge = isPruebaNow
+    ? { label: 'EN PRUEBAS', color: C.amber, bg: C.amberDim, border: C.amberBorder }
+    : null;
+
   return (
     <div onClick={() => onSelect(isSel ? null : u.id)} style={{
       flex: isSel ? "2.2 1 0" : "1 1 0",
@@ -72,6 +79,23 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
               flexShrink: 0,
             }}>
               {sourceBadge.label}
+            </span>
+          )}
+          {pruebaBadge && (
+            <span style={{
+              marginLeft: sourceBadge ? 4 : (isSel ? 6 : "auto"),
+              fontSize: isSel ? 11 : 10,
+              color: pruebaBadge.color,
+              background: pruebaBadge.bg,
+              border: `1px solid ${pruebaBadge.border}`,
+              borderRadius: 5,
+              padding: "1px 6px",
+              fontFamily: MONO,
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+            }}>
+              {pruebaBadge.label}
             </span>
           )}
           {isSel && <span style={{ marginLeft: "auto", fontSize: 11, color: C.green, background: C.greenDim, border: `1px solid ${C.greenBorder}`, borderRadius: 5, padding: "1px 6px", fontFamily: MONO, fontWeight: 700, whiteSpace: "nowrap" }}>SELECCIONADA</span>}
@@ -107,7 +131,7 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
   );
 }
 
-export function UnitCards({ selected, onSelect, height, realtimeUnits = [], pmeAccumulated, projection, xmDispatch, autorizaciones }) {
+export function UnitCards({ selected, onSelect, height, realtimeUnits = [], pmeAccumulated, projection, xmDispatch, autorizaciones, eventosBitacora }) {
   return (
     <div style={{ display: "flex", gap: 8, height }}>
       {UNITS.map(u => (
@@ -122,6 +146,7 @@ export function UnitCards({ selected, onSelect, height, realtimeUnits = [], pmeA
           projection={projection}
           xmDispatch={xmDispatch}
           autorizaciones={autorizaciones}
+          eventosBitacora={eventosBitacora}
         />
       ))}
     </div>

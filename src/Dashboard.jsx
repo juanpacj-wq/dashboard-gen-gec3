@@ -110,7 +110,7 @@ export default function Dashboard() {
 
       {/* Content */}
       <div style={{flex:1,padding:px,display:"flex",flexDirection:"column",gap,overflow:"hidden",minHeight:0}}>
-        <UnitCards selected={sel} onSelect={id=>setSel(id||"GEC3")} height={unitRowH} realtimeUnits={rtUnits} pmeAccumulated={accumulated} projection={projection} xmDispatch={xmDispatch} autorizaciones={autorizaciones}/>
+        <UnitCards selected={sel} onSelect={id=>setSel(id||"GEC3")} height={unitRowH} realtimeUnits={rtUnits} pmeAccumulated={accumulated} projection={projection} xmDispatch={xmDispatch} autorizaciones={autorizaciones} eventosBitacora={eventosBitacora}/>
 
         <div style={{flex:1,display:"flex",gap,minHeight:0}}>
           <div style={{flex:showChart?"60 1 0":"80 1 0",minWidth:0,transition:"flex 0.3s ease"}}>
