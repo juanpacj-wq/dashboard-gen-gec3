@@ -27,10 +27,6 @@ migration-prompts
 *.sln
 *.sw?
 
-
-
-CLAUDE.md
-
 # Environment & debug
 .env
 server/.env
