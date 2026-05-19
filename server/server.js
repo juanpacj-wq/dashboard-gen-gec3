@@ -20,6 +20,7 @@ import { EmailDispatchService } from './emailDispatch.js'
 import { RedespachoscraperService } from './redespachoscraper.js'
 import { DespachoscraperService } from './despachoscraper.js'
 import { computeLive, computeClosed } from './projectionCalculator.js'
+import { buildHealthSnapshot } from './healthSnapshot.js'
 
 const PORT = parseInt(process.env.WS_PORT, 10) || 3001
 
@@ -121,6 +122,23 @@ const closingProjections = {}
 
 // ── HTTP + WebSocket server ──────────────────────────────────────────────────
 const httpServer = createServer(async (req, res) => {
+  // Detailed health (aditivo — el /health original sigue intacto debajo)
+  if (req.url === '/health/detailed') {
+    const snapshot = buildHealthSnapshot({
+      scraper: null,                  // no hay MeterPoller top-level — encapsulado en el orchestrator
+      orchestrator: scraper,          // la var "scraper" de este archivo es un ExtractorOrchestrator
+      accumulator,
+      emailDispatchGEC,
+      emailDispatchTGJ,
+      despachoScraper: despScraper,
+      redespachoScraper: redespScraper,
+      clientsCount: clients.size,
+    })
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(snapshot))
+    return
+  }
+
   // Health check
   if (req.url === '/health') {
     const pme = scraper.getStatus()
