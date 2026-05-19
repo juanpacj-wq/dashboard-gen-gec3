@@ -184,6 +184,11 @@ export class RedespachoscraperService {
   #nationalCache = null
   #interval = null
   #dbAvailable = false
+  #lastSuccessAt = null
+  #lastErrorAt = null
+  #lastError = null
+  #consecutiveErrors = 0
+  #lastChangesCount = 0
 
   async init(dbAvailable = false) {
     this.#dbAvailable = dbAvailable
@@ -224,15 +229,46 @@ export class RedespachoscraperService {
     return this.#nationalCache
   }
 
-  async #refresh() {
-    const raw = await scrapeRedespacho()
-    this.#cache = parseItems(raw.Items)
+  getStatus() {
+    return {
+      lastSuccessAt: this.#lastSuccessAt ? new Date(this.#lastSuccessAt).toISOString() : null,
+      secondsSinceSuccess: this.#lastSuccessAt ? Math.round((Date.now() - this.#lastSuccessAt) / 1000) : null,
+      lastErrorAt: this.#lastErrorAt ? new Date(this.#lastErrorAt).toISOString() : null,
+      lastError: this.#lastError,
+      consecutiveErrors: this.#consecutiveErrors,
+      lastChangesCount: this.#lastChangesCount,
+    }
+  }
 
-    // Parsear todas las plantas para el ticker nacional
+  async #refresh() {
+    let raw
+    try {
+      raw = await scrapeRedespacho()
+    } catch (err) {
+      this.#lastErrorAt = Date.now()
+      this.#lastError = err.message
+      this.#consecutiveErrors++
+      throw err
+    }
+
+    const parsed = parseItems(raw.Items)
+
     if (raw.rawContent) {
+      // Éxito: contar diffs vs cache previo para diagnóstico
+      this.#lastChangesCount = countChanges(this.#cache, parsed)
+      this.#cache = parsed
       this.#nationalCache = parseAllPlants(raw.rawContent)
-      console.log(`[RedespScraper] Datos cargados: ${Object.keys(this.#cache).join(', ')} | ${this.#nationalCache.length} plantas nacionales`)
+      this.#lastSuccessAt = Date.now()
+      this.#lastErrorAt = null
+      this.#lastError = null
+      this.#consecutiveErrors = 0
+      console.log(`[RedespScraper] Datos cargados: ${Object.keys(this.#cache).join(', ')} | ${this.#nationalCache.length} plantas nacionales | ${this.#lastChangesCount} cambios`)
     } else {
+      // Archivo aún no publicado (caso esperado los primeros minutos del día)
+      this.#cache = parsed
+      this.#lastErrorAt = Date.now()
+      this.#lastError = 'file-not-yet-published'
+      this.#consecutiveErrors++
       console.log(`[RedespScraper] Datos cargados: ${Object.keys(this.#cache).join(', ')} | sin datos nacionales`)
     }
 
@@ -246,4 +282,19 @@ export class RedespachoscraperService {
       }
     }
   }
+}
+
+// Cuenta cuántas celdas (unitId, periodo) cambiaron > 0.01 MW vs cache previo.
+function countChanges(prev, next) {
+  if (!prev) return 0
+  let count = 0
+  for (const unitId of Object.keys(next)) {
+    const a = prev[unitId]
+    const b = next[unitId]
+    if (!Array.isArray(a) || !Array.isArray(b)) continue
+    for (let i = 0; i < b.length; i++) {
+      if (Math.abs((a[i] ?? 0) - (b[i] ?? 0)) > 0.01) count++
+    }
+  }
+  return count
 }

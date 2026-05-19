@@ -182,6 +182,12 @@ export class DespachoscraperService {
   #cacheTomorrow = null
   #foundTomorrow = false
   #dateTomorrow = null
+  #lastSuccessAt = null
+  #lastErrorAt = null
+  #lastError = null
+  #consecutiveErrors = 0
+  #foundForToday = false
+  #lastFileForDate = null
 
   async init(dbAvailable = false) {
     this.#dbAvailable = dbAvailable
@@ -209,6 +215,18 @@ export class DespachoscraperService {
     return this.#foundTomorrow ? this.#cacheTomorrow : null
   }
 
+  getStatus() {
+    return {
+      lastSuccessAt: this.#lastSuccessAt ? new Date(this.#lastSuccessAt).toISOString() : null,
+      secondsSinceSuccess: this.#lastSuccessAt ? Math.round((Date.now() - this.#lastSuccessAt) / 1000) : null,
+      lastErrorAt: this.#lastErrorAt ? new Date(this.#lastErrorAt).toISOString() : null,
+      lastError: this.#lastError,
+      consecutiveErrors: this.#consecutiveErrors,
+      foundForToday: this.#foundForToday,
+      lastFileForDate: this.#lastFileForDate,
+    }
+  }
+
   async #refresh() {
     const now = getColombiaDate()
     const todayStr = now.toISOString().slice(0, 10)
@@ -219,15 +237,30 @@ export class DespachoscraperService {
       if (this.#dateLoaded !== todayStr) {
         this.#found = false
         this.#dateLoaded = todayStr
+        this.#foundForToday = false
         console.log(`[DespScraper] Nuevo día ${todayStr} — buscando archivo de despacho`)
       }
 
       // 1. Intentar scraper (fuente primaria — siempre tiene las 4 unidades)
-      const raw = await scrapeDespacho()
+      let raw
+      try {
+        raw = await scrapeDespacho()
+      } catch (err) {
+        this.#lastErrorAt = Date.now()
+        this.#lastError = err.message
+        this.#consecutiveErrors++
+        throw err
+      }
 
       if (raw.found) {
         this.#cache = parseItems(raw.Items)
         this.#found = true
+        this.#lastSuccessAt = Date.now()
+        this.#lastErrorAt = null
+        this.#lastError = null
+        this.#consecutiveErrors = 0
+        this.#foundForToday = true
+        this.#lastFileForDate = todayStr
         console.log(`[DespScraper] Archivo encontrado y cargado para ${todayStr}`)
         if (this.#dbAvailable) {
           try {
@@ -238,6 +271,11 @@ export class DespachoscraperService {
           }
         }
       } else {
+        // Archivo aún no publicado (caso esperado en la mañana hasta que XM lo libere)
+        this.#lastErrorAt = Date.now()
+        this.#lastError = 'file-not-yet-published'
+        this.#consecutiveErrors++
+
         // 2. Scraper no encontró archivo → intentar DB como fallback
         if (this.#dbAvailable && !this.#cache) {
           try {
