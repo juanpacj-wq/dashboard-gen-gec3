@@ -146,3 +146,48 @@ Las migration-prompts fueron una secuencia de 11 prompts ejecutados en orden dur
 
 - **F15 (Bit-cora-g3 → dashboard):** badge de disponibilidad por planta consumiendo `GET /api/eventos-dashboard?tipo=DISP&planta_id=` de Bit-cora-g3. Ver `../../docs/interfaces-cross-repo.md` y `Bit-cora-g3/docs/decisions.md` D-009.
 - **`graphify-out/`**: contiene un knowledge graph (`GRAPH_REPORT.md`) generado en algún momento. Las god nodes y comunidades listadas allí pueden estar desactualizadas tras la migración a meters. Tratar como referencia, no fuente de verdad. Si se vuelve a generar: `python3 -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"`.
+
+---
+
+## D-115 — Heartbeat + alerting in-process (sin Prometheus por ahora)
+
+**Contexto:** los 7 servicios de extracción del Dashboard (meterPoller,
+orchestrator, accumulator, emailDispatch GEC/TGJ, despacho/redespacho scrapers)
+pueden fallar silenciosamente. El switch meter→PME del orchestrator (D-102) es
+invisible al operador si nadie está mirando el badge UI (D-103). Sin alerting,
+incidentes pueden durar horas hasta que alguien note datos viejos.
+
+**Decisión:** alerter in-process en `server/alerter.js` que:
+- Polea cada `ALERT_POLL_INTERVAL_SEC=30s` un snapshot canónico de
+  `buildHealthSnapshot()` (`healthSnapshot.js`, también expuesto vía nuevo
+  endpoint `GET /health/detailed`).
+- Evalúa umbrales configurables vía env vars `ALERT_THRESH_*` (defaults en
+  `.env.example` + runbook).
+- Emite `WARN` (degradación per-componente) o `CRITICAL` (falla operativa global
+  / accumulator stalled).
+- Manda al webhook genérico vía `alertDispatcher.js` (HTTP POST con
+  serialización Teams/Slack/genérica según `ALERT_TARGET`).
+- Mantiene estado solo en memoria (Map por `incident_key`); cooldown
+  `ALERT_COOLDOWN_MIN=30` min entre re-emisiones; reinicio del proceso = se
+  olvida (aceptable dado deploy poco frecuente).
+- Emite recovery solo para `CRITICAL` (WARN cierra silenciosamente).
+- `/health` original **intacto** (compat con nginx/uptime externos).
+
+Detalle de las 6 decisiones cerradas (Q1..Q6) en `preguntas-01-obs-alerting.md`
+(raíz workspace, archivado en `.scratch/flujo-2026-06-obs-alerting/`).
+
+**Consecuencias:**
+- Cero dependencias nuevas: `fetch` global Node 20+, `Intl.DateTimeFormat`,
+  `setInterval`. No se introduce Prometheus, OTel ni cualquier otro framework
+  de observabilidad — anti-patrón #4 del plan maestro 2026-05.
+- Operación calibra umbrales vía env vars sin redeploy de código.
+- Runbook único `docs/runbooks/observability.md` cubre los 7 escenarios con
+  diagnóstico + fix.
+- El `dashboard-ws.service` debe tener `ALERT_WEBHOOK_URL` configurado en
+  producción; si vacío, el alerter sigue evaluando y solo loguea warn por cada
+  alert no enviada — útil para dev local sin webhook.
+- En este codebase la var `scraper` de `server.js` ES un `ExtractorOrchestrator`,
+  por lo que el snapshot llena `services.orchestrator` y deja `services.meterPoller=null`
+  (el meter poller está encapsulado dentro del orchestrator).
+- W4b (Pino structured logging) reemplazará el `console.error` interno del
+  alerter por logs estructurados con request_id / incident_key. No bloquea W2.
