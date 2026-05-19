@@ -20,6 +20,8 @@ export class EnergyAccumulator {
   #minuteDevBuckets = {} // { unitId: { hour, buckets: [{ sum, count } × 60] } }
   #saveInterval = null
   #onPeriodComplete = null
+  #lastUpdateAt = null         // ms epoch — last tick with at least one non-null valueMW
+  #lastUnitWithValue = null    // unitId of last non-null value seen this tick (orden no determinístico)
 
   constructor({ onPeriodComplete } = {}) {
     this.#onPeriodComplete = onPeriodComplete ?? null
@@ -53,6 +55,11 @@ export class EnergyAccumulator {
     const { hour: currentHour, minute: currentMinute, dateStr: todayStr } = colombiaTime(now)
 
     for (const unit of units) {
+      // D-109: null se ignora para "tick exitoso"; cero es válido y sí cuenta.
+      if (unit.valueMW != null) {
+        this.#lastUpdateAt = now.getTime()
+        this.#lastUnitWithValue = unit.id
+      }
       const mw = unit.valueMW ?? 0
 
       // --- Energy accumulation (trapezoidal) ---
@@ -122,6 +129,18 @@ export class EnergyAccumulator {
     }
 
     return { accumulated, completedPeriods: this.#completed, minuteAvgs, minuteDeviations }
+  }
+
+  getStatus() {
+    return {
+      lastSuccessAt: this.#lastUpdateAt ? new Date(this.#lastUpdateAt).toISOString() : null,
+      secondsSinceSuccess: this.#lastUpdateAt ? Math.round((Date.now() - this.#lastUpdateAt) / 1000) : null,
+      lastErrorAt: null,
+      lastError: null,
+      consecutiveErrors: 0,
+      lastUpdateAt: this.#lastUpdateAt ? new Date(this.#lastUpdateAt).toISOString() : null,
+      lastUnitWithValue: this.#lastUnitWithValue,
+    }
   }
 
   // hour is 0-23, stored in DB as 0-23 (maps to period hour+1 on the client)
