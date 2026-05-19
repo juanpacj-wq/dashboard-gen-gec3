@@ -21,6 +21,8 @@ import { RedespachoscraperService } from './redespachoscraper.js'
 import { DespachoscraperService } from './despachoscraper.js'
 import { computeLive, computeClosed } from './projectionCalculator.js'
 import { buildHealthSnapshot } from './healthSnapshot.js'
+import { Alerter } from './alerter.js'
+import { createAlertDispatcher } from './alertDispatcher.js'
 
 const PORT = parseInt(process.env.WS_PORT, 10) || 3001
 
@@ -508,6 +510,28 @@ const scraper = new ExtractorOrchestrator({
   ...METER_DEFAULTS,
 })
 
+// ── Alerter (W2 — observabilidad + alerting) ────────────────────────────────
+// Polea /health/detailed cada ALERT_POLL_INTERVAL_SEC, evalúa umbrales y dispara
+// alerts vía HTTP POST a ALERT_WEBHOOK_URL (target teams/slack/generic). Si la
+// URL no está configurada, el alerter sigue evaluando pero no manda webhook.
+const alertDispatcher = createAlertDispatcher({
+  webhookUrl: process.env.ALERT_WEBHOOK_URL || null,
+  target: process.env.ALERT_TARGET || 'generic',
+})
+const alerter = new Alerter({
+  getSnapshot: () => buildHealthSnapshot({
+    scraper: null,                  // sin MeterPoller top-level (encapsulado en orchestrator)
+    orchestrator: scraper,          // la var "scraper" es un ExtractorOrchestrator
+    accumulator,
+    emailDispatchGEC,
+    emailDispatchTGJ,
+    despachoScraper: despScraper,
+    redespachoScraper: redespScraper,
+    clientsCount: clients.size,
+  }),
+  dispatch: alertDispatcher,
+})
+
 /**
  * Rellena en `generacion_periodos`/`proyeccion_periodos`/`desviacion_periodos`
  * los periodos pasados que faltan, usando la última fila por (unit, periodo)
@@ -638,6 +662,8 @@ async function start() {
   if (dbOk) await recoverSkippedPeriods()
 
   scraper.start()
+  alerter.start()
+  console.log(`[Server] Alerter iniciado (target=${process.env.ALERT_TARGET || 'generic'}, poll=${process.env.ALERT_POLL_INTERVAL_SEC || 30}s, webhook=${process.env.ALERT_WEBHOOK_URL ? 'configured' : 'NOT CONFIGURED'})`)
 
   httpServer.listen(PORT, () => {
     console.log(`\n[Server] WebSocket en ws://localhost:${PORT}`)
@@ -651,6 +677,7 @@ start()
 // ── Apagado limpio ───────────────────────────────────────────────────────────
 process.on('SIGINT', async () => {
   console.log('\n[Server] Apagando…')
+  alerter.stop()
   clearInterval(projectionSaveInterval)
   clearInterval(proyHistFlushInterval)
   await emailDispatchGEC.stop()
