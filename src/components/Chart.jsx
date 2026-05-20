@@ -137,7 +137,7 @@ export function Chart({ unitId, width, height, minuteDeviations, realtimeUnit })
 
           {xTicks.map(m => <text key={"xl" + m} x={tX(m)} y={H - pad.b + 10} fill={C.textMuted} fontSize={9} fontFamily={MONO} textAnchor="middle">{m}</text>)}
 
-          {chartData.length === 0 && <text x={pad.l + pW / 2} y={pad.t + pH / 2} fill={C.textMuted} fontSize={12} fontFamily={FONT} textAnchor="middle">Esperando datos PME...</text>}
+          {chartData.length === 0 && <text x={pad.l + pW / 2} y={pad.t + pH / 2} fill={C.textMuted} fontSize={12} fontFamily={FONT} textAnchor="middle">Esperando datos...</text>}
 
           {tip && <g>
             <line x1={tip.x} x2={tip.x} y1={pad.t} y2={H - pad.b} stroke={C.textMuted} strokeWidth={0.8} strokeDasharray="2 2" opacity={0.3} vectorEffect="non-scaling-stroke" />
