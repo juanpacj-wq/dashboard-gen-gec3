@@ -7,7 +7,10 @@
  * @param {object} [deps.scraper]            MeterPoller o PMEScraper top-level (.getStatus()).
  *                                           En este codebase el top-level es ExtractorOrchestrator,
  *                                           que ya encapsula meter+pme — pasar null y usar `orchestrator`.
- * @param {object} [deps.orchestrator]       ExtractorOrchestrator (.getStatus())
+ * @param {object} [deps.orchestrator]       ExtractorOrchestrator (.getStatus()). Su
+ *                                           `perUnit[id]` incluye source/consecMeterErrors
+ *                                           y, desde D-116, holding/heldTicks/lastHoldAt/
+ *                                           meterDownSeconds (consumidos por el alerter).
  * @param {object} [deps.accumulator]        EnergyAccumulator (.getStatus())
  * @param {object} [deps.emailDispatchGEC]   EmailDispatchService GEC (.getStatus())
  * @param {object} [deps.emailDispatchTGJ]   EmailDispatchService TGJ (.getStatus())

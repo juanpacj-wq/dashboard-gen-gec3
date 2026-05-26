@@ -137,7 +137,9 @@ The server reads from `.env` (via `--env-file`):
 - `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_PORT` — MSSQL connection (supports named instances via `DB_HOST=host\instance`)
 - `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET`, `GRAPH_MAILBOX` — Microsoft Graph API for email dispatch
 - `HEADLESS` — Set to `false` to run Playwright in headed mode (debug)
-- `ALERT_WEBHOOK_URL`, `ALERT_TARGET`, `ALERT_POLL_INTERVAL_SEC`, `ALERT_COOLDOWN_MIN`, `ALERT_THRESH_*` — alerter in-process (D-115). Endpoint `GET /health/detailed` expone snapshot canónico per-service. Runbook completo en `docs/runbooks/observability.md`.
+- `METER_HOLD_TTL_MIN` — carry-forward del último valor bueno del medidor ante nulls transitorios del ION8650 (D-116). Mientras el TTL no expire la unidad sigue `source='meter'` emitiendo el último MW bueno (`holding`); tras N min sin lectura válida cede a PME. Default 3. Reemplaza el viejo fallback por conteo (3 ticks/6s).
+- `ALERT_WEBHOOK_URL`, `ALERT_TARGET`, `ALERT_POLL_INTERVAL_SEC`, `ALERT_COOLDOWN_MIN`, `ALERT_THRESH_*` (incl. `ALERT_THRESH_METER_DOWN_MIN`, alerta per-unit de medidor caído ≥ N min) — alerter in-process (D-115/D-116). Endpoint `GET /health/detailed` expone snapshot canónico per-service. Runbook completo en `docs/runbooks/observability.md`.
+- `TRACE_DEVIATION` — CSV de unit IDs para activar `DeviationTracer` (server/deviationTracer.js). Vacío = off (zero overhead). Escribe JSONL por tick a `server/traces/trace-<unit>-YYYY-MM-DD-HH.jsonl` para diagnóstico de valles en el chart de Desviación %. Analizar con `node server/traces/analyze.js <archivo>`.
 
 **Important**: GRAPH_* variables must be present in **both** the local `.env` and the deployed server's `/var/www/dashboard-gen/server/.env` for email dispatch to work.
 

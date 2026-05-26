@@ -15,9 +15,11 @@ export const PME = {
 
 // ─── Defaults del extractor de medidores ─────────────────────────────────────
 export const METER_DEFAULTS = {
-  opPath:    process.env.METER_OP_PATH                 || '/Operation.html',
-  pollMs:    parseInt(process.env.METER_POLL_MS, 10)    || 2000,
-  timeoutMs: parseInt(process.env.METER_TIMEOUT_MS, 10) || 4000,
+  opPath:     process.env.METER_OP_PATH                  || '/Operation.html',
+  pollMs:     parseInt(process.env.METER_POLL_MS, 10)    || 2000,
+  timeoutMs:  parseInt(process.env.METER_TIMEOUT_MS, 10) || 4000,
+  // Carry-forward del último valor bueno del medidor ante nulls transitorios (D-116).
+  holdTtlMin: parseFloat(process.env.METER_HOLD_TTL_MIN) || 3,
 }
 
 // ─── Unidades de generación ──────────────────────────────────────────────────

@@ -67,3 +67,26 @@ describe('EnergyAccumulator.getStatus() — shape canónico', () => {
     expect(acc.getStatus().lastUnitWithValue).toBe('GEC3')
   })
 })
+
+describe('EnergyAccumulator — null no se integra (D-116)', () => {
+  it('valueMW=null no altera accumulated ni minuteAvgs', () => {
+    const acc = new EnergyAccumulator()
+    acc.update([{ id: 'GEC3', valueMW: null }])
+    const { accumulated, minuteAvgs } = acc.getState()
+    expect(accumulated).toEqual({})    // no se creó estado de energía
+    expect(minuteAvgs).toEqual({})     // ningún bucket de minuto poblado
+  })
+
+  it('null tras un valor real no agrega área ni bucket (antes coercía a 0)', () => {
+    const acc = new EnergyAccumulator()
+    acc.update([{ id: 'GEC3', valueMW: 120 }])
+    const after1 = acc.getState()
+    const mwh1 = after1.accumulated.GEC3
+    const buckets1 = after1.minuteAvgs.GEC3.filter(b => b != null).length
+
+    acc.update([{ id: 'GEC3', valueMW: null }])   // skip: no integra, no bucket
+    const after2 = acc.getState()
+    expect(after2.accumulated.GEC3).toBe(mwh1)     // sin cambio
+    expect(after2.minuteAvgs.GEC3.filter(b => b != null).length).toBe(buckets1)
+  })
+})

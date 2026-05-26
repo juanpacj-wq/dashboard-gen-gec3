@@ -50,7 +50,7 @@ function makeFakeSubExtractor() {
   }
 }
 
-function buildOrchestrator({ onData = vi.fn(), fallbackThreshold = 3, recoveryThreshold = 2 } = {}) {
+function buildOrchestrator({ onData = vi.fn(), fallbackThreshold = 3, recoveryThreshold = 2, holdTtlMs } = {}) {
   const meter = makeFakeSubExtractor()
   const pme = makeFakeSubExtractor()
   const orch = new ExtractorOrchestrator({
@@ -60,10 +60,16 @@ function buildOrchestrator({ onData = vi.fn(), fallbackThreshold = 3, recoveryTh
     pollMs: POLL_MS,
     fallbackThreshold,
     recoveryThreshold,
+    holdTtlMs,  // undefined → default 3 min; tests de switch pasan un TTL corto
     meterPollerCtor: meter.ctor,
     pmeScraperCtor: pme.ctor,
   })
   return { orch, meter, pme, onData }
+}
+
+// Emite el mismo valor para las 4 unidades en el sub-extractor dado.
+function emitAll(sub, value) {
+  sub.emit(buildUnits().map((u) => ({ id: u.id, label: u.label, valueMW: value, maxMW: u.maxMW })))
 }
 
 async function flushPromises() {
@@ -132,145 +138,198 @@ describe('ExtractorOrchestrator — caso ideal (meter primario sirviendo)', () =
   })
 })
 
-describe('ExtractorOrchestrator — histeresis primario → fallback', () => {
+describe('ExtractorOrchestrator — carry-forward con TTL (D-116)', () => {
   let orch, meter, pme, onData
-  beforeEach(() => {
-    vi.useFakeTimers()
-    ;({ orch, meter, pme, onData } = buildOrchestrator({ fallbackThreshold: 3 }))
-  })
   afterEach(async () => { await orch.stop(); vi.useRealTimers() })
 
-  async function emitMeterAll(value) {
-    meter.emit(buildUnits().map((u) => ({ id: u.id, label: u.label, valueMW: value, maxMW: u.maxMW })))
-  }
-  async function emitPmeAll(value) {
-    pme.emit(buildUnits().map((u) => ({ id: u.id, label: u.label, valueMW: value, maxMW: u.maxMW })))
-  }
+  const valueOf = (last, id) => last.units.find((u) => u.id === id).valueMW
+  const holdingOf = (last, id) => last.units.find((u) => u.id === id).holding
 
-  it('después de 1 error meter mantiene source=meter (no switchea aún)', async () => {
+  it('hold corto retiene el último valor bueno (caso 1)', async () => {
+    vi.useFakeTimers()
+    ;({ orch, meter, onData } = buildOrchestrator())  // default TTL 3 min
     await orch.start()
-    await emitMeterAll(50); await emitPmeAll(60); await tick()
-    expect(orch.getStatus().perUnit.TGJ1.source).toBe('meter')
+    emitAll(meter, 70); await tick()
+    emitAll(meter, null); await tick()
 
-    // Tick con meter null
-    await emitMeterAll(null); await tick()
-    expect(orch.getStatus().perUnit.TGJ1.source).toBe('meter')
-    expect(orch.getStatus().perUnit.TGJ1.consecMeterErrors).toBe(1)
-  })
-
-  it('después de 3 errores consecutivos switchea a pme', async () => {
-    await orch.start()
-    await emitMeterAll(50); await emitPmeAll(60); await tick()
-
-    await emitMeterAll(null); await tick()  // error 1
-    expect(orch.getStatus().perUnit.TGJ1.source).toBe('meter')
-    await emitMeterAll(null); await tick()  // error 2
-    expect(orch.getStatus().perUnit.TGJ1.source).toBe('meter')
-    await emitMeterAll(null); await tick()  // error 3 — switch
-    expect(orch.getStatus().perUnit.TGJ1.source).toBe('pme')
-  })
-
-  it('durante la ventana de transición (errores 1-2) el output es null para esa unidad', async () => {
-    await orch.start()
-    await emitMeterAll(50); await emitPmeAll(60); await tick()
-
-    await emitMeterAll(null); await tick()  // error 1
-    let last = onData.mock.calls.at(-1)[0]
-    expect(last.units.find((u) => u.id === 'TGJ1').valueMW).toBeNull()
-    expect(last.units.find((u) => u.id === 'TGJ1').source).toBe('meter')
-
-    await emitMeterAll(null); await tick()  // error 2
-    last = onData.mock.calls.at(-1)[0]
-    expect(last.units.find((u) => u.id === 'TGJ1').valueMW).toBeNull()
-    expect(last.units.find((u) => u.id === 'TGJ1').source).toBe('meter')
-
-    await emitMeterAll(null); await tick()  // error 3 — switch, value desde pme
-    last = onData.mock.calls.at(-1)[0]
-    expect(last.units.find((u) => u.id === 'TGJ1').valueMW).toBe(60)
-    expect(last.units.find((u) => u.id === 'TGJ1').source).toBe('pme')
-  })
-
-  it('si pme tampoco tiene valor, switch no ocurre y output sigue null', async () => {
-    await orch.start()
-    await emitMeterAll(50); await tick()  // pme no ha emitido nunca
-
-    await emitMeterAll(null); await tick()
-    await emitMeterAll(null); await tick()
-    await emitMeterAll(null); await tick()  // 3 errores pero pme no tiene cache válido
-
-    expect(orch.getStatus().perUnit.TGJ1.source).toBe('meter')  // no pudo switchear
+    const st = orch.getStatus().perUnit.TGJ1
+    expect(st.source).toBe('meter')
+    expect(st.holding).toBe(true)
+    expect(st.consecMeterErrors).toBe(1)
     const last = onData.mock.calls.at(-1)[0]
-    expect(last.units.find((u) => u.id === 'TGJ1').valueMW).toBeNull()
+    expect(valueOf(last, 'TGJ1')).toBe(70)   // retenido, NO null ni 0
+    expect(holdingOf(last, 'TGJ1')).toBe(true)
   })
 
-  it('emite source por unidad coherente con el state machine', async () => {
+  it('hold sostenido a través de N nulls < TTL incrementa heldTicks (caso 2)', async () => {
+    vi.useFakeTimers()
+    ;({ orch, meter } = buildOrchestrator())
     await orch.start()
+    emitAll(meter, 70); await tick()
+    emitAll(meter, null); await tick()
+    expect(orch.getStatus().perUnit.TGJ1.heldTicks).toBe(1)
+    emitAll(meter, null); await tick()
+    expect(orch.getStatus().perUnit.TGJ1.heldTicks).toBe(2)
+    emitAll(meter, null); await tick()
+    expect(orch.getStatus().perUnit.TGJ1.heldTicks).toBe(3)
+    expect(orch.getStatus().perUnit.TGJ1.source).toBe('meter')  // sigue en meter
+  })
 
-    // Estado normal: ambas fuentes vivas, prefiere meter
-    await emitMeterAll(50); await emitPmeAll(30); await tick()
-    let last = onData.mock.calls.at(-1)[0]
+  it('prioridad sobre PME: dentro del TTL emite el retenido, no PME (caso 3)', async () => {
+    vi.useFakeTimers()
+    ;({ orch, meter, pme, onData } = buildOrchestrator())
+    await orch.start()
+    emitAll(meter, 70); emitAll(pme, 200); await tick()
+    emitAll(meter, null); emitAll(pme, 200); await tick()
+
+    const last = onData.mock.calls.at(-1)[0]
+    expect(valueOf(last, 'TGJ1')).toBe(70)   // retenido, no 200
     expect(last.units.find((u) => u.id === 'TGJ1').source).toBe('meter')
+    expect(holdingOf(last, 'TGJ1')).toBe(true)
+  })
 
-    // 3 errores consecutivos del meter (pme válido) → switch a pme
-    for (let i = 0; i < 3; i++) {
-      await emitMeterAll(null); await emitPmeAll(30); await tick()
-    }
-    last = onData.mock.calls.at(-1)[0]
-    expect(last.units.find((u) => u.id === 'TGJ1').source).toBe('pme')
+  it('lastGoodMeter se sella solo con lecturas válidas: 70, null, 71 (caso 7)', async () => {
+    vi.useFakeTimers()
+    ;({ orch, meter, onData } = buildOrchestrator())
+    await orch.start()
+    emitAll(meter, 70); await tick()
+    expect(orch.getTickSnapshot('TGJ1').lastGoodMeterValue).toBe(70)
+
+    emitAll(meter, null); await tick()  // HOLD — lastGood NO cambia
+    expect(orch.getTickSnapshot('TGJ1').lastGoodMeterValue).toBe(70)
+    expect(valueOf(onData.mock.calls.at(-1)[0], 'TGJ1')).toBe(70)
+
+    emitAll(meter, 71); await tick()    // nueva lectura válida sella 71
+    expect(orch.getTickSnapshot('TGJ1').lastGoodMeterValue).toBe(71)
+    expect(valueOf(onData.mock.calls.at(-1)[0], 'TGJ1')).toBe(71)
+    expect(orch.getStatus().perUnit.TGJ1.holding).toBe(false)
+  })
+
+  it('getStatus expone holding/heldTicks/lastHoldAt/meterDownSeconds (caso 10)', async () => {
+    vi.useFakeTimers()
+    ;({ orch, meter } = buildOrchestrator())
+    await orch.start()
+    emitAll(meter, 70); await tick()
+    emitAll(meter, null); await tick()
+
+    const st = orch.getStatus().perUnit.TGJ1
+    expect(st.holding).toBe(true)
+    expect(st.heldTicks).toBeGreaterThanOrEqual(1)
+    expect(typeof st.lastHoldAt).toBe('string')        // ISO
+    expect(typeof st.meterDownSeconds).toBe('number')
+  })
+
+  it('meterDownSeconds corre durante el hold y un OK lo resetea a 0 (caso 11)', async () => {
+    vi.useFakeTimers()
+    ;({ orch, meter } = buildOrchestrator())
+    await orch.start()
+    emitAll(meter, 50); await tick()
+    expect(orch.getStatus().perUnit.TGJ1.meterDownSeconds).toBe(0)
+
+    emitAll(meter, null); await tick()  // meterDownSince sellado
+    emitAll(meter, null); await tick()  // un tick más → cuenta corre
+    expect(orch.getStatus().perUnit.TGJ1.meterDownSeconds).toBeGreaterThanOrEqual(1)
+
+    emitAll(meter, 50); await tick()    // lectura válida resetea
+    expect(orch.getStatus().perUnit.TGJ1.meterDownSeconds).toBe(0)
   })
 })
 
-describe('ExtractorOrchestrator — histeresis fallback → primario (recovery)', () => {
+describe('ExtractorOrchestrator — TTL expira → cede a PME', () => {
   let orch, meter, pme, onData
-  beforeEach(() => {
-    vi.useFakeTimers()
-    ;({ orch, meter, pme, onData } = buildOrchestrator({ fallbackThreshold: 3, recoveryThreshold: 2 }))
-  })
   afterEach(async () => { await orch.stop(); vi.useRealTimers() })
 
-  async function emitMeterAll(value) {
-    meter.emit(buildUnits().map((u) => ({ id: u.id, label: u.label, valueMW: value, maxMW: u.maxMW })))
-  }
-  async function emitPmeAll(value) {
-    pme.emit(buildUnits().map((u) => ({ id: u.id, label: u.label, valueMW: value, maxMW: u.maxMW })))
-  }
+  const valueOf = (last, id) => last.units.find((u) => u.id === id).valueMW
 
-  it('en pme con 1 OK del meter NO recupera todavía', async () => {
+  it('al expirar el TTL cede a PME si está válido (caso 4)', async () => {
+    vi.useFakeTimers()
+    ;({ orch, meter, pme, onData } = buildOrchestrator({ holdTtlMs: 2 * POLL_MS }))
     await orch.start()
-    // forzar fallback
-    await emitMeterAll(50); await emitPmeAll(60); await tick()
-    await emitMeterAll(null); await tick()
-    await emitMeterAll(null); await tick()
-    await emitMeterAll(null); await tick()
-    expect(orch.getStatus().perUnit.TGJ1.source).toBe('pme')
+    emitAll(meter, 50); emitAll(pme, 60); await tick()
+    emitAll(meter, null); emitAll(pme, 60); await tick()   // 1er null < TTL → HOLD
+    expect(orch.getStatus().perUnit.TGJ1.source).toBe('meter')
+    expect(orch.getStatus().perUnit.TGJ1.holding).toBe(true)
 
-    // 1 OK
-    await emitMeterAll(50); await tick()
+    emitAll(meter, null); emitAll(pme, 60); await tick()   // TTL expira → pme
     expect(orch.getStatus().perUnit.TGJ1.source).toBe('pme')
+    expect(orch.getStatus().perUnit.TGJ1.holding).toBe(false)
+    expect(valueOf(onData.mock.calls.at(-1)[0], 'TGJ1')).toBe(60)
   })
 
-  it('en pme con 2 OK consecutivos del meter recupera', async () => {
+  it('TTL expira sin PME válido → valueMW=null, holding=false, source previo (caso 5)', async () => {
+    vi.useFakeTimers()
+    ;({ orch, meter, onData } = buildOrchestrator({ holdTtlMs: 2 * POLL_MS }))
     await orch.start()
-    await emitMeterAll(50); await emitPmeAll(60); await tick()
-    await emitMeterAll(null); await tick()
-    await emitMeterAll(null); await tick()
-    await emitMeterAll(null); await tick()
+    emitAll(meter, 50); await tick()                       // pme nunca emite
+    emitAll(meter, null); await tick()                     // HOLD
+    emitAll(meter, null); await tick()                     // TTL expira, sin pme
+
+    const st = orch.getStatus().perUnit.TGJ1
+    expect(st.holding).toBe(false)
+    expect(st.source).toBe('meter')                        // conserva histéresis
+    expect(valueOf(onData.mock.calls.at(-1)[0], 'TGJ1')).toBeNull()  // sin spike
+  })
+
+  it('arranque sin lastGoodMeter + null + PME válido → pme directo (caso 6a)', async () => {
+    vi.useFakeTimers()
+    ;({ orch, meter, pme, onData } = buildOrchestrator())
+    await orch.start()
+    emitAll(meter, null); emitAll(pme, 200); await tick()
+
+    expect(orch.getStatus().perUnit.TGJ1.source).toBe('pme')
+    expect(orch.getStatus().perUnit.TGJ1.holding).toBe(false)
+    expect(valueOf(onData.mock.calls.at(-1)[0], 'TGJ1')).toBe(200)
+  })
+
+  it('arranque sin lastGoodMeter + null + sin PME → null sin spike (caso 6b)', async () => {
+    vi.useFakeTimers()
+    ;({ orch, meter, onData } = buildOrchestrator())
+    await orch.start()
+    emitAll(meter, null); await tick()
+
+    expect(orch.getStatus().perUnit.TGJ1.source).toBeNull()
+    expect(valueOf(onData.mock.calls.at(-1)[0], 'TGJ1')).toBeNull()
+  })
+
+  it('flapping ok/null/ok/null resetea el TTL → nunca cae a PME (caso 8)', async () => {
+    vi.useFakeTimers()
+    ;({ orch, meter, pme } = buildOrchestrator({ holdTtlMs: 2 * POLL_MS }))
+    await orch.start()
+    emitAll(meter, 50); emitAll(pme, 99); await tick()
+    for (let i = 0; i < 3; i++) {
+      emitAll(meter, null); emitAll(pme, 99); await tick()  // 1 null (gap < TTL) → HOLD
+      emitAll(meter, 50);   emitAll(pme, 99); await tick()  // OK resetea lastGood.at
+      expect(orch.getStatus().perUnit.TGJ1.source).toBe('meter')
+    }
+  })
+})
+
+describe('ExtractorOrchestrator — recovery pme → meter (preserva D-102)', () => {
+  let orch, meter, pme, onData
+  afterEach(async () => { await orch.stop(); vi.useRealTimers() })
+
+  it('en pme con 1 OK del meter NO recupera; con 2 OK consecutivos sí (caso 9)', async () => {
+    vi.useFakeTimers()
+    ;({ orch, meter, pme, onData } = buildOrchestrator({ holdTtlMs: 2 * POLL_MS, recoveryThreshold: 2 }))
+    await orch.start()
+    // forzar fallback a pme (TTL corto)
+    emitAll(meter, 50); emitAll(pme, 60); await tick()
+    emitAll(meter, null); emitAll(pme, 60); await tick()
+    emitAll(meter, null); emitAll(pme, 60); await tick()
     expect(orch.getStatus().perUnit.TGJ1.source).toBe('pme')
 
-    await emitMeterAll(50); await tick()  // OK 1
+    emitAll(meter, 50); emitAll(pme, 60); await tick()  // OK 1 — no recupera aún
     expect(orch.getStatus().perUnit.TGJ1.source).toBe('pme')
-    await emitMeterAll(51); await tick()  // OK 2 — recovery
+    emitAll(meter, 51); emitAll(pme, 60); await tick()  // OK 2 — recovery
     expect(orch.getStatus().perUnit.TGJ1.source).toBe('meter')
-
-    const last = onData.mock.calls.at(-1)[0]
-    expect(last.units.find((u) => u.id === 'TGJ1').valueMW).toBe(51)
+    expect(onData.mock.calls.at(-1)[0].units.find((u) => u.id === 'TGJ1').valueMW).toBe(51)
   })
 })
 
 describe('ExtractorOrchestrator — independencia entre unidades', () => {
   it('TGJ1 puede estar en pme mientras TGJ2/GEC3/GEC32 siguen en meter', async () => {
     vi.useFakeTimers()
-    const { orch, meter, pme, onData } = buildOrchestrator({ fallbackThreshold: 3 })
+    const { orch, meter, pme, onData } = buildOrchestrator({ holdTtlMs: 2 * POLL_MS })
     try {
       await orch.start()
 
@@ -289,7 +348,7 @@ describe('ExtractorOrchestrator — independencia entre unidades', () => {
       ])
       await tick()
 
-      // Solo TGJ1 falla, las otras siguen sirviendo
+      // Solo TGJ1 falla (TTL corto la cede a pme tras el hold); las otras siguen sirviendo
       for (let i = 0; i < 3; i++) {
         meter.emit([
           { id: 'TGJ1', label: 'GUAJIRA 1', valueMW: null, maxMW: 145 },
@@ -349,6 +408,9 @@ describe('ExtractorOrchestrator.getStatus shape', () => {
       source: expect.any(String),
       consecMeterErrors: expect.any(Number),
       consecMeterOk: expect.any(Number),
+      holding: false,
+      heldTicks: expect.any(Number),
+      meterDownSeconds: expect.any(Number),
     })
 
     await orch.stop()
