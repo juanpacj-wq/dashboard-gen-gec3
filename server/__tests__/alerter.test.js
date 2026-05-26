@@ -25,9 +25,10 @@ function makeAlerter({ snapshot, env = {}, now = BASE_NOW } = {}) {
 }
 
 describe('Alerter — meterPoller per-meter (WARN)', () => {
-  it('dispara WARN cuando consecutiveErrors >= 15', () => {
+  // Umbral reconciliado a 90 (≈3 min a 2s/tick) por D-116. Bloque no-op en prod.
+  it('dispara WARN cuando consecutiveErrors >= 90', () => {
     const { alerter, calls } = makeAlerter({
-      snapshot: { services: { meterPoller: { perMeter: { 'GEC3@10.0.0.12': { consecutiveErrors: 20, lastError: 'EHOSTUNREACH' } } } } },
+      snapshot: { services: { meterPoller: { perMeter: { 'GEC3@10.0.0.12': { consecutiveErrors: 100, lastError: 'EHOSTUNREACH' } } } } },
     })
     alerter.tick()
     expect(calls).toHaveLength(1)
@@ -36,12 +37,45 @@ describe('Alerter — meterPoller per-meter (WARN)', () => {
     expect(calls[0].body).toMatch(/EHOSTUNREACH/)
   })
 
-  it('NO dispara mientras consecutiveErrors < 15', () => {
+  it('NO dispara mientras consecutiveErrors < 90', () => {
     const { alerter, calls } = makeAlerter({
-      snapshot: { services: { meterPoller: { perMeter: { 'GEC3@h': { consecutiveErrors: 14, lastError: null } } } } },
+      snapshot: { services: { meterPoller: { perMeter: { 'GEC3@h': { consecutiveErrors: 80, lastError: null } } } } },
     })
     alerter.tick()
     expect(calls).toHaveLength(0)
+  })
+})
+
+describe('Alerter — medidor caído (orchestrator meterDown ≥ 3 min)', () => {
+  it('NO dispara con meterDownSeconds=120 (< 3 min)', () => {
+    const snap = { services: { orchestrator: { perUnit: {
+      GEC3: { source: 'meter', holding: true, meterDownSeconds: 120, consecMeterErrors: 60 },
+    } } } }
+    const { alerter, calls } = makeAlerter({ snapshot: snap })
+    alerter.tick()
+    expect(calls.filter(c => c.incidentKey === 'orchestrator:meterDown:GEC3')).toHaveLength(0)
+  })
+
+  it('dispara WARN con meterDownSeconds=200 (≥ 3 min)', () => {
+    const snap = { services: { orchestrator: { perUnit: {
+      GEC3: { source: 'pme', holding: false, meterDownSeconds: 200, consecMeterErrors: 100 },
+    } } } }
+    const { alerter, calls } = makeAlerter({ snapshot: snap })
+    alerter.tick()
+    const down = calls.find(c => c.incidentKey === 'orchestrator:meterDown:GEC3')
+    expect(down).toBeDefined()
+    expect(down.severity).toBe('WARN')
+  })
+
+  it('cooldown: una sola alerta meterDown en dos ticks consecutivos', () => {
+    const snap = { services: { orchestrator: { perUnit: {
+      GEC3: { source: 'pme', holding: false, meterDownSeconds: 200, consecMeterErrors: 100 },
+    } } } }
+    const { alerter, calls, advanceMs } = makeAlerter({ snapshot: snap })
+    alerter.tick()
+    advanceMs(60 * 1000)
+    alerter.tick()
+    expect(calls.filter(c => c.incidentKey === 'orchestrator:meterDown:GEC3')).toHaveLength(1)
   })
 })
 
@@ -129,7 +163,7 @@ describe('Alerter — orchestrator GLOBAL en PME (CRITICAL > 2 min)', () => {
 
 describe('Alerter — cooldown', () => {
   it('cooldown evita re-emisión del mismo incident en ticks consecutivos', () => {
-    const snap = { services: { meterPoller: { perMeter: { 'GEC3@h': { consecutiveErrors: 20, lastError: 'X' } } } } }
+    const snap = { services: { meterPoller: { perMeter: { 'GEC3@h': { consecutiveErrors: 100, lastError: 'X' } } } } }
     const { alerter, calls, advanceMs } = makeAlerter({ snapshot: snap })
     alerter.tick()
     advanceMs(60 * 1000)            // +1 min
@@ -140,7 +174,7 @@ describe('Alerter — cooldown', () => {
   })
 
   it('re-emite tras > 30 min de cooldown si el problema persiste', () => {
-    const snap = { services: { meterPoller: { perMeter: { 'GEC3@h': { consecutiveErrors: 20, lastError: 'X' } } } } }
+    const snap = { services: { meterPoller: { perMeter: { 'GEC3@h': { consecutiveErrors: 100, lastError: 'X' } } } } }
     const { alerter, calls, advanceMs } = makeAlerter({ snapshot: snap })
     alerter.tick()
     advanceMs(31 * 60 * 1000)
@@ -186,7 +220,7 @@ describe('Alerter — ventana horaria del despacho scraper', () => {
 
 describe('Alerter — robustez del transport', () => {
   it('dispatch que tira no crashea el alerter; siguiente tick funciona', () => {
-    const snap = { services: { meterPoller: { perMeter: { 'GEC3@h': { consecutiveErrors: 20, lastError: 'X' } } } } }
+    const snap = { services: { meterPoller: { perMeter: { 'GEC3@h': { consecutiveErrors: 100, lastError: 'X' } } } } }
     let calls = 0
     let shouldThrow = true
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})

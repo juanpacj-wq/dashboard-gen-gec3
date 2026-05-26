@@ -60,7 +60,11 @@ export class EnergyAccumulator {
         this.#lastUpdateAt = now.getTime()
         this.#lastUnitWithValue = unit.id
       }
-      const mw = unit.valueMW ?? 0
+      // D-105/D-116: null NO se integra (antes se coercía a 0 vía `?? 0` →
+      // sub-integración de energía). Con carry-forward del orchestrator, null casi
+      // nunca llega (solo ambas fuentes muertas o arranque sin lastGoodMeter).
+      if (unit.valueMW == null) continue
+      const mw = unit.valueMW
 
       // --- Energy accumulation (trapezoidal) ---
       const prev = this.#state[unit.id]

@@ -1,6 +1,8 @@
 import { createServer } from 'http'
+import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
 import { ExtractorOrchestrator } from './extractorOrchestrator.js'
+import { DeviationTracer } from './deviationTracer.js'
 import { UNITS, PME, METER_DEFAULTS } from './config.js'
 import {
   initDB,
@@ -396,8 +398,12 @@ function broadcast(payload) {
       fraction: live.fraction,
     }
 
-    // Feed deviation minute bucket (same deviation formula as Table.jsx current period)
-    accumulator.feedDeviation(unit.id, currentHour, colMinute, live.deviation)
+    // Feed deviation minute bucket (same deviation formula as Table.jsx current period).
+    // Defensa en profundidad (D-116): con carry-forward null casi nunca llega, pero si
+    // ambas fuentes mueren un null residual NO debe reintroducir un valle en el minute-bucket.
+    if (unit.valueMW != null) {
+      accumulator.feedDeviation(unit.id, currentHour, colMinute, live.deviation)
+    }
 
     // Feed the 3-min aggregation buffer for audit history
     ;(proyBuffer[unit.id] ||= []).push({
@@ -422,6 +428,91 @@ function broadcast(payload) {
   payload.minuteDeviations = minuteDeviations
   payload.despachoFinal = getMergedDespachoFinal()
   payload.proyeccionPeriodos = closingProjections
+
+  // ── Deviation trace (no-op si TRACE_DEVIATION está vacío) ──
+  if (tracer.enabled) {
+    const tsIso = now.toISOString()
+    const nowMs = now.getTime()
+    for (const unit of payload.units) {
+      if (!tracer.tracksUnit(unit.id)) continue
+      try {
+        const orchSnap = scraper.getTickSnapshot(unit.id)
+        const proj = projection[unit.id]
+        const prev = tracerPrevByUnit.get(unit.id)
+        const acumuladoMwh = accumulated[unit.id] ?? null
+        const currentMw = unit.valueMW
+        const currentMwIsNull = currentMw == null
+        const currentMwIsNegative = !currentMwIsNull && currentMw < 0
+        const currentMwAfterClamp = currentMwIsNull
+          ? 0
+          : Math.max(0, Number.isFinite(currentMw) ? currentMw : 0)
+
+        const dtSecondsFromPrev = prev ? (nowMs - prev.tsMs) / 1000 : null
+        const areaAddedMwh = (prev && acumuladoMwh != null && prev.acumuladoMwh != null)
+          ? acumuladoMwh - prev.acumuladoMwh
+          : null
+        const periodBoundary = !!(prev && prev.hour !== currentHour)
+        const outlierDeviation = !!(proj && proj.redespacho_mw != null && proj.redespacho_mw > 0
+          && proj.desviacion_pct != null && Math.abs(proj.desviacion_pct) > 5)
+
+        tracer.logTick({
+          ts: tsIso,
+          unit: unit.id,
+          minute: colMinute,
+          hour: currentHour,
+          period: currentPeriod,
+          meter: {
+            valueMW_raw: orchSnap.meterPreInversion,
+            valueMW_signed: orchSnap.meterRaw,
+            freshAgeMs: orchSnap.meterAgeMs,
+            consecErrors: orchSnap.consecMeterErrors,
+            lastGoodMeterValue: orchSnap.lastGoodMeterValue,
+          },
+          pme: {
+            valueMW_raw: orchSnap.pmeRaw,
+            freshAgeMs: orchSnap.pmeAgeMs,
+            stale: orchSnap.pmeAgeMs == null || orchSnap.pmeAgeMs >= 30_000,
+          },
+          source: orchSnap.source,
+          sourceSince: orchSnap.sourceSince ? new Date(orchSnap.sourceSince).toISOString() : null,
+          sourceChanged: orchSnap.justSwitched,
+          consecMeterErrors: orchSnap.consecMeterErrors,
+          consecMeterOk: orchSnap.consecMeterOk,
+          holding: orchSnap.holding,
+          heldTicks: orchSnap.heldTicks,
+          currentMw,
+          currentMwIsNegative,
+          currentMwIsNull,
+          accumulator: {
+            acumuladoMwh,
+            lastMwInState: currentMwIsNull ? 0 : currentMw,
+            dtSecondsFromPrev,
+            areaAddedMwh,
+          },
+          projection: {
+            fraction: proj?.fraction ?? null,
+            currentMwAfterClamp,
+            remaining: proj?.fraction != null ? Math.max(0, 1 - proj.fraction) : null,
+            projectionMwh: proj?.proyeccion_mwh ?? null,
+            redespachoMw: proj?.redespacho_mw ?? null,
+            deviationPct: proj?.desviacion_pct ?? null,
+          },
+          flags: {
+            negativeMw: currentMwIsNegative,
+            nullCoercedToZero: currentMwIsNull,
+            sourceSwitched: orchSnap.justSwitched,
+            outlierDeviation,
+            periodBoundary,
+            holding: orchSnap.holding,
+          },
+        })
+
+        tracerPrevByUnit.set(unit.id, { tsMs: nowMs, acumuladoMwh, hour: currentHour })
+      } catch (err) {
+        console.warn(`[deviationTracer] logTick failed (${unit.id}): ${err?.message ?? err}`)
+      }
+    }
+  }
 
   lastPayload = payload
   const msg = JSON.stringify(payload)
@@ -500,15 +591,28 @@ const proyHistFlushInterval = setInterval(async () => {
 }, PROY_FLUSH_MS)
 
 // ── Extractor (medidores primario + PME fallback hot-standby por-unidad) ─────
-// El orquestador wrapea MeterPoller + PMEScraper. Histeresis: 3 ticks meter
-// fallidos → switch a pme; 2 ticks meter OK → recovery. Ver
-// extractorOrchestrator.js y EXTRACTION_BACKEND_MAP.md.
+// El orquestador wrapea MeterPoller + PMEScraper. Carry-forward con TTL (D-116):
+// ante nulls transitorios del medidor retiene el último valor bueno (holding)
+// hasta METER_HOLD_TTL_MIN; al expirar cede a PME; 2 ticks meter OK → recovery.
+// Ver extractorOrchestrator.js y EXTRACTION_BACKEND_MAP.md.
 const scraper = new ExtractorOrchestrator({
   units: UNITS,
   pme: PME,
   onData: broadcast,
   ...METER_DEFAULTS,
 })
+
+// ── Deviation tracer (diagnóstico de valles en chart de Desviación %) ────────
+// Off por default. Activar con TRACE_DEVIATION=GEC32 en .env y reiniciar.
+const tracer = new DeviationTracer({
+  enabled: process.env.TRACE_DEVIATION,
+  baseDir: fileURLToPath(new URL('./traces', import.meta.url)),
+})
+if (tracer.enabled) {
+  console.log(`[Server] DeviationTracer ACTIVO para: ${process.env.TRACE_DEVIATION}`)
+}
+// Per-unit prev-tick snapshot for deltaAcumulado / dtSeconds computation
+const tracerPrevByUnit = new Map()
 
 // ── Alerter (W2 — observabilidad + alerting) ────────────────────────────────
 // Polea /health/detailed cada ALERT_POLL_INTERVAL_SEC, evalúa umbrales y dispara
@@ -686,6 +790,7 @@ process.on('SIGINT', async () => {
   despScraper.stop()
   await accumulator.stop()
   await scraper.stop()
+  await tracer.close()
   httpServer.close()
   process.exit(0)
 })

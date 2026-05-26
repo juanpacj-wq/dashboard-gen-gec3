@@ -191,3 +191,35 @@ Detalle de las 6 decisiones cerradas (Q1..Q6) en `preguntas-01-obs-alerting.md`
   (el meter poller está encapsulado dentro del orchestrator).
 - W4b (Pino structured logging) reemplazará el `console.error` interno del
   alerter por logs estructurados con request_id / incident_key. No bloquea W2.
+
+## D-116 — Carry-forward del medidor con TTL (fix valle de Desviación %)
+
+**Contexto:** nulls transitorios del ION8650 (1-2 ticks sueltos) caían a `0 MW`
+vía `?? 0` en tres lugares (broadcast, accumulator, `computeLive`). Con MW=0 la
+proyección colapsa al puro acumulado → la desviación se hunde (valle −78%
+verificado en `trace-GEC32-2026-05-26-11.jsonl`) y contamina el minute-bucket de
+`feedDeviation`. El fallback meter→PME por conteo (3 ticks/6s, D-102) cedía a PME
+por glitches sueltos aunque el medidor tuviera dato real al tick siguiente.
+Aplica a las 4 unidades (mismo camino de código en `ExtractorOrchestrator`).
+
+**Decisión:** carry-forward con TTL `METER_HOLD_TTL_MIN` (default 3 min), reemplaza
+el fallback por conteo. Mientras el TTL no expire y el medidor entregue null,
+la unidad sigue `source='meter'` emitiendo el último MW bueno (`holding=true`,
+**prioridad sobre PME**). `lastGoodMeter` es un store separado del `#meterCache`
+(que `#onMeterData` pisa con null al fallar). Al expirar el TTL cede a PME (si
+válido) + alerta per-unit `orchestrator:meterDown ≥ 3min`; si PME también muerto →
+`valueMW=null`. `consecMeterErrors` y el reloj `meterDownSince` corren durante el
+hold (observabilidad veraz; el hold NO los resetea). En el accumulator, null deja
+de integrarse (`continue` en vez de `?? 0`); `feedDeviation` se envuelve en guard
+de null (defensa en profundidad). `fallbackThreshold` se retira de la firma del
+orchestrator (decisión ahora time-based); las llamadas que aún lo pasen se ignoran
+sin romper (el destructuring descarta props extra).
+
+**Consecuencias:** elimina el valle del chart de Desviación % y corrige la
+sub-integración de energía del `?? 0`. D-102 (recovery 2-OK pme→meter) y D-105
+(aislamiento por unidad) intactos. El badge MEDIDOR/PME (D-103) no cambia: el hold
+se ve como `'MEDIDOR'` (backend-only, sin badge "retenido"). Payload WS y
+`getStatus().perUnit` ganan `holding`/`heldTicks`/`lastHoldAt`/`meterDownSeconds`
+(aditivo). Reconciliación del umbral viejo de alerta 30s → 3 min
+(`ALERT_THRESH_METER_CONSEC_ERRORS` 15→90, no-op en prod; canónica es la
+per-unit time-based).

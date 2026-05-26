@@ -5,7 +5,11 @@
 const DEFAULTS = {
   ALERT_POLL_INTERVAL_SEC: 30,
   ALERT_COOLDOWN_MIN: 30,
-  ALERT_THRESH_METER_CONSEC_ERRORS: 15,
+  // ≈3 min a 2s/tick. Reconciliado con el TTL de carry-forward (D-116): la alerta
+  // canónica de medidor caído es la per-unit time-based (meterDown ≥ 3min); este
+  // umbral opera sobre meterPoller.perMeter (no-op en prod) y es defensivo.
+  ALERT_THRESH_METER_CONSEC_ERRORS: 90,
+  ALERT_THRESH_METER_DOWN_MIN: 3,
   ALERT_THRESH_PME_PERSIST_MIN: 10,
   ALERT_THRESH_PME_GLOBAL_MIN: 2,
   ALERT_THRESH_EMAIL_STALE_MIN: 20,
@@ -129,6 +133,20 @@ export class Alerter {
       } else {
         this.#pmeSwitchedAt[u] = null
         this.#close(k, now, /*emitRecovery*/ false)
+      }
+
+      // 2b) Medidor caído ≥ N min (carry-forward agotado, D-116). El reloj
+      // meterDownSince del orchestrator corre durante el hold (observabilidad
+      // veraz); una sola alerta gracias al cooldown por incident_key.
+      const kDown = `orchestrator:meterDown:${u}`
+      const downSec = perUnit[u].meterDownSeconds ?? 0
+      if (downSec >= c.ALERT_THRESH_METER_DOWN_MIN * 60) {
+        this.#open(kDown, 'WARN', {
+          title: `Medidor ${u} caído ${Math.round(downSec / 60)} min (carry-forward agotado)`,
+          body: `holding=${perUnit[u].holding} source=${perUnit[u].source} consecMeterErrors=${perUnit[u].consecMeterErrors ?? '?'}`,
+        }, now)
+      } else {
+        this.#close(kDown, now, /*emitRecovery*/ false)
       }
     }
 

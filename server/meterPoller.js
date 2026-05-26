@@ -18,6 +18,7 @@ export class MeterPoller {
   #clients
   #meterStatus
   #clientFactory
+  #preInversionByUnit = new Map()
   #running = false
   #warming = false
   #updateCount = 0
@@ -187,10 +188,12 @@ export class MeterPoller {
     )
 
     let valueMW = null
+    let preInversion = null
     if (results.every((r) => r.ok)) {
       const kws = results.map((r) => r.kw)
       const total = unit.combine === 'sum' ? sum(kws) : kws[0]
       valueMW = total / 1000
+      preInversion = valueMW
       // Inversión de signo para fronteras de medición de ENTRADA (GEC3, GEC32):
       // el medidor reporta con signo opuesto al de generación neta. Ver
       // SIGN_CONVENTION.md.
@@ -205,7 +208,12 @@ export class MeterPoller {
       }
     }
 
+    this.#preInversionByUnit.set(unit.id, preInversion)
     return { id: unit.id, label: unit.label, valueMW, maxMW: unit.maxMW }
+  }
+
+  getPreInversionValue(unitId) {
+    return this.#preInversionByUnit.has(unitId) ? this.#preInversionByUnit.get(unitId) : null
   }
 
   #markOk(key, now) {

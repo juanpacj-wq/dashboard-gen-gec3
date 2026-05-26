@@ -2,8 +2,8 @@ import { MeterPoller } from './meterPoller.js'
 import { PMEScraper } from './scraper.js'
 
 const DEFAULT_POLL_MS = 2000
-const DEFAULT_FALLBACK_THRESHOLD = 3
 const DEFAULT_RECOVERY_THRESHOLD = 2
+const DEFAULT_HOLD_TTL_MIN = 3       // carry-forward del último valor bueno del medidor (D-116)
 const FRESHNESS_MS = 30_000  // un dato es "fresco" si tiene <30s
 const HEARTBEAT_MS = 60_000
 
@@ -11,8 +11,8 @@ export class ExtractorOrchestrator {
   #units
   #onData
   #pollMs
-  #fallbackThreshold
   #recoveryThreshold
+  #holdTtlMs
   #meterPoller
   #pmeScraper
   #meterCache       // Map<unitId, { value, updatedAt }>
@@ -34,8 +34,11 @@ export class ExtractorOrchestrator {
     pollMs = DEFAULT_POLL_MS,
     timeoutMs,
     opPath,
-    fallbackThreshold = DEFAULT_FALLBACK_THRESHOLD,
+    // fallbackThreshold: obsoleto desde D-116 (decisión ahora time-based). Si una
+    // llamada aún lo pasa, se ignora sin romper (destructuring descarta extras).
     recoveryThreshold = DEFAULT_RECOVERY_THRESHOLD,
+    holdTtlMin = DEFAULT_HOLD_TTL_MIN,
+    holdTtlMs,  // tests: gana sobre holdTtlMin si se pasa (precisión con fake timers)
     clientFactory,
     // Inyectables para tests:
     meterPollerCtor = MeterPoller,
@@ -54,8 +57,10 @@ export class ExtractorOrchestrator {
     this.#units = units
     this.#onData = onData
     this.#pollMs = pollMs
-    this.#fallbackThreshold = fallbackThreshold
     this.#recoveryThreshold = recoveryThreshold
+    this.#holdTtlMs = (holdTtlMs != null && Number.isFinite(holdTtlMs))
+      ? holdTtlMs
+      : holdTtlMin * 60_000
 
     this.#meterCache = new Map()
     this.#pmeCache = new Map()
@@ -67,6 +72,15 @@ export class ExtractorOrchestrator {
         since: null,
         consecMeterErrors: 0,
         consecMeterOk: 0,
+        justSwitched: false,
+        // Carry-forward con TTL (D-116). lastGoodMeter es un store SEPARADO de
+        // #meterCache porque #onMeterData sobrescribe el cache con value:null cuando
+        // el medidor falla; acá retenemos el último valor bueno post-inversión.
+        lastGoodMeter: null,  // { value, at }
+        holding: false,
+        heldTicks: 0,
+        lastHoldAt: null,
+        meterDownSince: null,
       })
     }
 
@@ -90,7 +104,7 @@ export class ExtractorOrchestrator {
     if (this.#running) return
     this.#running = true
     log('info',
-      `ExtractorOrchestrator starting — fallbackThreshold=${this.#fallbackThreshold} ` +
+      `ExtractorOrchestrator starting — holdTtlMin=${this.#holdTtlMs / 60_000} ` +
       `recoveryThreshold=${this.#recoveryThreshold} pollMs=${this.#pollMs}`,
     )
 
@@ -127,10 +141,38 @@ export class ExtractorOrchestrator {
     ])
   }
 
+  getTickSnapshot(unitId) {
+    const state = this.#unitState.get(unitId)
+    const meter = this.#meterCache.get(unitId)
+    const pme = this.#pmeCache.get(unitId)
+    const now = Date.now()
+    let meterPreInversion = null
+    try {
+      meterPreInversion = this.#meterPoller.getPreInversionValue?.(unitId) ?? null
+    } catch { /* ignore */ }
+    return {
+      meterRaw: meter?.value ?? null,
+      meterAgeMs: meter ? now - meter.updatedAt : null,
+      meterPreInversion,
+      pmeRaw: pme?.value ?? null,
+      pmeAgeMs: pme ? now - pme.updatedAt : null,
+      source: state?.source ?? null,
+      sourceSince: state?.since ?? null,
+      justSwitched: !!state?.justSwitched,
+      consecMeterErrors: state?.consecMeterErrors ?? 0,
+      consecMeterOk: state?.consecMeterOk ?? 0,
+      holding: !!state?.holding,
+      heldTicks: state?.heldTicks ?? 0,
+      lastGoodMeterValue: state?.lastGoodMeter?.value ?? null,
+      lastGoodMeterAgeMs: state?.lastGoodMeter ? now - state.lastGoodMeter.at : null,
+    }
+  }
+
   getStatus() {
     const meter = safeGetStatus(this.#meterPoller)
     const pme = safeGetStatus(this.#pmeScraper)
 
+    const now = Date.now()
     const perUnit = {}
     for (const [unitId, state] of this.#unitState) {
       perUnit[unitId] = {
@@ -140,10 +182,13 @@ export class ExtractorOrchestrator {
         consecMeterOk: state.consecMeterOk,
         meterValue: this.#meterCache.get(unitId)?.value ?? null,
         pmeValue:   this.#pmeCache.get(unitId)?.value   ?? null,
+        holding: state.holding,
+        heldTicks: state.heldTicks,
+        lastHoldAt: state.lastHoldAt ? new Date(state.lastHoldAt).toISOString() : null,
+        meterDownSeconds: state.meterDownSince ? Math.floor((now - state.meterDownSince) / 1000) : 0,
       }
     }
 
-    const now = Date.now()
     return {
       running: this.#running,
       warming: this.#updateCount === 0,
@@ -185,6 +230,8 @@ export class ExtractorOrchestrator {
 
     for (const unit of this.#units) {
       const state = this.#unitState.get(unit.id)
+      state.justSwitched = false
+
       const meter = this.#meterCache.get(unit.id)
       const pme = this.#pmeCache.get(unit.id)
 
@@ -194,36 +241,74 @@ export class ExtractorOrchestrator {
       if (meterValid) {
         state.consecMeterOk++
         state.consecMeterErrors = 0
+        // 1c: lastGoodMeter solo se sella con lecturas válidas (post-inversión).
+        state.lastGoodMeter = { value: meter.value, at: now }
       } else {
         state.consecMeterErrors++
         state.consecMeterOk = 0
       }
 
-      const prev = state.source
-      if (prev === null) {
-        if (meterValid) { state.source = 'meter'; state.since = now }
-        else if (pmeValid) {
-          state.source = 'pme'; state.since = now
-          log('warn', `[${unit.id}] init in fallback (meter invalid at startup)`)
+      // ── Decisión de fuente: carry-forward con TTL (D-116) ──────────────────
+      const prevSource = state.source
+      const wasHolding = state.holding
+      const ttlExpired = state.lastGoodMeter ? (now - state.lastGoodMeter.at) >= this.#holdTtlMs : true
+
+      // Reloj meter-down: corre durante el hold; el hold NO lo resetea
+      // (observabilidad veraz). Solo una lectura válida lo limpia.
+      if (meterValid) state.meterDownSince = null
+      else if (state.meterDownSince === null) state.meterDownSince = now
+
+      if (meterValid) {
+        if (prevSource === 'pme') {
+          // recovery pme→meter: preserva recoveryThreshold (D-102)
+          if (state.consecMeterOk >= this.#recoveryThreshold) {
+            state.source = 'meter'; state.since = now; state.justSwitched = true
+            log('info', `[${unit.id}] switched: pme → meter (${state.consecMeterOk} consec OK)`)
+          }
+        } else {
+          if (prevSource !== 'meter') { state.source = 'meter'; state.since = now; state.justSwitched = true }
+          else state.source = 'meter'
         }
-      } else if (prev === 'meter') {
-        if (!meterValid && state.consecMeterErrors >= this.#fallbackThreshold && pmeValid) {
-          state.source = 'pme'; state.since = now
-          log('warn', `[${unit.id}] switched: meter → pme (${state.consecMeterErrors} consec errors)`)
+        state.holding = false
+      } else if (state.lastGoodMeter && !ttlExpired) {
+        // HOLD — prioridad sobre PME mientras el TTL no expire
+        state.source = 'meter'
+        state.holding = true
+      } else {
+        // TTL expiró (o sin lastGoodMeter en arranque) → ceder a PME
+        state.holding = false
+        if (pmeValid && prevSource !== 'pme') {
+          state.source = 'pme'; state.since = now; state.justSwitched = true
+          if (prevSource === 'meter') {
+            log('warn', `[${unit.id}] switched: meter → pme (TTL ${this.#holdTtlMs / 60_000}min agotado)`)
+          } else {
+            log('warn', `[${unit.id}] init in fallback (meter invalid at startup)`)
+          }
         }
-      } else if (prev === 'pme') {
-        if (meterValid && state.consecMeterOk >= this.#recoveryThreshold) {
-          state.source = 'meter'; state.since = now
-          log('info', `[${unit.id}] switched: pme → meter (${state.consecMeterOk} consec OK)`)
-        }
+        // ambas muertas: mantener source previo (value será null); conserva histéresis
       }
 
-      let valueMW
-      if (state.source === 'meter') valueMW = meterValid ? meter.value : null
-      else if (state.source === 'pme') valueMW = pmeValid ? pme.value : null
-      else valueMW = null
+      // ── Episodio de hold (log inicio/fin) ──────────────────────────────────
+      if (state.holding) {
+        if (!wasHolding) {
+          state.heldTicks = 1; state.lastHoldAt = now
+          log('warn', `[${unit.id}] HOLD start — retiene ${state.lastGoodMeter.value} MW (lastGood age=${Math.round((now - state.lastGoodMeter.at) / 1000)}s)`)
+        } else {
+          state.heldTicks++
+        }
+      } else if (wasHolding) {
+        const reason = meterValid ? 'meter recovered' : (pmeValid ? 'TTL→pme' : 'TTL→null')
+        log('info', `[${unit.id}] HOLD end — ${state.heldTicks} ticks reason=${reason}`)
+        state.heldTicks = 0
+      }
 
-      mergedUnits.push({ id: unit.id, label: unit.label, valueMW, maxMW: unit.maxMW, source: state.source })
+      // ── Cálculo de valueMW ─────────────────────────────────────────────────
+      let valueMW
+      if (state.source === 'meter')    valueMW = meterValid ? meter.value : (state.holding ? state.lastGoodMeter.value : null)
+      else if (state.source === 'pme') valueMW = pmeValid ? pme.value : null
+      else                             valueMW = null
+
+      mergedUnits.push({ id: unit.id, label: unit.label, valueMW, maxMW: unit.maxMW, source: state.source, holding: state.holding })
 
       if (valueMW !== null) {
         const prevVal = this.#prevValuesByUnit.get(unit.id)
