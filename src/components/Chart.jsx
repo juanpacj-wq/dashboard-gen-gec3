@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { C, FONT, MONO } from "../theme";
+import { C, FONT, MONO, tint } from "../theme";
 import { UNITS } from "../data/units";
 
 export function Chart({ unitId, width, height, minuteDeviations, realtimeUnit }) {
@@ -80,7 +80,7 @@ export function Chart({ unitId, width, height, minuteDeviations, realtimeUnit })
   };
 
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 10px 6px", height: "100%", display: "flex", flexDirection: "column" }}>
+    <div style={{ background: tint(C.card, unit.color, 0.07), transition: "background 0.4s ease", border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 10px 6px", height: "100%", display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: realtimeUnit?.valueMW != null ? 0 : 4, paddingLeft: 4, flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <div style={{ width: 7, height: 7, borderRadius: "50%", background: unit.color, boxShadow: `0 0 5px ${unit.color}60` }} />

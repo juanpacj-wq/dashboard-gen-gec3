@@ -10,3 +10,21 @@ export const C = {
   red: "#ef4444",
   darkGreen: "#2d8a4e", darkGreenBright: "#38a85c", darkGreenDim: "rgba(45,138,78,0.12)", darkGreenBorder: "rgba(45,138,78,0.25)",
 };
+
+// Tiñe la superficie `baseHex` con el color de acento de la planta, devolviendo un tono
+// MUY oscuro de ese hue. Clave: blue/green/cyan son mucho más brillantes que el verde
+// oscuro de GEC32, así que mezclarlos al mismo % subiría demasiado el brillo del fondo y
+// estorbaría la lectura de la tabla/gráfica. Por eso primero NORMALIZAMOS la luminancia del
+// acento a la de C.darkGreen (la referencia que se ve bien) — todos los hues quedan igual
+// de oscuros — y recién ahí mezclamos `amount` (0..1) sobre la base. Args en hex #rrggbb.
+export const tint = (baseHex, accentHex, amount) => {
+  const REL = [0.299, 0.587, 0.114];
+  const rgb = (hex) => { const c = parseInt(hex.slice(1), 16); return [(c >> 16) & 255, (c >> 8) & 255, c & 255]; };
+  const lum = (a) => REL[0] * a[0] + REL[1] * a[1] + REL[2] * a[2];
+  const base = rgb(baseHex), acc = rgb(accentHex);
+  // Factor para igualar brillo al de GEC32. El exponente 1.5 oscurece MÁS a los hues más
+  // brillantes (blue/green/cyan) sin tocar GEC32: su ratio es exactamente 1, y 1^1.5 = 1.
+  const f = Math.min(1, (lum(rgb(C.darkGreen)) / (lum(acc) || 1)) ** 1.5);
+  const m = (i) => Math.round(base[i] + (acc[i] * f - base[i]) * amount);
+  return `rgb(${m(0)},${m(1)},${m(2)})`;
+};
