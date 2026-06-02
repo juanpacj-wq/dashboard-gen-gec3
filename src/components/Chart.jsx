@@ -97,8 +97,8 @@ export function Chart({ unitId, width, height, minuteDeviations, realtimeUnit })
       </div>
       {realtimeUnit?.valueMW != null && (
         <div style={{ display: "flex", alignItems: "baseline", gap: 3, paddingLeft: 17, marginBottom: 2, flexShrink: 0 }}>
-          <span style={{ fontSize: 22, fontWeight: 800, color: unit.color, fontFamily: MONO }}>{Math.max(0, realtimeUnit.valueMW).toFixed(1)}</span>
-          <span style={{ fontSize: 14, fontWeight: 500, color: C.textMuted, fontFamily: MONO }}>MW</span>
+          <span style={{ fontSize: 42, fontWeight: 800, color: unit.color, fontFamily: MONO }}>{Math.max(0, realtimeUnit.valueMW).toFixed(1)}</span>
+          <span style={{ fontSize: 30, fontWeight: 500, color: C.textMuted, fontFamily: MONO }}>MW</span>
         </div>
       )}
       <div ref={containerRef} style={{ flex: 1, minHeight: 0 }}>

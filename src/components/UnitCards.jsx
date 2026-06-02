@@ -57,17 +57,20 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
       cursor: "pointer", transition: "all 0.3s ease",
       display: "flex", alignItems: "center",
       gap: isSel ? 10 : 8, flexDirection: "row",
-      overflow: "hidden", minWidth: 0,
+      overflow: "hidden", minWidth: 0, position: "relative",
     }}>
-      <MiniGauge value={pctCap} max={100} color={u.color} size={Math.min(100, height * 0.95)} displayValue={currentMW} displayUnit="MW" />
+      {/* size: el svg del gauge mide 0.72*size de alto; lo llenamos al alto útil de la
+          tarjeta (height - ~22px de padding) / 0.72 para maximizar tamaño sin que el arco
+          o el texto se corten (la card tiene overflow:hidden). Cap a 150 por estética. */}
+      <MiniGauge value={pctCap} max={100} color={u.color} size={Math.min(150, (height - 22) / 0.72)} displayValue={currentMW} displayUnit="MW" />
       <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: isSel ? 4 : 3 }}>
           <div style={{ width: isSel ? 9 : 7, height: isSel ? 9 : 7, borderRadius: "50%", background: u.color, boxShadow: `0 0 ${isSel ? 7 : 3}px ${u.color}60`, flexShrink: 0 }} />
-          <span style={{ fontSize: isSel ? 24 : 16, fontWeight: 800, color: isSel ? u.color : C.text, fontFamily: MONO, letterSpacing: 1 }}>{u.id}</span>
+          <span style={{ fontSize: isSel ? 40 : 20, fontWeight: 800, color: isSel ? u.color : C.text, fontFamily: MONO, letterSpacing: 1 }}>{u.id}</span>
           {sourceBadge && (
             <span style={{
               marginLeft: isSel ? 6 : "auto",
-              fontSize: isSel ? 11 : 10,
+              fontSize: isSel ? 14 : 10,
               color: sourceBadge.color,
               background: sourceBadge.bg,
               border: `1px solid ${sourceBadge.border}`,
@@ -98,34 +101,30 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
               {pruebaBadge.label}
             </span>
           )}
-          {isSel && <span style={{ marginLeft: "auto", fontSize: 11, color: C.green, background: C.greenDim, border: `1px solid ${C.greenBorder}`, borderRadius: 5, padding: "1px 6px", fontFamily: MONO, fontWeight: 700, whiteSpace: "nowrap" }}>SELECCIONADA</span>}
+          {isSel && <span style={{ marginLeft: "auto", fontSize: 16, color: C.green, background: C.greenDim, border: `1px solid ${C.greenBorder}`, borderRadius: 5, padding: "1px 6px", fontFamily: MONO, fontWeight: 700, whiteSpace: "nowrap" }}>SELECCIONADA</span>}
         </div>
-        <div style={{ fontSize: 12, color: C.textMuted, fontFamily: FONT, marginBottom: isSel ? 6 : 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{isSel ? "Capacidad Instalada" : "CAPAIns"} - {u.capacity} MW</div>
         {isSel ? (
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
             {[
-              { l: "Capacidad", v: pctCap + "%", c: C.text },
-              { l: "Desviación", v: (dev >= 0 ? "+" : "") + dev.toFixed(2) + "%", c: devColor, flag: isAutorizado },
+              { l: "Capacidad", v: pctCap + "%", c: C.text, vSize: 16 },
+              { l: "Desviación", v: (dev >= 0 ? "+" : "") + dev.toFixed(2) + "%", c: devColor, flag: isAutorizado, vSize: 26 },
               //{ l: "Media", v: unitSt.mean.toFixed(2) + "%", c: C.text },
               //{ l: "Std Dev", v: unitSt.std.toFixed(2) + "%", c: u.color },
             ].map((x, i) => (
               <div key={i}>
-                <div style={{ fontSize: 11, color: C.textMuted, fontFamily: MONO, letterSpacing: 0.5 }}>{x.l}</div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: x.c, fontFamily: MONO }}>
+                <div style={{ fontSize: 16, color: C.textMuted, fontFamily: MONO, letterSpacing: 0.5 }}>{x.l}</div>
+                <div style={{ fontSize: x.vSize, fontWeight: 800, color: x.c, fontFamily: MONO }}>
                   {x.v}
                   {x.flag && <span title="Autorizado por JdT" style={{ marginLeft: 4, color: C.green }}>⚑</span>}
                 </div>
               </div>
             ))}
           </div>
-        ) : (
-          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: devColor, fontFamily: MONO, marginLeft: "auto" }}>
-              {dev >= 0 ? "+" : ""}{dev.toFixed(1)}%
-              {isAutorizado && <span title="Autorizado por JdT" style={{ marginLeft: 3, color: C.green }}>⚑</span>}
-            </span>
-          </div>
-        )}
+        ) : null}
+      </div>
+      {/* Capacidad instalada — esquina inferior derecha de la card */}
+      <div style={{ position: "absolute", right: 12, bottom: 8, fontSize: 16, color: C.textMuted, fontFamily: FONT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "calc(100% - 24px)", pointerEvents: "none", textAlign: "right" }}>
+        {isSel ? "Capacidad Instalada" : "CAPAIns"} - {u.capacity} MW
       </div>
     </div>
   );
