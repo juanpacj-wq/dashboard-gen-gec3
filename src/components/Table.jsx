@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { C, FONT, MONO } from "../theme";
+import { C, FONT, MONO, tint } from "../theme";
 import { UNITS, ALL_DATA } from "../data/units";
 
 // F8: emojis para los efectos de bitácora. Sujetos a refinamiento con el usuario; si cambia
@@ -161,6 +161,8 @@ function TableHeader({ unit, isXmLive, showChart, onToggleChart }) {
 function HorizontalTable({ data, unit, currentIdx, despachoManana }) {
   const scrollRef = useRef(null);
   const [hov, setHov] = useState(-1);
+  // Mismo tinte que el panel para que las celdas sticky no muestren una costura al scrollear.
+  const surface = tint(C.card, unit.color, 0.07);
 
   useEffect(()=>{
     requestAnimationFrame(()=>{
@@ -197,7 +199,7 @@ function HorizontalTable({ data, unit, currentIdx, despachoManana }) {
       <table style={{borderCollapse:"separate",borderSpacing:0,fontFamily:FONT,minWidth:"100%",height:"100%"}}>
         <thead>
           <tr style={{height:`${100/numRows}%`}}>
-            <th style={{padding:"2px 4px",textAlign:"left",fontSize:14,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.3,borderBottom:`1px solid ${C.border}`,fontFamily:MONO,position:"sticky",left:0,background:C.card,zIndex:3}}>Periodo</th>
+            <th style={{padding:"2px 4px",textAlign:"left",fontSize:14,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.3,borderBottom:`1px solid ${C.border}`,fontFamily:MONO,position:"sticky",left:0,background:surface,zIndex:3}}>Periodo</th>
             {data.map((row,i)=>{
               const isCurrent = i===currentIdx;
               const isFuture = i > currentIdx;
@@ -230,7 +232,7 @@ function HorizontalTable({ data, unit, currentIdx, despachoManana }) {
         <tbody>
           {rowDefs.slice(1).map((rd)=>(
             <tr key={rd.key} style={{height:`${100/numRows}%`}}>
-              <td style={{padding:"2px 4px",fontSize:14,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.2,fontFamily:MONO,borderBottom:`1px solid ${C.border}`,position:"sticky",left:0,background:C.card,zIndex:2,lineHeight:1.15}}>{rd.label}</td>
+              <td style={{padding:"2px 4px",fontSize:14,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.2,fontFamily:MONO,borderBottom:`1px solid ${C.border}`,position:"sticky",left:0,background:surface,zIndex:2,lineHeight:1.15}}>{rd.label}</td>
               {data.map((row,i)=>{
                 const isCurrent = i===currentIdx;
                 const isFuture = i > currentIdx;
@@ -347,6 +349,8 @@ function HorizontalTable({ data, unit, currentIdx, despachoManana }) {
 function VerticalTable({ data, unit, currentIdx, despachoManana }) {
   const [hov, setHov] = useState(-1);
   const scrollRef = useRef(null);
+  // Mismo tinte que el panel para que el header sticky no muestre una costura al scrollear.
+  const surface = tint(C.card, unit.color, 0.07);
   const headers = [
     "Periodo",
     "Despacho (MW)",
@@ -376,7 +380,7 @@ function VerticalTable({ data, unit, currentIdx, despachoManana }) {
       <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontFamily:FONT}}>
         <thead>
           <tr>{headers.map((h,i)=>(
-            <th key={i} style={{padding:"5px 6px",textAlign:i===0?"center":"right",fontSize:11,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${C.border}`,fontFamily:MONO,position:"sticky",top:0,background:C.card,zIndex:1,lineHeight:1.3}}>{h}</th>
+            <th key={i} style={{padding:"5px 6px",textAlign:i===0?"center":"right",fontSize:11,fontWeight:600,color:C.textMuted,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${C.border}`,fontFamily:MONO,position:"sticky",top:0,background:surface,zIndex:1,lineHeight:1.3}}>{h}</th>
           ))}</tr>
         </thead>
         <tbody>
@@ -506,7 +510,7 @@ export function Table({ unitId, xmDispatch, despachoManana, pmeAccumulated, comp
   const unitDespachoManana = despachoManana?.[unitId] || null;
 
   return (
-    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",height:"100%",display:"flex",flexDirection:"column"}}>
+    <div style={{background:tint(C.card, unit.color, 0.07),transition:"background 0.4s ease",border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",height:"100%",display:"flex",flexDirection:"column"}}>
       <TableHeader unit={unit} isXmLive={isXmLive} showChart={showChart} onToggleChart={onToggleChart} />
       {horizontal
         ? <HorizontalTable data={data} unit={unit} currentIdx={currentIdx} despachoManana={unitDespachoManana} />
