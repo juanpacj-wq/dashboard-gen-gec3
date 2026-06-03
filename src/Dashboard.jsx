@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { C, FONT, MONO } from "./theme";
+import { C, FONT, MONO, tint } from "./theme";
 import { UNITS, ALL_DATA } from "./data/units";
+import { getConfig } from "./config/instance";
 import { UnitCards } from "./components/UnitCards";
 import { GenerationTicker } from "./components/GenerationTicker";
 import { Chart } from "./components/Chart";
@@ -16,9 +17,10 @@ const STATUS_CFG = {
   connecting:   { color: C.textMuted, label: "Conectando..." },
 };
 
+
 export default function Dashboard() {
   const [time, setTime] = useState(new Date());
-  const [sel, setSel] = useState("GEC3");
+  const [sel, setSel] = useState(getConfig().defaultUnit);
   const [showChart, setShowChart] = useState(false);
   const [vh, setVh] = useState(window.innerHeight);
   const [vw, setVw] = useState(window.innerWidth);
@@ -73,12 +75,18 @@ export default function Dashboard() {
   const mainH = contentH - tickerH - unitRowH - footerH - gap * 5 - px * 2;
   const chartW = Math.max(300, (vw - px * 2 - gap) * 0.55);
 
+  // Tinte muy oscuro del color de la planta seleccionada para el fondo y las superficies.
+  // El fondo (marco) recibe más matiz que la nav para conservar la jerarquía de capas.
+  const selColor = (UNITS.find(u => u.id === sel)?.color) ?? C.blue;
+  const bgTint = tint(C.bg, selColor, 0.12);
+  const navTint = tint(C.bg2, selColor, 0.07);
+
   return (
-    <div style={{background:C.bg,width:"100vw",height:"100vh",overflow:"hidden",fontFamily:FONT,color:C.text,display:"flex",flexDirection:"column"}}>
+    <div style={{background:bgTint,transition:"background 0.4s ease",width:"100vw",height:"100vh",overflow:"hidden",fontFamily:FONT,color:C.text,display:"flex",flexDirection:"column"}}>
       {/* Nav */}
-      <nav style={{height:navH,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10 "+px+"px",borderBottom:`1px solid ${C.border}`,background:C.bg2}}>
+      <nav style={{height:navH,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10 "+px+"px",borderBottom:`1px solid ${C.border}`,background:navTint,transition:"background 0.4s ease"}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <img src="/G3 blanco.png" alt="Gecelca" style={{height:40,objectFit:"contain",marginLeft: px}}/>
+          <img src={getConfig().branding.logo} alt={getConfig().branding.logoAlt} style={{height:40,objectFit:"contain",marginLeft: px}}/>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:14}}>
           {[
@@ -110,7 +118,7 @@ export default function Dashboard() {
 
       {/* Content */}
       <div style={{flex:1,padding:px,display:"flex",flexDirection:"column",gap,overflow:"hidden",minHeight:0}}>
-        <UnitCards selected={sel} onSelect={id=>setSel(id||"GEC3")} height={unitRowH} realtimeUnits={rtUnits} pmeAccumulated={accumulated} projection={projection} xmDispatch={xmDispatch} autorizaciones={autorizaciones} eventosBitacora={eventosBitacora}/>
+        <UnitCards selected={sel} onSelect={id=>setSel(id||getConfig().defaultUnit)} height={unitRowH} realtimeUnits={rtUnits} pmeAccumulated={accumulated} projection={projection} xmDispatch={xmDispatch} autorizaciones={autorizaciones} eventosBitacora={eventosBitacora}/>
 
         <div style={{flex:1,display:"flex",gap,minHeight:0}}>
           <div style={{flex:showChart?"60 1 0":"80 1 0",minWidth:0,transition:"flex 0.3s ease"}}>
