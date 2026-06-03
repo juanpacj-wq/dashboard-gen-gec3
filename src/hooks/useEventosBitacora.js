@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getConfig } from "../config/instance";
 
 // F8: agrupa eventos del bitácora-server por (unidad, periodo, tipo). Reemplaza al
 // useAutorizaciones (que solo conocía AUTH) — ahora soporta AUTH/REDESP/PRUEBA simultáneos
@@ -7,7 +8,9 @@ import { useEffect, useState } from "react";
 // Catch silencioso: si bitácora está caído, el dashboard sigue funcionando sin emojis;
 // nunca debe crashear por esto.
 
-const PLANTAS = ["GEC3", "GEC32"];
+// Plantas con bitácora propia. Configurable por instancia: una instancia sin Bitácora
+// accesible puede dejar bitacoraPlantas: [] en su config.json y el hook no intenta el fetch.
+const PLANTAS = getConfig().bitacoraPlantas;
 const POLL_MS = 60_000;
 
 function todayBogota() {

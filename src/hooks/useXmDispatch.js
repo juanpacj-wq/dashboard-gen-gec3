@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
+import { getConfig } from "../config/instance";
 
-const UNIT_IDS = ["GEC3", "GEC32", "TGJ1", "TGJ2"];
+// Mismo conjunto de unidades que el catálogo; el orden no afecta el mapeo de despacho, pero lo
+// derivamos de la config para no duplicar la lista de IDs por instancia.
+const UNIT_IDS = getConfig().unitOrder;
 
 async function fetchDespScraper() {
   const res = await fetch('/api/despacho/today')
