@@ -223,3 +223,37 @@ se ve como `'MEDIDOR'` (backend-only, sin badge "retenido"). Payload WS y
 (aditivo). Reconciliación del umbral viejo de alerta 30s → 3 min
 (`ALERT_THRESH_METER_CONSEC_ERRORS` 15→90, no-op en prod; canónica es la
 per-unit time-based).
+
+---
+
+## D-117 — Multi-instancia vía config de UI en runtime (no build-time)
+
+**Contexto:** se necesita correr una 2ª instancia del dashboard en otro servidor,
+alimentando otra BD, con diferencias mínimas de UI (orden de unidades y unidad
+seleccionada por defecto). El frontend no tenía patrón de config (`main.jsx`
+renderiza síncrono, cero `import.meta.env`). La meta a largo plazo es Docker, así
+que el mecanismo elegido no debe dificultar esa migración. Build-time (`vite
+--mode` + `.env.<modo>`) obligaría a un artefacto/imagen por instancia, contra el
+modelo Docker de "una imagen, N instancias por env".
+
+**Decisión:** config de instancia en **runtime** vía `GET /config.json`, servido
+**fuera del bundle** (nginx `location = /config.json` → `instance/config.json`
+per-servidor, no versionado). `src/config/instance.js` expone `loadInstanceConfig()`
+(fetch con fallback a defaults = comportamiento `gec3` histórico) y `getConfig()`
+síncrono. `main.jsx` carga la config y recién entonces hace **import dinámico** de
+`Dashboard` (necesario porque `units.js` computa el orden de `UNITS` en module-eval).
+Los hardcodes (`units.js`, `Dashboard.jsx` default+logo, `useEventosBitacora` plantas,
+`useXmDispatch` IDs) leen `getConfig()`. Plantillas versionadas `deploy/config.*.json`;
+secretos+BD siguen en `server/.env` (gitignored). Despliegue idéntico en ambos
+servidores (`deploy/update.sh`): build instancia-agnóstico; la identidad vive en
+`server/.env` + `instance/config.json`.
+
+**Consecuencias:** el mismo `dist/` (y a futuro la misma imagen Docker) sirve
+cualquier instancia según el `config.json` montado. Sin forks ni ramas por instancia
+(evita *fork drift*). Si `/config.json` falta/falla, arranca con defaults `gec3` (no
+rompe; preserva "funciona aunque el backend esté caído"). El `branding` en el schema
+permite título/logo por instancia aunque hoy solo difiere orden/default. Riesgo
+abierto: ambas instancias reusan las mismas credenciales PME/medidor → contención
+concurrente; validar en pilot y, si falla, mover B a solo-presentación o creds
+dedicadas (ver `deployment-multi-instancia.md`). Guía completa:
+`docs/deployment-multi-instancia.md`.
