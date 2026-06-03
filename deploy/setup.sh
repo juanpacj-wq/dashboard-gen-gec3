@@ -53,6 +53,19 @@ if [ ! -f "$APP_DIR/server/.env" ]; then
   echo ""
 fi
 
+# 7b. Config de instancia (per-servidor, fuera del bundle — la sirve nginx en /config.json).
+# Por defecto siembra la instancia gec3. En el servidor B, sobreescribir con la plantilla
+# guajira ANTES o DESPUÉS de este script:
+#   sudo cp /var/www/dashboard-gen/deploy/config.guajira.json /var/www/dashboard-gen/instance/config.json
+mkdir -p "$APP_DIR/instance"
+if [ ! -f "$APP_DIR/instance/config.json" ]; then
+  cp "$APP_DIR/deploy/config.gec3.json" "$APP_DIR/instance/config.json"
+  echo ""
+  echo "  >>> Config de instancia sembrada: $APP_DIR/instance/config.json (gec3)"
+  echo "  >>> Para la instancia guajira: sudo cp $APP_DIR/deploy/config.guajira.json $APP_DIR/instance/config.json"
+  echo ""
+fi
+
 # 8. Nginx
 echo "[7/8] Configurando Nginx..."
 sudo cp "$APP_DIR/deploy/nginx.conf" /etc/nginx/sites-available/dashboard-gen
