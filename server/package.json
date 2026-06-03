@@ -4,7 +4,11 @@
   "type": "module",
   "scripts": {
     "start": "node --env-file=../.env server.js",
+    "start:gec3": "node --env-file=../.env.gec3 server.js",
+    "start:guajira": "node --env-file=../.env.guajira server.js",
     "dev": "node --env-file=../.env --watch server.js",
+    "dev:gec3": "node --env-file=../.env.gec3 --watch server.js",
+    "dev:guajira": "node --env-file=../.env.guajira --watch server.js",
     "probe": "node --env-file=../.env scripts/probe-meters.js",
     "smoke": "node --env-file=../.env scripts/smoke-poller.js",
     "test": "vitest run --pool=forks --poolOptions.forks.singleFork=true",

@@ -29,6 +29,18 @@ migration-prompts
 
 # Environment & debug
 .env
+# .env por instancia (.env.gec3, .env.guajira, ...) — secretos, NO versionar.
+# El template .env.example sí se versiona (excepción explícita abajo).
+.env.*
+!.env.example
 server/.env
 server/debug-screenshot.png
 server/debug-dom.json
+
+# Config de instancia per-servidor (la siembra deploy/setup.sh desde deploy/config.*.json).
+# Vive solo en cada servidor; las plantillas versionadas son deploy/config.*.json.
+/instance/
+
+# Runbooks de despliegue con credenciales reales — uso interno, NO versionar (evitar pushes).
+deploy/DEPLOY-gec3.md
+deploy/DEPLOY-guajira.md
