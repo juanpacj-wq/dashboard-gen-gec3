@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Inicio rápido — qué leer
 
 - **Detalle de arquitectura** (capas, scrapers, BD, deploy): `docs/architecture.md`.
+- **Despliegue multi-instancia** (2ª instancia en otro servidor/BD, config de UI en runtime vía `/config.json`, camino a Docker): `docs/deployment-multi-instancia.md` (D-117).
 - **Decisiones** (ADR-lite, migración a meters, badge MEDIDOR/PME, signos, etc.): `docs/decisions.md`.
 - **Convención de signos crítica** (Gecelca frontier input vs Guajira output): `server/SIGN_CONVENTION.md`.
 - **Mapa de archivos del extractor** (meterClient, meterPoller, extractorOrchestrator): `server/EXTRACTION_BACKEND_MAP.md`.
