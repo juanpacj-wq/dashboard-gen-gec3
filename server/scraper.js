@@ -1,6 +1,7 @@
 import { chromium } from 'playwright'
 import { writeFileSync } from 'fs'
-import { resolve } from 'path'
+import { join } from 'path'
+import { tmpdir } from 'os'
 
 const RECONNECT_MS = 5_000
 const FALLBACK_MS  = 3_000
@@ -15,6 +16,11 @@ const PME_LOG_THROTTLE_MS    = 30_000   // throttle del resumen [PME]
 
 // HEADLESS=false para ventana visible (debug local), cualquier otro valor = headless nuevo
 const HEADLESS = process.env.HEADLESS === 'false' ? false : true
+
+// Diagnóstico opt-in: PME_DIAGNOSE=1 vuelca screenshot + DOM del diagrama a tmp para depurar
+// la extracción. Default OFF en prod → el scraper no escribe artefactos de debug (cero EACCES)
+// y va directo a #observe(). Solo activar para diagnosticar el scraper.
+const PME_DIAGNOSE = process.env.PME_DIAGNOSE === '1'
 
 export class PMEScraper {
   #pme; #units; #onData
@@ -162,7 +168,7 @@ export class PMEScraper {
 
     await this.#login()
     await this.#navigateToDiagram()
-    await this.#diagnose()   // ← imprime DOM y guarda screenshot, solo en arranque
+    if (PME_DIAGNOSE) await this.#diagnose()   // opt-in (PME_DIAGNOSE=1); nunca bloquea #observe
     await this.#observe()
   }
 
@@ -218,13 +224,13 @@ export class PMEScraper {
     console.log('[Scraper] Diagrama cargado. URL:', this.#page.url())
   }
 
-  // ── Diagnóstico (se ejecuta UNA vez al arrancar) ────────────────────────────
+  // ── Diagnóstico (opt-in vía PME_DIAGNOSE=1; escribe artefactos a tmp) ────────
 
   async #diagnose() {
     console.log('\n[Diagnóstico] ═══════════════════════════════════════════')
 
     // Screenshot
-    const screenshotPath = resolve('debug-screenshot.png')
+    const screenshotPath = join(tmpdir(), 'pme-debug-screenshot.png')
     await this.#page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {})
     console.log(`[Diagnóstico] Screenshot guardado en: ${screenshotPath}`)
 
@@ -306,7 +312,7 @@ export class PMEScraper {
     // — p.ej. EACCES si el proceso corre como www-data sin permiso sobre server/ — NUNCA
     // debe tumbar la sesión y bloquear #observe()/el fallback PME).
     try {
-      const dumpPath = resolve('debug-dom.json')
+      const dumpPath = join(tmpdir(), 'pme-debug-dom.json')
       writeFileSync(dumpPath, JSON.stringify(info, null, 2))
       console.log(`[Diagnóstico] Dump completo en: ${dumpPath}`)
     } catch (err) {
