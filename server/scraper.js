@@ -302,10 +302,16 @@ export class PMEScraper {
       }
     }
 
-    // Guardar dump completo en archivo para análisis
-    const dumpPath = resolve('debug-dom.json')
-    writeFileSync(dumpPath, JSON.stringify(info, null, 2))
-    console.log(`[Diagnóstico] Dump completo en: ${dumpPath}`)
+    // Guardar dump completo en archivo para análisis (best-effort: un fallo de escritura
+    // — p.ej. EACCES si el proceso corre como www-data sin permiso sobre server/ — NUNCA
+    // debe tumbar la sesión y bloquear #observe()/el fallback PME).
+    try {
+      const dumpPath = resolve('debug-dom.json')
+      writeFileSync(dumpPath, JSON.stringify(info, null, 2))
+      console.log(`[Diagnóstico] Dump completo en: ${dumpPath}`)
+    } catch (err) {
+      console.warn(`[Diagnóstico] No se pudo escribir debug-dom.json (${err.code || err.message}); se omite.`)
+    }
     console.log('[Diagnóstico] ═══════════════════════════════════════════\n')
   }
 
