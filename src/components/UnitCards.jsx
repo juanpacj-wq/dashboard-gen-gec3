@@ -62,7 +62,9 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
       {/* size: el svg del gauge mide 0.72*size de alto; lo llenamos al alto útil de la
           tarjeta (height - ~22px de padding) / 0.72 para maximizar tamaño sin que el arco
           o el texto se corten (la card tiene overflow:hidden). Cap a 150 por estética. */}
-      <MiniGauge value={pctCap} max={100} color={u.color} size={Math.min(150, (height - 22) / 0.72)} displayValue={currentMW} displayUnit="MW" />
+      {/* Seleccionada: el gauge muestra % de capacidad y el MW grande va afuera (junto a Desviación).
+          No seleccionada: el gauge muestra el MW como siempre. */}
+      <MiniGauge value={pctCap} max={100} color={u.color} size={Math.min(150, (height - 22) / 0.72)} displayValue={isSel ? null : currentMW} displayUnit={isSel ? "%" : "MW"} />
       <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: isSel ? 4 : 3 }}>
           <div style={{ width: isSel ? 9 : 7, height: isSel ? 9 : 7, borderRadius: "50%", background: u.color, boxShadow: `0 0 ${isSel ? 7 : 3}px ${u.color}60`, flexShrink: 0 }} />
@@ -104,9 +106,8 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
           {isSel && <span style={{ marginLeft: "auto", fontSize: 16, color: C.green, background: C.greenDim, border: `1px solid ${C.greenBorder}`, borderRadius: 5, padding: "1px 6px", fontFamily: MONO, fontWeight: 700, whiteSpace: "nowrap" }}>SELECCIONADA</span>}
         </div>
         {isSel ? (
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
             {[
-              { l: "Capacidad", v: pctCap + "%", c: C.text, vSize: 16 },
               { l: "Desviación", v: (dev >= 0 ? "+" : "") + dev.toFixed(2) + "%", c: devColor, flag: isAutorizado, vSize: 26 },
               //{ l: "Media", v: unitSt.mean.toFixed(2) + "%", c: C.text },
               //{ l: "Std Dev", v: unitSt.std.toFixed(2) + "%", c: u.color },
@@ -122,10 +123,22 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
           </div>
         ) : null}
       </div>
-      {/* Capacidad instalada — esquina inferior derecha de la card */}
-      <div style={{ position: "absolute", right: 12, bottom: 8, fontSize: 16, color: C.textMuted, fontFamily: FONT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "calc(100% - 24px)", pointerEvents: "none", textAlign: "right" }}>
-        {isSel ? "Capacidad Instalada" : "CAPAIns"} - {u.capacity} MW
-      </div>
+      {/* Potencia actual en grande — overlay absoluto para centrarla verticalmente en la card,
+          en el espacio libre a la derecha de la columna Desviación */}
+      {isSel && (
+        <div style={{ position: "absolute", top: 0, bottom: 0, left: "40%", right: 12, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+          <div style={{ display: "flex", alignItems: "baseline", whiteSpace: "nowrap" }}>
+            <span style={{ fontSize: 90, fontWeight: 800, color: "#fff", fontFamily: MONO }}>{currentMW.toFixed(1)}</span>
+            <span style={{ fontSize: 30, fontWeight: 700, color: C.textMuted, fontFamily: MONO, marginLeft: 6 }}>MW</span>
+          </div>
+        </div>
+      )}
+      {/* Capacidad instalada — esquina inferior derecha, solo en card no seleccionada */}
+      {!isSel && (
+        <div style={{ position: "absolute", right: 12, bottom: 8, fontSize: 16, color: C.textMuted, fontFamily: FONT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "calc(100% - 24px)", pointerEvents: "none", textAlign: "right" }}>
+          CAPAIns - {u.capacity} MW
+        </div>
+      )}
     </div>
   );
 }
