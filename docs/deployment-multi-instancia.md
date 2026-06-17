@@ -205,6 +205,39 @@ La identidad (`server/.env` + `instance/config.json`) se setea una vez en la pro
 - **Paralelo:** mismo `update.sh` en ambos. **Independiente:** actualizás B, lo observás, y
   recién después A; si B falla, A sigue en la versión previa.
 
+### 5.6 Migración en sitio de un servidor pre-multi-instancia
+
+Para un servidor que ya corre el dashboard desde antes de la bifurcación (sin `instance/`,
+sin `location = /config.json` en nginx, sin `update.sh` en disco — `update.sh` no puede
+auto-instalarse, esta migración es manual y una sola vez):
+
+```bash
+cd /var/www/dashboard-gen
+sudo git fetch origin
+sudo git checkout <rama-con-multi-instancia>     # main, una vez mergeado
+
+# Identidad de instancia (una sola vez; update.sh no la toca)
+sudo mkdir -p instance
+sudo cp deploy/config.<instancia>.json instance/config.json
+
+# nginx cambió (agrega location = /config.json)
+sudo cp deploy/nginx.conf /etc/nginx/sites-available/dashboard-gen
+sudo nginx -t && sudo systemctl reload nginx
+
+sudo npm ci && sudo npm run build
+cd server && sudo npm ci
+sudo systemctl restart dashboard-ws
+```
+
+Verificar: `curl -s http://localhost/config.json` devuelve la instancia esperada y
+`curl -s http://localhost/health` responde. De ahí en adelante aplica §5.4.
+
+**Gotcha visto en producción (GEC3, 2026-06):** si `.git/objects` quedó con dueños mezclados
+(deploys previos como root), `git fetch` sin sudo falla con `insufficient permission for
+adding an object to repository database`. Correr git con sudo; si root se queja de
+`dubious ownership`, registrar la ruta: `sudo git config --global --add safe.directory
+/var/www/dashboard-gen` (`update.sh` ya lo hace solo en cada corrida).
+
 ---
 
 ## 6. Migración a Docker (fase futura)
