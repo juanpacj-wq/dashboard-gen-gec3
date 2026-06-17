@@ -34,7 +34,19 @@ npm run build
 echo "== Deps del servidor =="
 cd server
 npm ci
-npx playwright install chromium   # no-op si ya está instalado
+
+# Chromium es para el fallback PME, NO la fuente primaria (el medidor ION8650 lo es, D-116).
+# Por eso su instalación NUNCA debe tumbar el deploy: si falla (p. ej. red corporativa con TLS
+# interceptado → SELF_SIGNED_CERT_IN_CHAIN), avisamos y seguimos. Se instala en la MISMA ruta
+# que server/.env (PLAYWRIGHT_BROWSERS_PATH) para que www-data pueda leer el navegador.
+PW_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$APP_DIR/.ms-playwright}"
+if PLAYWRIGHT_BROWSERS_PATH="$PW_BROWSERS_PATH" npx playwright install chromium; then
+  chmod -R a+rX "$PW_BROWSERS_PATH" 2>/dev/null || true
+else
+  echo "WARN: no se pudo instalar/actualizar Chromium (fallback PME). El deploy continúa: el" >&2
+  echo "      medidor es la fuente primaria. Si la red corporativa intercepta TLS, instalalo con" >&2
+  echo "      NODE_EXTRA_CA_CERTS=<CA-corp> (o NODE_TLS_REJECT_UNAUTHORIZED=0 como último recurso)." >&2
+fi
 
 echo "== Reiniciando servicio =="
 sudo systemctl restart dashboard-ws
