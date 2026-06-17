@@ -129,8 +129,20 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
   return { data, unit, currentIdx, isXmLive };
 }
 
+/* ─── Reloj en vivo (Bogotá explícito, canon del proyecto) ─── */
+function useLiveClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return now;
+}
+
 /* ─── Header compartido ─── */
 function TableHeader({ unit, isXmLive, showChart, onToggleChart }) {
+  const now = useLiveClock();
+  const hora = now.toLocaleTimeString("en-GB", { timeZone: "America/Bogota", hour: "2-digit", minute: "2-digit", second: "2-digit" });
   return (
     <div style={{display:"flex",alignItems:"center",borderBottom:`1px solid ${C.border}`,padding:"0 14px",flexShrink:0}}>
       <div style={{padding:"8px 12px",fontSize:18,fontWeight:700,color:unit.color,fontFamily:FONT,borderBottom:`2px solid ${unit.color}`,display:"flex",alignItems:"center",gap:8}}>
@@ -139,6 +151,12 @@ function TableHeader({ unit, isXmLive, showChart, onToggleChart }) {
           ? <span style={{fontSize:9,background:`${C.green}25`,color:C.green,padding:"2px 6px",borderRadius:10,fontWeight:700,letterSpacing:0.5}}>XM LIVE</span>
           : <span style={{fontSize:9,background:`${C.amber}20`,color:C.amber,padding:"2px 6px",borderRadius:10,fontWeight:700,letterSpacing:0.5}}>SIMULADO</span>
         }
+      </div>
+      {/* Reloj en vivo (restaurado del nav oculto) — a la izquierda, junto al título */}
+      <div style={{width:1,height:20,background:C.border,marginLeft:14}}/>
+      <div title="Hora actual (Bogotá)" style={{display:"flex",alignItems:"center",gap:7,marginLeft:14}}>
+        <span style={{width:7,height:7,borderRadius:"50%",background:C.green,boxShadow:`0 0 6px ${C.green}`,flexShrink:0}}/>
+        <span style={{fontSize:22,fontWeight:800,color:C.text,fontFamily:MONO,letterSpacing:1,fontVariantNumeric:"tabular-nums"}}>{hora}</span>
       </div>
       <div style={{marginLeft:"auto"}}>
         <button onClick={onToggleChart} style={{
