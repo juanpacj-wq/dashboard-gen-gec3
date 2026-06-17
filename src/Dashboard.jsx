@@ -65,14 +65,26 @@ export default function Dashboard() {
   const gDev = totalRedesp !== 0 ? ((totalGen - totalRedesp) / totalRedesp) * 100 : 0;
   const hasAnyAuthNow = UNITS.some(u => isUnitAuthorized(u.id));
 
-  const navH = 55;
+  // Header oculto para dar TODO su espacio a las UnitCards. Para restaurarlo poné SHOW_NAV=true:
+  // toda la lógica que lo alimenta (totales, reloj, estado WS) sigue intacta más abajo y el
+  // <nav> sólo está envuelto en este flag, así que restaurarlo es un cambio de una línea.
+  const SHOW_NAV = false;
+  const navH = SHOW_NAV ? 55 : 0;
   const tickerH = 52;
   const gap = 5;
   const px = 16;
   const contentH = vh - navH;
-  const unitRowH = Math.max(80, contentH * 0.14);
-  const footerH = 24;
-  const mainH = contentH - tickerH - unitRowH - footerH - gap * 5 - px * 2;
+  // Espacio reasignado ÍNTEGRO a las unit cards (NO repartido en la fila central Table/Chart,
+  // que es flex:1), para agrandar los indicadores de unidad:
+  //  - footer eliminado: su height (24) + su gap.
+  //  - header oculto (SHOW_NAV=false): sus 55px.
+  // La fracción base usa la altura "de diseño" (con nav) para que togglear SHOW_NAV no recalcule
+  // la fracción y mantenga la fila central idéntica; sólo cambia el alto de las cards.
+  const designContentH = vh - 55;
+  const freedByFooter = 24 + gap;
+  const freedByNav = SHOW_NAV ? 0 : 55;
+  const unitRowH = Math.max(80, designContentH * 0.14) + freedByFooter + freedByNav;
+  const mainH = contentH - tickerH - unitRowH - gap * 2 - px * 2;
   const chartW = Math.max(300, (vw - px * 2 - gap) * 0.55);
 
   // Tinte muy oscuro del color de la planta seleccionada para el fondo y las superficies.
@@ -82,15 +94,16 @@ export default function Dashboard() {
   const navTint = tint(C.bg2, selColor, 0.07);
 
   return (
-    <div style={{background:bgTint,transition:"background 0.4s ease",width:"100vw",height:"100vh",overflow:"hidden",fontFamily:FONT,color:C.text,display:"flex",flexDirection:"column"}}>
-      {/* Nav */}
+    <div style={{background:bgTint,transition:"background 0.4s ease",width:"100vw",height:"100vh",overflow:"hidden",fontFamily:FONT,color:C.text,display:"flex",flexDirection:"column",position:"relative"}}>
+      {/* Nav — oculta vía SHOW_NAV (ver arriba). Envuelta en el flag para revert de una línea. */}
+      {SHOW_NAV && (
       <nav style={{height:navH,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10 "+px+"px",borderBottom:`1px solid ${C.border}`,background:navTint,transition:"background 0.4s ease"}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <img src={getConfig().branding.logo} alt={getConfig().branding.logoAlt} style={{height:40,objectFit:"contain",marginLeft: px}}/>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:14}}>
           {[
-            {l:"Gen Total",v:totalGen.toFixed(0)+" MW",c:C.green},
+            {l:"Potencia Total",v:totalGen.toFixed(0)+" MWh",c:C.green},
             {l:"Redespacho",v:totalRedesp.toFixed(0)+" MW",c:C.cyan},
             {l:"Desv Global",v:(gDev>=0?"+":"")+gDev.toFixed(2)+"%",c:hasAnyAuthNow?C.green:(Math.abs(gDev)>2?C.red:C.green),flag:hasAnyAuthNow},
           ].map((s,i)=>(
@@ -115,9 +128,10 @@ export default function Dashboard() {
           <div style={{width:26,height:26,borderRadius:"50%",background:`linear-gradient(135deg,${C.cyan}40,${C.green}40)`,border:`2px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize: 12,fontWeight:700,color:C.green,fontFamily:MONO}}>OP</div>
         </div>
       </nav>
+      )}
 
       {/* Content */}
-      <div style={{flex:1,padding:px,display:"flex",flexDirection:"column",gap,overflow:"hidden",minHeight:0}}>
+      <div style={{flex:1,padding:px,display:"flex",flexDirection:"column",gap,overflow:"hidden",minHeight:0,position:"relative",zIndex:1}}>
         <UnitCards selected={sel} onSelect={id=>setSel(id||getConfig().defaultUnit)} height={unitRowH} realtimeUnits={rtUnits} pmeAccumulated={accumulated} projection={projection} xmDispatch={xmDispatch} autorizaciones={autorizaciones} eventosBitacora={eventosBitacora}/>
 
         <div style={{flex:1,display:"flex",gap,minHeight:0}}>
@@ -129,11 +143,13 @@ export default function Dashboard() {
           </div>
         </div>
         <GenerationTicker height={tickerH}/>
-        <div style={{height:footerH,flexShrink:0,display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid ${C.border}`,paddingTop:4}}>
-          <span style={{fontSize: 11,color:C.textDark,fontFamily:MONO}}>Dashboard generación v2.4.1 — Actualizacion cada 2s</span>
-          <span style={{fontSize: 11,color:C.textDark,fontFamily:MONO}}>UCL = +5% | LCL = -5% | 24 periodos</span>
-        </div>
+
       </div>
+
+      {/* Marca de agua: el logo (la nav que lo mostraba está oculta) flota como overlay sutil por
+          encima del dashboard. Va arriba —no en el fondo— porque los paneles son opacos y llenan
+          toda la pantalla; un logo detrás nunca asomaría. pointerEvents:none para no bloquear clics. */}
+      <img src={getConfig().branding.logo} alt={getConfig().branding.logoAlt} aria-hidden="true" style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:"34vw",maxWidth:460,opacity:0.07,objectFit:"contain",pointerEvents:"none",userSelect:"none",zIndex:50}}/>
     </div>
   );
 }
