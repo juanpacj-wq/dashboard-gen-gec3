@@ -119,7 +119,10 @@ export class EnergyAccumulator {
   getState() {
     const accumulated = {}
     for (const [id, s] of Object.entries(this.#state)) {
-      accumulated[id] = Math.round(s.mwh * 10) / 10
+      // 2 decimales: la tabla despivotada (VerticalTable) muestra .toFixed(2) y necesita
+      // el segundo decimal real. La horizontal usa .toFixed(1) y queda igual. La BD guarda
+      // full precision aparte (savePeriod), esto solo afecta el broadcast.
+      accumulated[id] = Math.round(s.mwh * 100) / 100
     }
 
     const minuteAvgs = {}
@@ -150,7 +153,9 @@ export class EnergyAccumulator {
   // hour is 0-23, stored in DB as 0-23 (maps to period hour+1 on the client)
   async #completePeriod(unitId, date, hour, mwh, closingProjection) {
     if (!this.#completed[unitId]) this.#completed[unitId] = {}
-    this.#completed[unitId][hour] = Math.round(mwh * 10) / 10
+    // 2 decimales en el broadcast del periodo cerrado para la tabla despivotada
+    // (VerticalTable, .toFixed(2)). La BD guarda full precision con savePeriod abajo.
+    this.#completed[unitId][hour] = Math.round(mwh * 100) / 100
 
     try {
       await savePeriod(unitId, date, hour, mwh)
