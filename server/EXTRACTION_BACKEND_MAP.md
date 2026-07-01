@@ -1,8 +1,22 @@
 # Mapa del backend de extracción (medidores ION8650 directos)
 
-Reemplaza al antiguo `PME_BACKEND_MAP.md`. La extracción ya no depende del PME centralizado vía Playwright; ahora consulta directamente cada medidor Schneider PowerLogic ION8650 por HTTP.
+Reemplaza al antiguo `PME_BACKEND_MAP.md`. La extracción consulta **directamente cada medidor Schneider PowerLogic ION8650**. La fuente primaria es seleccionable por protocolo (`METER_PROTOCOL`, D-118): **`modbus`** (Modbus TCP FC03, recomendado) o **`http`** (raspado de `Operation.html`, legacy). **El PME centralizado NO fue eliminado**: sigue siendo el **fallback hot-standby por unidad** dentro de `extractorOrchestrator.js` (carry-forward TTL, D-116). El `ExtractorOrchestrator` envuelve el lector de medidores (primario) + `PMEScraper` (fallback).
 
-> **Flujo en una línea:** `meterClient.js` (HTTP Basic Auth + cheerio sobre `Operation.html`) ↔ `meterPoller.js` (orquestador con polling + agregación) → `server.js` (broadcast WebSocket) → `accumulator.js` (MW→MWh trapezoidal) + `projectionCalculator.js` → `db.js` (esquema `dashboard`).
+> **Flujo en una línea:** `meterClient.js` (HTTP) **o** `meterModbusClient.js` (Modbus TCP), seleccionados por `meterClientFactory.js` ↔ `meterPoller.js` (polling + agregación, agnóstico del protocolo) → `extractorOrchestrator.js` (merge medidor↔PME) → `server.js` (broadcast WebSocket) → `accumulator.js` (MW→MWh trapezoidal) + `projectionCalculator.js` → `db.js` (esquema `dashboard`).
+
+## 0. Protocolo de extracción primaria (`METER_PROTOCOL`) — D-118
+
+El boundary acoplado al protocolo es **`fetchKwTotal()` → `{ kw, ... }`** (kW numérico). Hay dos clientes con la misma firma; `meterPoller.js` los usa vía `clientFactory` sin saber cuál es:
+
+| | HTTP (`http`, legacy) | Modbus TCP (`modbus`, D-118) |
+|---|---|---|
+| Cliente | `meterClient.js` (`ION8650Client`) | `meterModbusClient.js` (`ION8650ModbusClient`) |
+| Transporte | HTTP Basic + cheerio sobre `Operation.html` | `modbus-serial` FC03, 1 socket persistente |
+| Registro | celda `kW total` del HTML | reg **40204** INT32 word `high` /1000, unitId 1 (validado) |
+| Latencia (medida) | p50 ~1.1s / p99 ~5s | p50 ~15-25ms |
+| Contención | 1 sola conexión HTTP por medidor → nulls | 8 conexiones por medidor |
+
+Selección: `meterClientFactory.js` `createMeterClientFactory({protocol, modbus, units})` → devuelve el `clientFactory` Modbus, o `undefined` para que el poller use su `ION8650Client` HTTP por default. `server.js` lo construye y lo pasa al `ExtractorOrchestrator`. Rollback = `METER_PROTOCOL=http` + restart. La inversión de signo de Gecelca, el combine `sum` de GEC3, el `/1000` a MW, el carry-forward/PME y todo lo downstream **no cambian** (operan sobre el `kw` que devuelve cualquiera de los dos clientes). Descubrimiento y validación: `scripts/probe-modbus.js`, `scripts/shadow-modbus-watch.js`, `scripts/analyze-shadow.js`.
 
 ---
 
