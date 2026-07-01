@@ -10,12 +10,16 @@
     "dev:gec3": "node --env-file=../.env.gec3 --watch server.js",
     "dev:guajira": "node --env-file=../.env.guajira --watch server.js",
     "probe": "node --env-file=../.env scripts/probe-meters.js",
+    "probe:modbus": "node --env-file=../.env scripts/probe-modbus.js",
+    "shadow:modbus": "node --env-file=../.env scripts/shadow-modbus-watch.js",
+    "shadow:analyze": "node scripts/analyze-shadow.js",
     "smoke": "node --env-file=../.env scripts/smoke-poller.js",
     "test": "vitest run --pool=forks --poolOptions.forks.singleFork=true",
     "install:browsers": "playwright install chromium"
   },
   "dependencies": {
     "cheerio": "^1.0.0",
+    "modbus-serial": "^8.0.25",
     "mssql": "^11.0.1",
     "playwright": "^1.50.0",
     "undici": "^6.19.8",

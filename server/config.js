@@ -20,6 +20,20 @@ export const METER_DEFAULTS = {
   timeoutMs:  parseInt(process.env.METER_TIMEOUT_MS, 10) || 4000,
   // Carry-forward del último valor bueno del medidor ante nulls transitorios (D-116).
   holdTtlMin: parseFloat(process.env.METER_HOLD_TTL_MIN) || 3,
+  // Protocolo de la fuente primaria (D-118). 'http' = raspar /Operation.html (legacy);
+  // 'modbus' = leer Modbus TCP FC03 (validado en sombra: 0% null vs HTTP, ~50× más rápido).
+  // Rollback instantáneo: cambiar a 'http' + reiniciar. El cliente se selecciona en
+  // server.js vía createMeterClientFactory(); el PME sigue siendo fallback en ambos casos.
+  protocol:   process.env.METER_PROTOCOL || 'http',
+  // Defaults = combo validado en el shadow (registro 40204 INT32 high /1000, unitId 1).
+  modbus: {
+    port:      parseInt(process.env.METER_MODBUS_PORT, 10)     || 502,
+    unitId:    parseInt(process.env.METER_MODBUS_UNIT_ID, 10)  || 1,
+    register:  parseInt(process.env.METER_MODBUS_REGISTER, 10) || 40204,
+    wordOrder: process.env.METER_MODBUS_WORD_ORDER || 'high',
+    decode:    process.env.METER_MODBUS_DECODE || 'int32',
+    scale:     parseInt(process.env.METER_MODBUS_SCALE, 10) || 1000,
+  },
 }
 
 // ─── Unidades de generación ──────────────────────────────────────────────────

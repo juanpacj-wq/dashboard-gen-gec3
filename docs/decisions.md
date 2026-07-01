@@ -257,3 +257,40 @@ abierto: ambas instancias reusan las mismas credenciales PME/medidor → contenc
 concurrente; validar en pilot y, si falla, mover B a solo-presentación o creds
 dedicadas (ver `deployment-multi-instancia.md`). Guía completa:
 `docs/deployment-multi-instancia.md`.
+
+---
+
+## D-118 — Extracción primaria por Modbus TCP (reemplaza HTTP scraping)
+
+**Contexto:** la extracción raspaba la web del medidor (`GET /Operation.html`), cuyo
+servidor HTTP del ION8650 admite **1 sola conexión simultánea** (doc Schneider,
+`Documentación medidores ION8650/PM puertos comunicacion simultaneo.xlsx`). Con **3
+lectores concurrentes** sobre los mismos 5 medidores (Node GEC3, Node Guajira, Python
+`fabric-meter-sink`) la contención por ese único slot producía los nulls transitorios
+que D-116 parchea con carry-forward. Es el riesgo de contención que D-117 dejó abierto.
+**Modbus TCP (puerto 502) admite 8 conexiones.** Validación en sombra (3h, ~18.475
+lecturas, 2026-06-30): **0.00% null en Modbus** vs HTTP con timeouts, y latencia
+Modbus p50 ~15-25ms vs HTTP ~1.1s/p99 ~5s (~50× más rápido). Combo validado contra el
+valor HTTP: registro 40204 (INT32, word order high, escala /1000), unitId 1.
+
+**Decisión:** Modbus pasa a ser la **fuente primaria** vía toggle `METER_PROTOCOL`
+(`http` default | `modbus`). El boundary ya existía: `ION8650Client.fetchKwTotal()` →
+un `ION8650ModbusClient` con la misma firma (`server/meterModbusClient.js`, Function 03,
+errores tipados + `MeterModbusException`). `createMeterClientFactory()`
+(`server/meterClientFactory.js`) elige el cliente por protocolo y lo inyecta vía el
+`clientFactory` que `MeterPoller`/`ExtractorOrchestrator` ya reenviaban; con `http` el
+factory es `undefined` → poller usa su cliente HTTP. **El PME sigue siendo fallback
+hot-standby** (D-116 intacto). Cliente Modbus: `modbus-serial`, 1 socket persistente por
+medidor. Validación previa: `scripts/probe-modbus.js` (descubrimiento) y
+`shadow-modbus-watch.js` + `analyze-shadow.js` (comparación HTTP vs Modbus con criterios
+de éxito medibles).
+
+**Consecuencias:** nada downstream cambia — combine/sum, `/1000`, inversión de signo
+(`meterPoller.js`), carry-forward/PME (D-116), accumulator, proyección, `/health`,
+frontend ven el mismo `valueMW` en convención PME. `INT32` signed entrega los negativos
+de Gecelca nativos. Rollout **canary**: GEC3 primero (Guajira como control HTTP), 24-48h
+en `/health`, luego Guajira; rollback = `METER_PROTOCOL=http` + restart (sin código).
+Presupuesto de conexiones: 2 Node + (follow-up) 1 Python = 3 ≪ 8 — verificar que el PME
+no consuma slots `:502` (suele hablar ION nativo `:7700`). Follow-up: migrar
+`fabric-meter-sink` (Python `pymodbus`) con el mismo combo, eliminando el último lector
+HTTP. Reduce además la carga sobre el medidor y da datos genuinamente en tiempo real.

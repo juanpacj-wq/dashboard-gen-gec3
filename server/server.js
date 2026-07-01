@@ -2,6 +2,7 @@ import { createServer } from 'http'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
 import { ExtractorOrchestrator } from './extractorOrchestrator.js'
+import { createMeterClientFactory } from './meterClientFactory.js'
 import { DeviationTracer } from './deviationTracer.js'
 import { UNITS, PME, METER_DEFAULTS } from './config.js'
 import {
@@ -595,11 +596,24 @@ const proyHistFlushInterval = setInterval(async () => {
 // ante nulls transitorios del medidor retiene el último valor bueno (holding)
 // hasta METER_HOLD_TTL_MIN; al expirar cede a PME; 2 ticks meter OK → recovery.
 // Ver extractorOrchestrator.js y EXTRACTION_BACKEND_MAP.md.
+// Fuente primaria seleccionable por METER_PROTOCOL (D-118): 'http' (legacy, default) o
+// 'modbus'. Para 'http' el factory es undefined → MeterPoller usa su ION8650Client HTTP.
+const clientFactory = createMeterClientFactory({
+  protocol: METER_DEFAULTS.protocol,
+  modbus: METER_DEFAULTS.modbus,
+  units: UNITS,
+})
+console.log(`[Server] Extracción primaria: ${METER_DEFAULTS.protocol.toUpperCase()}` +
+  (METER_DEFAULTS.protocol === 'modbus'
+    ? ` (reg=${METER_DEFAULTS.modbus.register} ${METER_DEFAULTS.modbus.decode}/${METER_DEFAULTS.modbus.scale} word=${METER_DEFAULTS.modbus.wordOrder})`
+    : ''))
+
 const scraper = new ExtractorOrchestrator({
   units: UNITS,
   pme: PME,
   onData: broadcast,
   ...METER_DEFAULTS,
+  clientFactory,
 })
 
 // ── Deviation tracer (diagnóstico de valles en chart de Desviación %) ────────
