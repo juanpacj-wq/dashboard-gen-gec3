@@ -1,25 +1,26 @@
 import { useState, useEffect, useCallback } from "react";
 import { getConfig } from "../config/instance";
+import { apiUrl } from "../config/paths";
 
 // Mismo conjunto de unidades que el catálogo; el orden no afecta el mapeo de despacho, pero lo
 // derivamos de la config para no duplicar la lista de IDs por instancia.
 const UNIT_IDS = getConfig().unitOrder;
 
 async function fetchDespScraper() {
-  const res = await fetch('/api/despacho/today')
+  const res = await fetch(apiUrl('/despacho/today'))
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return await res.json()
   // Returns { GEC3: [24 MW], GEC32: [24 MW], TGJ1: [24 MW], TGJ2: [24 MW] }
 }
 
 async function fetchRedespScraper() {
-  const res = await fetch('/api/redespacho/today')
+  const res = await fetch(apiUrl('/redespacho/today'))
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return await res.json()
 }
 
 async function fetchDespTomorrow() {
-  const res = await fetch('/api/despacho/tomorrow')
+  const res = await fetch(apiUrl('/despacho/tomorrow'))
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return await res.json()
   // Returns { GEC3: [24 MW], ... } or null if not found yet

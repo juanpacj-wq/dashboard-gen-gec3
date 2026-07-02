@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getConfig } from "../config/instance";
+import { apiUrl } from "../config/paths";
 
 // F8: agrupa eventos del bitácora-server por (unidad, periodo, tipo). Reemplaza al
 // useAutorizaciones (que solo conocía AUTH) — ahora soporta AUTH/REDESP/PRUEBA simultáneos
@@ -22,7 +23,7 @@ function todayBogota() {
 }
 
 async function fetchPlanta(planta_id, fecha) {
-  const res = await fetch(`/api/eventos-dashboard?planta_id=${encodeURIComponent(planta_id)}&fecha=${fecha}`);
+  const res = await fetch(apiUrl(`/eventos-dashboard?planta_id=${encodeURIComponent(planta_id)}&fecha=${fecha}`));
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const json = await res.json();
   return json.eventos || [];

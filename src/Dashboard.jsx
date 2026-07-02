@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { C, FONT, MONO, tint } from "./theme";
 import { UNITS, ALL_DATA } from "./data/units";
 import { getConfig } from "./config/instance";
+import { assetUrl } from "./config/paths";
 import { UnitCards } from "./components/UnitCards";
 import { GenerationTicker } from "./components/GenerationTicker";
 import { Chart } from "./components/Chart";
@@ -99,7 +100,7 @@ export default function Dashboard() {
       {SHOW_NAV && (
       <nav style={{height:navH,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10 "+px+"px",borderBottom:`1px solid ${C.border}`,background:navTint,transition:"background 0.4s ease"}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <img src={getConfig().branding.logo} alt={getConfig().branding.logoAlt} style={{height:40,objectFit:"contain",marginLeft: px}}/>
+          <img src={assetUrl(getConfig().branding.logo)} alt={getConfig().branding.logoAlt} style={{height:40,objectFit:"contain",marginLeft: px}}/>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:14}}>
           {[
@@ -149,7 +150,7 @@ export default function Dashboard() {
       {/* Marca de agua: el logo (la nav que lo mostraba está oculta) flota como overlay sutil por
           encima del dashboard. Va arriba —no en el fondo— porque los paneles son opacos y llenan
           toda la pantalla; un logo detrás nunca asomaría. pointerEvents:none para no bloquear clics. */}
-      <img src={getConfig().branding.logo} alt={getConfig().branding.logoAlt} aria-hidden="true" style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:"34vw",maxWidth:460,opacity:0.07,objectFit:"contain",pointerEvents:"none",userSelect:"none",zIndex:50}}/>
+      <img src={assetUrl(getConfig().branding.logo)} alt={getConfig().branding.logoAlt} aria-hidden="true" style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:"34vw",maxWidth:460,opacity:0.07,objectFit:"contain",pointerEvents:"none",userSelect:"none",zIndex:50}}/>
     </div>
   );
 }

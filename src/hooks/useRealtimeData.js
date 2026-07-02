@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { apiUrl, wsUrl } from "../config/paths";
 
-const WS_URL = typeof location !== 'undefined'
-  ? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
-  : 'ws://localhost:3001';
+const WS_URL = typeof location !== 'undefined' ? wsUrl() : 'ws://localhost:3001';
 const RECONNECT_MS = 4000;
 
 export function useRealtimeData() {
@@ -28,7 +27,7 @@ export function useRealtimeData() {
   // Ctrl+Shift+R manualmente. desviacionPeriodos era el más afectado porque no
   // llega por WS, solo por este path REST.
   const loadSnapshots = useCallback(() => {
-    fetch('/api/periods/today')
+    fetch(apiUrl('/periods/today'))
       .then(r => r.ok ? r.json() : [])
       .then(rows => {
         const periods = {};
@@ -40,12 +39,12 @@ export function useRealtimeData() {
       })
       .catch(() => {});
 
-    fetch('/api/despacho-final/today')
+    fetch(apiUrl('/despacho-final/today'))
       .then(r => r.ok ? r.json() : {})
       .then(data => setDespachoFinal(data))
       .catch(() => {});
 
-    fetch('/api/proyeccion/today')
+    fetch(apiUrl('/proyeccion/today'))
       .then(r => r.ok ? r.json() : {})
       .then(data => {
         // Map snake_case → camelCase fields used by components
@@ -66,12 +65,12 @@ export function useRealtimeData() {
       })
       .catch(() => {});
 
-    fetch('/api/proyeccion-periodos/today')
+    fetch(apiUrl('/proyeccion-periodos/today'))
       .then(r => r.ok ? r.json() : {})
       .then(data => setProyeccionPeriodos(data || {}))
       .catch(() => {});
 
-    fetch('/api/desviacion-periodos/today')
+    fetch(apiUrl('/desviacion-periodos/today'))
       .then(r => r.ok ? r.json() : [])
       .then(rows => {
         const map = {};
