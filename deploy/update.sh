@@ -29,6 +29,23 @@ git pull --ff-only
 
 echo "== Build frontend =="
 npm ci
+# Sub-path de despliegue POR-SERVIDOR: se lee de server/.env (APP_BASE_PATH). El servidor
+# unificado gecelca3 (convive con Bitácora) lo pone en /dashboard; un despliegue root (incl.
+# Guajira) lo deja vacío → build en la raíz '/'. El MISMO script sirve ambos sin hardcodear la ruta.
+APP_BASE_PATH="$(grep -E '^APP_BASE_PATH=' "$APP_DIR/server/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
+export APP_BASE_PATH
+
+# Guard anti-drift: si el nginx instalado sirve el app namespaced bajo /dashboard pero
+# server/.env no declara APP_BASE_PATH, el build saldría en la raíz '/' y rompería todos los
+# assets/api bajo /dashboard/. Fail-fast con la corrección exacta en vez de romper silencioso.
+if [ -z "$APP_BASE_PATH" ] \
+   && grep -qs 'location /dashboard/' /etc/nginx/sites-enabled/dashboard-gen /etc/nginx/sites-available/dashboard-gen; then
+  echo "ERROR: nginx sirve este app bajo /dashboard/ pero server/.env no tiene APP_BASE_PATH." >&2
+  echo "  Corregir UNA vez:  echo 'APP_BASE_PATH=/dashboard' | sudo tee -a $APP_DIR/server/.env" >&2
+  echo "  y volver a correr update.sh." >&2
+  exit 1
+fi
+echo "   base del build: '${APP_BASE_PATH:-/}'"
 npm run build
 
 echo "== Deps del servidor =="
@@ -51,5 +68,11 @@ fi
 echo "== Reiniciando servicio =="
 sudo systemctl restart dashboard-ws
 
+# NOTA: este script NO sincroniza nginx.conf. El deploy/nginx.conf del repo corresponde al
+# SERVIDOR UNIFICADO (namespaced /dashboard + placeholder de /bitacora); Guajira usa su propio
+# nginx (root). Aplicar nginx es un paso manual y por-servidor (ver CLAUDE.md / DEPLOY-*.md):
+#   sudo cp deploy/nginx.conf /etc/nginx/sites-available/dashboard-gen && sudo nginx -t && sudo systemctl reload nginx
+
+BASE="${APP_BASE_PATH:-}"
 echo "== Listo. Instancia actual: $(cat "$APP_DIR/instance/config.json" 2>/dev/null | grep -o '"instance"[^,]*' || echo 'desconocida') =="
-echo "   Verificar: curl -s http://localhost/health && curl -s http://localhost/config.json"
+echo "   Verificar: curl -s http://localhost${BASE}/health && curl -s http://localhost${BASE}/config.json"
