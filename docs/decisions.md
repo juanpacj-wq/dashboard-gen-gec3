@@ -294,3 +294,31 @@ Presupuesto de conexiones: 2 Node + (follow-up) 1 Python = 3 ≪ 8 — verificar
 no consuma slots `:502` (suele hablar ION nativo `:7700`). Follow-up: migrar
 `fabric-meter-sink` (Python `pymodbus`) con el mismo combo, eliminando el último lector
 HTTP. Reduce además la carga sobre el medidor y da datos genuinamente en tiempo real.
+
+## D-119 — Sub-path `/dashboard` en el servidor unificado + TLS corporativo (pgen.gecelca.com.co)
+
+**Fecha:** 2026-07-01
+
+**Contexto:** el servidor gecelca3 pasa a alojar también Bitácora bajo un mismo dominio
+(`pgen.gecelca.com.co`) y un solo nginx, separados por ruta (contrato en
+`../docs/deployment-unificado.md`). El dashboard venía sirviéndose en la raíz `/`; Bitácora exige
+HTTPS (cookie Secure + OIDC), lo que arrastra TLS para todo el dominio.
+
+**Decisión:** sub-path configurable por env **`APP_BASE_PATH`** (default raíz `/` — preserva
+Guajira/standalone; el servidor unificado construye con `/dashboard`): `vite.config.js` lo usa
+como `base` y `src/config/paths.js` centraliza `apiUrl`/`wsUrl`/`assetUrl` sobre
+`import.meta.env.BASE_URL` (ningún literal `/api`, `/ws`, `/config.json` en el frontend). El
+backend NO cambia: nginx quita el prefijo (barra final en `proxy_pass`). `deploy/nginx.conf` es el
+server block ÚNICO del dominio: `:80` → 301 HTTPS, `:443` con **certificado corporativo** (cert +
+key + bundle en `/etc/nginx/ssl/pgen.gecelca.com.co/`, renovación manual — runbook en
+`Bit-cora-g3/deploy/DEPLOY.md §6`), HSTS, `/` → 302 `/dashboard/`, fallback SPA con named
+location (pitfall `alias`+`try_files`), y placeholder para las locations de Bitácora.
+`eventos-dashboard` se enruta a Bitácora (3002) con match exacto. El valor efectivo de
+`APP_BASE_PATH` se **persiste en `server/.env`** durante `setup.sh` y `update.sh` tiene guard
+anti-drift (fail-fast si nginx está namespaced pero el .env no lo declara).
+
+**Consecuencias:** (a) un solo código/build sirve raíz o sub-path; Guajira no se ve afectada.
+(b) El dominio completo queda en HTTPS (WS pasa a `wss` por el mismo proxy; sin mixed content).
+(c) El cert corporativo NO se autorrenueva — registrar vencimiento y renovar a mano. (d) Los
+updates son seguros ante el drift de base (guard + persistencia). Cross-ref: [[D-117]]
+(multi-instancia runtime), `../docs/deployment-unificado.md` (topología completa).
