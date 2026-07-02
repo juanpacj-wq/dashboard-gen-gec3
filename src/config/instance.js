@@ -27,7 +27,10 @@ export async function loadInstanceConfig() {
     // middleware de vite.config.js). En prod nginx ignora el query string y sirve siempre
     // el instance/config.json del servidor, así que esto no puede forzar otra UI en prod.
     const inst = new URLSearchParams(window.location.search).get("instance");
-    const url = inst ? `/config.json?instance=${encodeURIComponent(inst)}` : "/config.json";
+    // Bajo el sub-path de despliegue, config.json se sirve prefijado (BASE_URL). En prod nginx
+    // lo resuelve como alias; en dev lo intercepta el middleware de vite.config.js.
+    const base = import.meta.env.BASE_URL;
+    const url = inst ? `${base}config.json?instance=${encodeURIComponent(inst)}` : `${base}config.json`;
     const res = await fetch(url, { cache: "no-store" });
     if (res.ok) {
       const j = await res.json();

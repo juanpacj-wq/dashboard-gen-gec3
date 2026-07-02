@@ -90,15 +90,35 @@ All served by `server/server.js` on port 3001:
 | `/api/redespacho/today` | GET | Redespacho programado from rDEC scraper (our units) | `{ GEC3: [24 MW], GEC32: [24], TGJ1: [24], TGJ2: [24] }` |
 | `/api/redespacho/national` | GET | All national plants from rDEC file (for ticker) | `[{ code, name, values: [24 MW] }]` |
 
+### Sub-path de despliegue (`APP_BASE_PATH`)
+
+El servidor UNIFICADO (gecelca3, el ya desplegado que ahora también aloja Bitácora) sirve este app
+bajo **`/dashboard/`** detrás de un reverse proxy que convive con Bitácora (`/bitacora`). El
+sub-path es **configurable por env** e independiente de la instancia: el **default es la raíz `/`**
+(preserva el comportamiento actual; la instancia por defecto es **gecelca3**). Guajira es la 2ª
+instancia (otro servidor/BD) y también puede quedar en raíz.
+- `vite.config.js` toma `base` de `process.env.APP_BASE_PATH` (default `/`). El servidor unificado
+  construye con `APP_BASE_PATH=/dashboard`; un despliegue root lo deja vacío. Vite llena
+  `import.meta.env.BASE_URL`. `update.sh` lo lee de `server/.env` (por-servidor).
+- **`src/config/paths.js`** centraliza el prefijo: `apiUrl(p)`, `wsUrl()`, `assetUrl(p)`. Todo el
+  frontend construye URLs con estos helpers en vez de literales `/api`, `/ws` — un solo código
+  sirve cualquier base.
+- En prod, **nginx quita el prefijo `/dashboard`** (barra final en `proxy_pass`) antes del backend,
+  que hace match por string exacto (`/api/...`, `/ws`). El backend NO cambia.
+- `eventos-dashboard` se enruta a Bitácora (3002); el resto de `/dashboard/api/*` a 3001.
+- `deploy/nginx.conf` es la topología del servidor unificado; Guajira usa su propio nginx (root).
+
 ### Vite Dev Proxies
 
-Vite dev server (configured in `vite.config.js`) proxies these paths to `http://localhost:3001`:
-- `/api/xm/*` → `https://servapibi.xm.com.co` (XM API, with path rewrite)
-- `/ws` → WebSocket upgrade
-- `/api/periods/*`
-- `/api/despacho-final/*` — **Must be listed BEFORE `/api/despacho`** to avoid prefix conflict
-- `/api/despacho/*`
-- `/api/redespacho/*`
+Dev sirve en la raíz (base `/` por defecto), así que el frontend pide `/api`, `/ws`, `/config.json`
+y estos proxies van **sin strip** (el strip del sub-path lo hace nginx en prod, no Vite):
+- `/api/xm/*` → `https://servapibi.xm.com.co` (rewrite quita `/api/xm`)
+- `/ws` → WebSocket upgrade a 3001
+- `/api/eventos-dashboard` → 3002 (Bitácora)
+- `/api/*` → 3001 (regla general)
+
+Como todo `/api/*` va a 3001 con un solo bloque y el backend hace match exacto, ya **no** importa
+el orden `despacho-final` vs `despacho` (antes sí, cuando había un proxy por endpoint).
 
 ### PME WebSocket Server
 
@@ -203,8 +223,12 @@ Color palette and typography constants are defined in `src/theme.js` as `C` (col
 - All frontend hooks poll every 5 minutes (300000ms) by default.
 - The redespacho scraper refreshes every 5 minutes (server-side). The despacho scraper retries every 5 min until found, then stops.
 - The server depends on `mssql`, `playwright`, and `ws` (see `server/package.json`). The frontend has no runtime dependencies beyond React 19.
-- **Important**: When adding new `/api/*` endpoints to the backend, remember to add corresponding proxy rules in both `vite.config.js` (dev) and `deploy/nginx.conf` (production), otherwise the endpoint will work in dev but fail in production.
-- **Important**: In `vite.config.js`, `/api/despacho-final` must be listed BEFORE `/api/despacho` to avoid prefix matching conflicts.
+- Nuevos endpoints `/api/*` del backend **no** requieren tocar el proxy: tanto `vite.config.js`
+  (dev) como `deploy/nginx.conf` (prod) tienen un bloque general `/dashboard/api/*` → 3001 con
+  strip del prefijo. Solo hay que agregar reglas específicas para excepciones (XM, o endpoints
+  que van a otro backend como `eventos-dashboard` → 3002).
+- En el frontend, construir URLs con los helpers de `src/config/paths.js` (`apiUrl`/`wsUrl`),
+  nunca con literales `/api` o `/ws`, para que el sub-path `/dashboard` se aplique solo.
 - Colombia timezone is UTC-5 with no DST. All date/time calculations must account for this. The email dispatch filter uses `T01:00:00Z` (8 PM Colombia previous day) to capture early-period emails.
 - XM file scraping uses `api-portalxm.xm.com.co/administracion-archivos/ficheros/mostrar-url` with `nombreBlobContainer=storageportalxm`. The API returns a SAS URL to the blob, which is then fetched for the actual file content.
 - The `TOTAL` line in rDEC files is filtered out in `parseAllPlants()` to prevent it from appearing in the Top 10 ticker.

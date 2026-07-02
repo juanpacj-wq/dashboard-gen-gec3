@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { PLANT_NAME_MAP } from "../data/plantNames";
 import { seedRng } from "../data/units";
+import { apiUrl } from "../config/paths";
 
 // Colombia is UTC-5, always (no DST)
 function colombiaHour() {
@@ -18,7 +19,7 @@ export function useXmGeneration(intervalMs = 300000) {
     const colHour = colombiaHour();
 
     try {
-      const res = await fetch("/api/redespacho/national");
+      const res = await fetch(apiUrl("/redespacho/national"));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const allPlants = await res.json();
 
