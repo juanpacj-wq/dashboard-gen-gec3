@@ -28,6 +28,7 @@ from pathlib import Path  # noqa: E402
 
 from src import config  # noqa: E402
 from src.fabric_writer import FabricWriter  # noqa: E402
+from src.meter_client_factory import make_client_factory  # noqa: E402
 from src.meter_poller import MeterPoller  # noqa: E402
 from src.service import FabricMeterSinkService  # noqa: E402
 
@@ -59,9 +60,10 @@ def setup_logging(log_dir: str, level: str) -> None:
     rotating.setFormatter(formatter)
     root.addHandler(rotating)
 
-    # azure-identity y httpx tienden a ser ruidosos en INFO.
+    # azure-identity, httpx y pymodbus tienden a ser ruidosos en INFO.
     logging.getLogger("azure").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("pymodbus").setLevel(logging.WARNING)
 
 
 def _ensure_dir(path: Path, log: logging.Logger) -> None:
@@ -79,10 +81,13 @@ def main() -> int:
     _ensure_dir(Path(config.LOG_DIR), log)
     _ensure_dir(Path(config.HEARTBEAT_PATH).parent, log)
 
+    log.info("Protocolo de lectura: %s", config.METER_PROTOCOL)
+    client_factory = make_client_factory(config.METER_PROTOCOL, config.METER_MODBUS)
     poller = MeterPoller(
         units=config.UNITS,
         timeout_s=config.METER_DEFAULTS["timeout_s"],
         op_path=config.METER_DEFAULTS["op_path"],
+        client_factory=client_factory,
     )
     writer = FabricWriter(
         tenant_id=config.TENANT_ID,

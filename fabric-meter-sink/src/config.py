@@ -52,6 +52,22 @@ METER_DEFAULTS = {
     "timeout_s": float(os.environ.get("METER_TIMEOUT_S", "4")),
 }
 
+# ─── Protocolo de lectura del medidor ─────────────────────────────────────────
+# 'modbus' (default) usa ION8650ModbusClient (FC03, registro 40204/int32/high/scale
+# 1000, validado por el Node en D-118/D-120). 'http' vuelve al scraping de
+# /Operation.html (rollback sin tocar código). El combo Modbus se sobreescribe por
+# env con los defaults ya validados.
+METER_PROTOCOL = os.environ.get("METER_PROTOCOL", "modbus").lower()
+
+METER_MODBUS = {
+    "port": int(os.environ.get("METER_MODBUS_PORT", "502")),
+    "unit_id": int(os.environ.get("METER_MODBUS_UNIT_ID", "1")),
+    "register": int(os.environ.get("METER_MODBUS_REGISTER", "40204")),
+    "word_order": os.environ.get("METER_MODBUS_WORD_ORDER", "high").lower(),
+    "decode": os.environ.get("METER_MODBUS_DECODE", "int32").lower(),
+    "scale": float(os.environ.get("METER_MODBUS_SCALE", "1000")),
+}
+
 
 def _strip_quotes(value: str) -> str:
     return value.strip().strip('"').strip("'")
@@ -149,15 +165,19 @@ def _build_units() -> list[Unit]:
     return units
 
 
-def _validate(units: list[Unit]) -> None:
+def _validate(units: list[Unit], protocol: str = METER_PROTOCOL) -> None:
+    # Fail-fast protocol-aware: Modbus solo necesita el host (IP_*); las credenciales
+    # HTTP (USER_MEDIDORES/PSW_*) solo se exigen con protocol='http'. Así el arranque
+    # en Modbus no rompe cuando no hay credenciales HTTP configuradas.
+    require_http_creds = protocol == "http"
     missing: list[str] = []
     for u in units:
         for m in u.meters:
             if not m.host:
                 missing.append(f"{m.ip_env}  (unit={u.id})")
-            if not m.user:
+            if require_http_creds and not m.user:
                 missing.append("USER_MEDIDORES  (compartido)")
-            if not m.password:
+            if require_http_creds and not m.password:
                 missing.append(f"{m.psw_env}  (unit={u.id})")
     if missing:
         unique = list(dict.fromkeys(missing))
