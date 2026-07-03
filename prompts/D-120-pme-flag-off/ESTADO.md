@@ -14,7 +14,7 @@
 | E0 — Andamiaje | ✅ | Carpeta de prompts creada: `_CONTEXTO-BASE.md`, `PREGUNTAS-D-120.md`, `ESTADO.md`, `E1..E4`. |
 | E1 — Flag PME_ENABLED en config + default modbus | ✅ | `PME_ENABLED` exportado (default off), validación/`unit()` condicionadas, protocolo default modbus, `.env.example` corregido, 6 tests nuevos. |
 | E2 — Gate pmeEnabled en el orquestador | ✅ | Param `pmeEnabled` (default true), scraper no instanciado con flag off, `pmeValid` forzado false, `getStatus()` con `pmeEnabled`/`pme:null`, wiring server.js + smoke, 7 tests nuevos. |
-| E3 — CRITICAL global meterDown en alerter | ⬜ | — |
+| E3 — CRITICAL global meterDown en alerter | ✅ | `orchestrator:meterDown:GLOBAL` (CRITICAL con recovery) gated por `pmeEnabled === false`, umbral env nuevo (2 min), 7 tests nuevos. |
 | E4 — Docs + ADR D-120 + cleanup + cierre | ⬜ | — |
 
 Leyenda: ⬜ pendiente · 🟡 en progreso · ✅ hecho y probado · ⛔ bloqueado.
@@ -59,5 +59,17 @@ Leyenda: ⬜ pendiente · 🟡 en progreso · ✅ hecho y probado · ⛔ bloquea
 - **Verificación:** `cd server && npm test` → 12 archivos / 142 tests, todo verde.
 - **Desviaciones:** ninguna. El smoke manual con server corriendo queda para el checklist de
   E4 (requiere acceso a los medidores de la red corporativa).
+
+### E3 — CRITICAL global meterDown en alerter  ✅
+- **Archivos tocados:** `server/alerter.js` (`ALERT_THRESH_METER_DOWN_GLOBAL_MIN: 2` en
+  DEFAULTS; bloque `orchestrator:meterDown:GLOBAL` tras el global PME, gate estricto
+  `orch?.pmeEnabled === false`, condición `every(!holding && meterDownSeconds ≥ N*60)`,
+  CRITICAL con recovery), `server/__tests__/alerter.test.js` (describe nuevo, 7 casos:
+  dispara/holding/legacy/parcial/recovery/cooldown/umbral configurable), `.env.example`
+  (umbral documentado + nota "solo con PME_ENABLED=1" en los umbrales PME).
+- **Verificación:** `cd server && npm test` → 12 archivos / 149 tests, todo verde.
+- **Desviaciones:** ninguna. Dato confirmado: `healthSnapshot.js` pasa el `getStatus()` del
+  orquestador completo (`orchestrator: safe(...)`), así que `pmeEnabled` fluye al alerter
+  sin cambios en healthSnapshot.
 
 <!-- Cada etapa agrega su bloque: ### EX — <título>  ✅ con Archivos tocados / Verificación / Desviaciones. -->
