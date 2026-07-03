@@ -349,3 +349,34 @@ operativa del portal PME. (b) Sin fallback: un corte de la LAN de medidores deja
 en null (antes seguían con PME) — mitigado por la CRITICAL global nueva. (c) Los `.env` de
 producción no requieren cambios (el default apagado hace el trabajo; modbus ya es explícito
 allí). Cross-ref: [[D-116]], [[D-118]].
+
+## D-121 — `fabric-meter-sink` (Python) migrado a Modbus TCP
+
+**Fecha:** 2026-07-03
+
+**Contexto:** tras [[D-118]] (Node primario en Modbus) y [[D-120]] (PME apagado), el
+subproyecto Python `fabric-meter-sink` [[D-112]] seguía siendo el **último lector HTTP** de
+los 5 medidores ION8650 (raspaba `/Operation.html` con httpx+BeautifulSoup cada 15s). El
+servidor HTTP del ION admite 1 sola conexión simultánea; ese lector sumaba contención sobre
+ese slot único. El combo Modbus ya estaba validado en sombra por el Node (3h, 0.00% null vs
+HTTP), así que la migración es "confiar en el combo + smoke real", no re-validar de cero.
+
+**Decisión:** portar la lectura a Modbus TCP replicando el combo de [[D-118]] (registro
+**40204**, INT32, word order `high`, escala **/1000**, unit id **1**, puerto **502**) en un
+`ION8650ModbusClient` (`pymodbus` 3.7.x, FC03) con la MISMA firma que el cliente HTTP
+(`fetch_kw_total()` → kW sin signo), inyectado por `make_client_factory(protocol, modbus_cfg)`
+que espeja `server/meterClientFactory.js`. Toggle **`METER_PROTOCOL`** (default `modbus`;
+`http` = rollback sin tocar código) y `_validate()` protocol-aware (modbus exige solo `IP_*`,
+no credenciales HTTP). Nada aguas abajo del poller cambia: mismo destino Fabric, mismos kW
+(`uom='KW'`, columna `ge32` intacta), misma inversión de signo por unidad. httpx/BeautifulSoup
+se conservan solo para el rollback.
+
+**Consecuencias:** (a) elimina el último lector HTTP → presupuesto de conexiones post-migración
+**2 Node + 1 Python = 3 ≪ 8** slots Modbus del ION. (b) Latencia ~50 ms vs ~0.7-2.7 s por HTTP
+(~15-50× más rápido) y datos más frescos. (c) Verificación E3: cross-check **en vivo** Modbus vs
+HTTP sobre los mismos medidores casi al mismo instante → kW y signos coinciden (TGJ output +;
+GEC32 input → +240 MW; GEC3 input → −1.5 MW, offline en consumo auxiliar). (d) `pymodbus` 3.7
+**retorna** los timeouts como `ModbusIOException` (`.isError()`, no los lanza) y las excepciones
+de protocolo como `ExceptionResponse.exception_code`; el cliente mapea ambos caminos + las
+excepciones lanzadas a los mismos tipos `Meter*`/`MeterModbusException` del lado HTTP. Rollback
+probado (probe HTTP responde). Cross-ref: [[D-112]], [[D-118]], [[D-120]].
