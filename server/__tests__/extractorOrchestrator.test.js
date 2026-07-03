@@ -475,3 +475,121 @@ describe('ExtractorOrchestrator — lifecycle', () => {
     vi.useRealTimers()
   })
 })
+
+describe('ExtractorOrchestrator — pmeEnabled=false (D-120)', () => {
+  let orch
+  afterEach(async () => { if (orch) await orch.stop(); orch = null; vi.useRealTimers() })
+
+  // Builder propio: sin config pme (con el flag apagado no debe ser obligatoria).
+  function buildOff({ onData = vi.fn(), holdTtlMs } = {}) {
+    const meter = makeFakeSubExtractor()
+    const pme = makeFakeSubExtractor()
+    orch = new ExtractorOrchestrator({
+      units: buildUnits(),
+      pmeEnabled: false,
+      onData,
+      pollMs: POLL_MS,
+      holdTtlMs,
+      meterPollerCtor: meter.ctor,
+      pmeScraperCtor: pme.ctor,
+    })
+    return { meter, pme, onData }
+  }
+
+  it('constructor sin pme NO lanza con pmeEnabled=false', () => {
+    vi.useFakeTimers()
+    expect(() => buildOff()).not.toThrow()
+  })
+
+  it('jamás instancia el PMEScraper y start/stop no revientan', async () => {
+    vi.useFakeTimers()
+    const { pme, meter } = buildOff()
+    await orch.start()
+    emitAll(meter, 70)
+    await tick()
+    expect(pme.ctor).not.toHaveBeenCalled()
+    await orch.stop()
+    expect(pme.ctor).not.toHaveBeenCalled()
+  })
+
+  it('meter caído: hold dentro del TTL y al expirar null con source sticky (nunca pme)', async () => {
+    vi.useFakeTimers()
+    const { meter, pme, onData } = buildOff({ holdTtlMs: 2 * POLL_MS })
+    await orch.start()
+    emitAll(meter, 70); await tick()
+    // El fake pme "emite" pero nunca fue instanciado → no tiene efecto alguno.
+    emitAll(pme, 55)
+    emitAll(meter, null); await tick()
+    let st = orch.getStatus().perUnit.TGJ1
+    expect(st.source).toBe('meter')
+    expect(st.holding).toBe(true)
+    expect(onData.mock.calls.at(-1)[0].units.find((u) => u.id === 'TGJ1').valueMW).toBe(70)
+
+    emitAll(meter, null); await tick()
+    emitAll(meter, null); await tick()
+    st = orch.getStatus().perUnit.TGJ1
+    expect(st.source).toBe('meter')      // sticky: jamás conmuta a 'pme'
+    expect(st.holding).toBe(false)
+    expect(onData.mock.calls.at(-1)[0].units.find((u) => u.id === 'TGJ1').valueMW).toBe(null)
+  })
+
+  it('recovery del meter tras el null: vuelve a emitir valor', async () => {
+    vi.useFakeTimers()
+    const { meter, onData } = buildOff({ holdTtlMs: 2 * POLL_MS })
+    await orch.start()
+    emitAll(meter, 70); await tick()
+    emitAll(meter, null); await tick()
+    emitAll(meter, null); await tick()
+    emitAll(meter, null); await tick()   // TTL agotado → null
+    emitAll(meter, 68); await tick()     // el medidor vuelve
+    const st = orch.getStatus().perUnit.TGJ1
+    expect(st.source).toBe('meter')
+    expect(st.holding).toBe(false)
+    expect(onData.mock.calls.at(-1)[0].units.find((u) => u.id === 'TGJ1').valueMW).toBe(68)
+  })
+
+  it('arranque en frío sin lectura válida: source null y valueMW null', async () => {
+    vi.useFakeTimers()
+    const { onData } = buildOff()
+    await orch.start()
+    await tick()
+    const st = orch.getStatus().perUnit.TGJ1
+    expect(st.source).toBe(null)
+    expect(onData.mock.calls.at(-1)[0].units.find((u) => u.id === 'TGJ1').valueMW).toBe(null)
+  })
+
+  it('getStatus expone pmeEnabled=false y pme=null', async () => {
+    vi.useFakeTimers()
+    buildOff()
+    await orch.start()
+    const status = orch.getStatus()
+    expect(status.pmeEnabled).toBe(false)
+    expect(status.pme).toBe(null)
+  })
+
+  it('sanity flag-on: pmeEnabled=true explícito conmuta a pme al agotar el TTL (como hoy)', async () => {
+    vi.useFakeTimers()
+    const meter = makeFakeSubExtractor()
+    const pme = makeFakeSubExtractor()
+    orch = new ExtractorOrchestrator({
+      units: buildUnits(),
+      pme: PME_CONFIG,
+      pmeEnabled: true,
+      onData: vi.fn(),
+      pollMs: POLL_MS,
+      holdTtlMs: 2 * POLL_MS,
+      meterPollerCtor: meter.ctor,
+      pmeScraperCtor: pme.ctor,
+    })
+    await orch.start()
+    expect(pme.ctor).toHaveBeenCalledTimes(1)
+    emitAll(meter, 70); await tick()
+    emitAll(pme, 55)
+    emitAll(meter, null); await tick()
+    emitAll(meter, null); await tick()
+    emitAll(pme, 55)
+    emitAll(meter, null); await tick()
+    expect(orch.getStatus().perUnit.TGJ1.source).toBe('pme')
+    expect(orch.getStatus().pmeEnabled).toBe(true)
+  })
+})

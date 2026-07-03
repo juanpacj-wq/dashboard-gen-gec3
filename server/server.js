@@ -4,7 +4,7 @@ import { WebSocketServer } from 'ws'
 import { ExtractorOrchestrator } from './extractorOrchestrator.js'
 import { createMeterClientFactory } from './meterClientFactory.js'
 import { DeviationTracer } from './deviationTracer.js'
-import { UNITS, PME, METER_DEFAULTS } from './config.js'
+import { UNITS, PME, PME_ENABLED, METER_DEFAULTS } from './config.js'
 import {
   initDB,
   getTodayPeriods,
@@ -591,13 +591,14 @@ const proyHistFlushInterval = setInterval(async () => {
   }
 }, PROY_FLUSH_MS)
 
-// ── Extractor (medidores primario + PME fallback hot-standby por-unidad) ─────
-// El orquestador wrapea MeterPoller + PMEScraper. Carry-forward con TTL (D-116):
-// ante nulls transitorios del medidor retiene el último valor bueno (holding)
-// hasta METER_HOLD_TTL_MIN; al expirar cede a PME; 2 ticks meter OK → recovery.
+// ── Extractor (medidores primario; PME fallback opcional, apagado por default) ─
+// El orquestador wrapea MeterPoller y, solo con PME_ENABLED=1, PMEScraper (D-120).
+// Carry-forward con TTL (D-116): ante nulls transitorios del medidor retiene el último
+// valor bueno (holding) hasta METER_HOLD_TTL_MIN; al expirar cede a PME si está
+// habilitado, o emite null; 2 ticks meter OK → recovery.
 // Ver extractorOrchestrator.js y EXTRACTION_BACKEND_MAP.md.
-// Fuente primaria seleccionable por METER_PROTOCOL (D-118): 'http' (legacy, default) o
-// 'modbus'. Para 'http' el factory es undefined → MeterPoller usa su ION8650Client HTTP.
+// Fuente primaria seleccionable por METER_PROTOCOL (D-118; default modbus desde D-120):
+// para 'http' el factory es undefined → MeterPoller usa su ION8650Client HTTP.
 const clientFactory = createMeterClientFactory({
   protocol: METER_DEFAULTS.protocol,
   modbus: METER_DEFAULTS.modbus,
@@ -607,10 +608,14 @@ console.log(`[Server] Extracción primaria: ${METER_DEFAULTS.protocol.toUpperCas
   (METER_DEFAULTS.protocol === 'modbus'
     ? ` (reg=${METER_DEFAULTS.modbus.register} ${METER_DEFAULTS.modbus.decode}/${METER_DEFAULTS.modbus.scale} word=${METER_DEFAULTS.modbus.wordOrder})`
     : ''))
+console.log(PME_ENABLED
+  ? '[Server] Fallback PME: HABILITADO (PME_ENABLED=1)'
+  : '[Server] Fallback PME: DESHABILITADO (PME_ENABLED=1 para reactivar)')
 
 const scraper = new ExtractorOrchestrator({
   units: UNITS,
   pme: PME,
+  pmeEnabled: PME_ENABLED,
   onData: broadcast,
   ...METER_DEFAULTS,
   clientFactory,

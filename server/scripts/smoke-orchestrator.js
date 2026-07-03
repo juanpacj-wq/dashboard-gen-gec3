@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { ExtractorOrchestrator } from '../extractorOrchestrator.js'
-import { UNITS, PME, METER_DEFAULTS } from '../config.js'
+import { UNITS, PME, PME_ENABLED, METER_DEFAULTS } from '../config.js'
 
 const orch = new ExtractorOrchestrator({
   units: UNITS,
   pme: PME,
+  pmeEnabled: PME_ENABLED,
   onData: (p) => {
     const t = p.timestamp.slice(11, 19)
     const cells = p.units

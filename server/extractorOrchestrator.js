@@ -14,7 +14,8 @@ export class ExtractorOrchestrator {
   #recoveryThreshold
   #holdTtlMs
   #meterPoller
-  #pmeScraper
+  #pmeScraper       // null cuando pmeEnabled=false (D-120)
+  #pmeEnabled
   #meterCache       // Map<unitId, { value, updatedAt }>
   #pmeCache         // Map<unitId, { value, updatedAt }>
   #unitState        // Map<unitId, { source, since, consecMeterErrors, consecMeterOk }>
@@ -30,6 +31,9 @@ export class ExtractorOrchestrator {
   constructor({
     units,
     pme,
+    // Fallback PME (D-120). Default true = retrocompat con los llamadores/tests que no
+    // pasan el flag; el default APAGADO vive en config (PME_ENABLED), no acá.
+    pmeEnabled = true,
     onData,
     pollMs = DEFAULT_POLL_MS,
     timeoutMs,
@@ -50,10 +54,11 @@ export class ExtractorOrchestrator {
     if (typeof onData !== 'function') {
       throw new TypeError('ExtractorOrchestrator: onData must be a function')
     }
-    if (!pme) {
+    if (pmeEnabled && !pme) {
       throw new TypeError('ExtractorOrchestrator: pme config required')
     }
 
+    this.#pmeEnabled = pmeEnabled
     this.#units = units
     this.#onData = onData
     this.#pollMs = pollMs
@@ -93,11 +98,15 @@ export class ExtractorOrchestrator {
       clientFactory,
     })
 
-    this.#pmeScraper = new pmeScraperCtor({
-      pme,
-      units: unitsForPME(units),
-      onData: (payload) => this.#onPmeData(payload),
-    })
+    // Con el fallback apagado no se instancia PMEScraper (cero Playwright/Chromium) ni
+    // se llama unitsForPME() (las units pueden traer pme: null).
+    this.#pmeScraper = pmeEnabled
+      ? new pmeScraperCtor({
+          pme,
+          units: unitsForPME(units),
+          onData: (payload) => this.#onPmeData(payload),
+        })
+      : null
   }
 
   async start() {
@@ -105,7 +114,8 @@ export class ExtractorOrchestrator {
     this.#running = true
     log('info',
       `ExtractorOrchestrator starting — holdTtlMin=${this.#holdTtlMs / 60_000} ` +
-      `recoveryThreshold=${this.#recoveryThreshold} pollMs=${this.#pollMs}`,
+      `recoveryThreshold=${this.#recoveryThreshold} pollMs=${this.#pollMs} ` +
+      `pmeEnabled=${this.#pmeEnabled}`,
     )
 
     // Kick off ambos sub-extractores fire-and-forget. PMEScraper.start() tiene
@@ -116,9 +126,11 @@ export class ExtractorOrchestrator {
     Promise.resolve(this.#meterPoller.start()).catch((e) =>
       log('error', `meterPoller.start failed: ${e?.message ?? e}`),
     )
-    Promise.resolve(this.#pmeScraper.start()).catch((e) =>
-      log('error', `pmeScraper.start failed: ${e?.message ?? e}`),
-    )
+    if (this.#pmeScraper) {
+      Promise.resolve(this.#pmeScraper.start()).catch((e) =>
+        log('error', `pmeScraper.start failed: ${e?.message ?? e}`),
+      )
+    }
 
     this.#pollTimer = setInterval(() => {
       try { this.#tick() } catch (e) { log('error', `merge tick failed: ${e?.message ?? e}`) }
@@ -137,7 +149,7 @@ export class ExtractorOrchestrator {
 
     await Promise.allSettled([
       Promise.resolve(this.#meterPoller.stop()),
-      Promise.resolve(this.#pmeScraper.stop()),
+      ...(this.#pmeScraper ? [Promise.resolve(this.#pmeScraper.stop())] : []),
     ])
   }
 
@@ -170,7 +182,7 @@ export class ExtractorOrchestrator {
 
   getStatus() {
     const meter = safeGetStatus(this.#meterPoller)
-    const pme = safeGetStatus(this.#pmeScraper)
+    const pme = this.#pmeScraper ? safeGetStatus(this.#pmeScraper) : null
 
     const now = Date.now()
     const perUnit = {}
@@ -200,6 +212,7 @@ export class ExtractorOrchestrator {
       errorCount: this.#errorCount,
       stale: this.#isStale(),
       valueStale: false,
+      pmeEnabled: this.#pmeEnabled,
       meter,
       pme,
       perUnit,
@@ -236,7 +249,9 @@ export class ExtractorOrchestrator {
       const pme = this.#pmeCache.get(unit.id)
 
       const meterValid = isValid(meter, now)
-      const pmeValid = isValid(pme, now)
+      // Con el fallback apagado el dato pme nunca es válido: la rama de conmutación
+      // meter→pme queda inalcanzable y tras el hold TTL la unidad emite null (D-120).
+      const pmeValid = this.#pmeEnabled ? isValid(pme, now) : false
 
       if (meterValid) {
         state.consecMeterOk++

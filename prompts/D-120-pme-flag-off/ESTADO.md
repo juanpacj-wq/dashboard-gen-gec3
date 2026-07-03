@@ -13,7 +13,7 @@
 |---|---|---|
 | E0 — Andamiaje | ✅ | Carpeta de prompts creada: `_CONTEXTO-BASE.md`, `PREGUNTAS-D-120.md`, `ESTADO.md`, `E1..E4`. |
 | E1 — Flag PME_ENABLED en config + default modbus | ✅ | `PME_ENABLED` exportado (default off), validación/`unit()` condicionadas, protocolo default modbus, `.env.example` corregido, 6 tests nuevos. |
-| E2 — Gate pmeEnabled en el orquestador | ⬜ | — |
+| E2 — Gate pmeEnabled en el orquestador | ✅ | Param `pmeEnabled` (default true), scraper no instanciado con flag off, `pmeValid` forzado false, `getStatus()` con `pmeEnabled`/`pme:null`, wiring server.js + smoke, 7 tests nuevos. |
 | E3 — CRITICAL global meterDown en alerter | ⬜ | — |
 | E4 — Docs + ADR D-120 + cleanup + cierre | ⬜ | — |
 
@@ -46,5 +46,18 @@ Leyenda: ⬜ pendiente · 🟡 en progreso · ✅ hecho y probado · ⛔ bloquea
 - **Verificación:** `cd server && npm test` → 12 archivos / 135 tests, todo verde.
 - **Desviaciones:** ninguna. (Ejecutada en la misma sesión de planeación por directiva del
   usuario vía /goal, no en sesión limpia.)
+
+### E2 — Gate pmeEnabled en el orquestador  ✅
+- **Archivos tocados:** `server/extractorOrchestrator.js` (param `pmeEnabled = true`, guardia
+  `pmeEnabled && !pme`, `#pmeScraper = null` con flag off sin llamar `unitsForPME()`, guards
+  en `start()`/`stop()`, `pmeValid` forzado false en `#tick`, `getStatus()` con `pmeEnabled`
+  top-level y `pme: null`, log de arranque con el modo), `server/server.js` (import
+  `PME_ENABLED`, `pmeEnabled` al constructor, log "Fallback PME: DESHABILITADO/HABILITADO",
+  comentario del extractor actualizado), `server/scripts/smoke-orchestrator.js` (pasa el flag),
+  `server/__tests__/extractorOrchestrator.test.js` (describe nuevo `pmeEnabled=false`, 7 casos,
+  builder propio sin config pme; batería existente sin cambios).
+- **Verificación:** `cd server && npm test` → 12 archivos / 142 tests, todo verde.
+- **Desviaciones:** ninguna. El smoke manual con server corriendo queda para el checklist de
+  E4 (requiere acceso a los medidores de la red corporativa).
 
 <!-- Cada etapa agrega su bloque: ### EX — <título>  ✅ con Archivos tocados / Verificación / Desviaciones. -->
