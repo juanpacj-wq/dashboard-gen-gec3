@@ -92,6 +92,13 @@ def _pad(s: object, n: int) -> str:
 
 
 def main() -> int:
+    # La tabla usa el separador '─' (U+2500). En consola Windows (cp1252) eso revienta
+    # con UnicodeEncodeError; forzamos utf-8 tolerante para que el probe corra igual.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
     print(
         f"Probing {len(UNITS)} units por Modbus TCP "
         f"(reg={PROBE_REGISTER}, word_order={PROBE_WORD_ORDER}, decode={PROBE_DECODE}, "

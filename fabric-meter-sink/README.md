@@ -8,8 +8,9 @@ segundos.
 Reemplaza al notebook de Fabric (`server/notebook.py`) que corría cada 5 min
 consumiendo capacidad F2 y leía de la API `portalgeneracion`. Acá:
 
-- **Fuente nueva** — directo del medidor, vía HTTP en la red corporativa, sin
-  pasar por la API portal (que quedó obsoleta).
+- **Fuente nueva** — directo del medidor en la red corporativa, sin pasar por la
+  API portal (que quedó obsoleta). Desde **D-121** la lectura primaria es **Modbus
+  TCP** (`METER_PROTOCOL=modbus`, default); el scraping HTTP queda como rollback.
 - **Cadencia mucho más fina** — 15 s vs 5 min del notebook.
 - **Cero capacidad Fabric consumida** — el servicio corre en el mismo server
   on-prem donde vive el dashboard Node, escribiendo directo a OneLake con
@@ -19,7 +20,7 @@ consumiendo capacidad F2 y leía de la API `portalgeneracion`. Acá:
 
 ```
 Medidores ION8650 (5)
-    ↓ HTTP Basic Auth, /Operation.html
+    ↓ Modbus TCP FC03, reg 40204 (default) · HTTP /Operation.html (rollback)
 MeterPoller (15 s, ThreadPoolExecutor)
     ↓ sumar GEC3 + invertir signo (Gecelca)
 Buffer rotativo en memoria (últimas 3 filas)
@@ -88,20 +89,25 @@ fabric-meter-sink/
 ├── .gitignore                   # incluye DEPLOY.md y secretos genéricos
 ├── .python-version              # 3.11 (informativo)
 ├── src/
-│   ├── config.py                # UNITS, METER_DEFAULTS, vars Fabric, fail-fast
+│   ├── config.py                # UNITS, METER_DEFAULTS, METER_PROTOCOL/METER_MODBUS, fail-fast
 │   ├── sign_convention.py       # aplicar_signo(frontier_type, kw)
-│   ├── meter_client.py          # ION8650Client + parse_kw_total + excepciones
+│   ├── meter_modbus_client.py   # ION8650ModbusClient (Modbus TCP FC03) — lectura primaria
+│   ├── meter_client.py          # ION8650Client + parse_kw_total (rollback HTTP)
+│   ├── meter_client_factory.py  # make_client_factory(protocol) → cliente por METER_PROTOCOL
 │   ├── meter_poller.py          # MeterPoller (poll concurrente + sign flip)
 │   ├── fabric_writer.py         # FabricWriter + build_row + now_bogota_utc5
 │   ├── service.py               # FabricMeterSinkService (loop principal)
 │   └── main.py                  # entry point — `python -m src.main`
 ├── scripts/
-│   ├── probe_meters.py          # probe puntual a los 5 medidores
+│   ├── probe_modbus.py          # probe Modbus puntual a los 5 medidores
+│   ├── probe_meters.py          # probe HTTP puntual a los 5 medidores
 │   ├── probe_workspace.py       # lista items del workspace Fabric
 │   └── probe_fabric.py          # write+read 1 fila dummy (validación E2E)
-├── tests/                       # 42 tests (pytest)
+├── tests/                       # 70 tests (pytest)
 │   ├── conftest.py              # CONFIG_SKIP_VALIDATION=1 para tests
 │   ├── fixtures/ion8650_op.html # HTML real ION8650V409 capturado del medidor
+│   ├── test_meter_modbus_client.py # 21 tests del cliente Modbus (fake pymodbus)
+│   ├── test_meter_client_factory.py # 7 tests del factory + validate protocol-aware
 │   ├── test_meter_client.py     # 20 tests del cliente HTTP + parser
 │   ├── test_sign_convention.py  # 10 tests de convención de signos
 │   └── test_service.py          # 12 tests del loop con mocks
@@ -116,6 +122,14 @@ local pero está gitignored** — contiene detalles de infraestructura.
 ## Componentes implementados
 
 ### 1. Capa de extracción (medidores ION8650)
+
+La lectura primaria es **Modbus TCP** (`src/meter_modbus_client.py` — **`ION8650ModbusClient`**,
+`pymodbus` FC03, registro 40204/int32/high/scale 1000, unit 1, puerto 502), inyectada por
+`make_client_factory(protocol, modbus_cfg)` (`src/meter_client_factory.py`) según `METER_PROTOCOL`
+(default `modbus`). Comparte firma (`fetch_kw_total()` → kW sin signo) y jerarquía de errores con el
+cliente HTTP, más `MeterModbusException(exception_code)`. Detalle: `../docs/decisions.md` D-121.
+
+El cliente HTTP se conserva como **rollback** (`METER_PROTOCOL=http`):
 
 `src/meter_client.py` — **`ION8650Client`**:
 
@@ -237,14 +251,26 @@ Todas leídas desde `fabric-meter-sink/.env` (cargado por `python-dotenv` al
 importar `src.config`). En producción, `EnvironmentFile=` del unit de systemd
 las inyecta al proceso.
 
-### Medidores (5 IPs + 1 user + 5 passwords)
+### Protocolo de lectura
 
 | Var | Descripción |
 |---|---|
-| `USER_MEDIDORES` | Usuario único compartido (típicamente `user1`) |
-| `IP_TGJ1`, `IP_TGJ2`, `IP_GEC32`, `IP_GEC3_1`, `IP_GEC3_2` | Hosts/IPs |
-| `PSW_TGJ1`, `PSW_TGJ2`, `PSW_GEC32`, `PSW_GEC3_1`, `PSW_GEC3_2` | Passwords |
-| `METER_OP_PATH` | Path del endpoint (default `/Operation.html`) |
+| `METER_PROTOCOL` | `modbus` (default) \| `http` (rollback) |
+| `METER_MODBUS_PORT` | Puerto Modbus TCP (default `502`) |
+| `METER_MODBUS_UNIT_ID` | Unit/slave id (default `1`) |
+| `METER_MODBUS_REGISTER` | Registro 4xxxx (default `40204`) |
+| `METER_MODBUS_WORD_ORDER` | `high` (ABCD, default) \| `low` (CDAB) |
+| `METER_MODBUS_DECODE` | `int32` (default) \| `float32` |
+| `METER_MODBUS_SCALE` | Divisor a kW (default `1000`) |
+
+### Medidores (5 IPs + credenciales solo para rollback HTTP)
+
+| Var | Descripción |
+|---|---|
+| `IP_TGJ1`, `IP_TGJ2`, `IP_GEC32`, `IP_GEC3_1`, `IP_GEC3_2` | Hosts/IPs (siempre requeridas) |
+| `USER_MEDIDORES` | Usuario compartido (típicamente `user1`) — **solo `METER_PROTOCOL=http`** |
+| `PSW_TGJ1`, `PSW_TGJ2`, `PSW_GEC32`, `PSW_GEC3_1`, `PSW_GEC3_2` | Passwords — **solo `http`** |
+| `METER_OP_PATH` | Path del endpoint HTTP (default `/Operation.html`) — rollback |
 | `METER_TIMEOUT_S` | Timeout por request (default `4`) |
 
 ### Fabric
@@ -322,8 +348,13 @@ pytest -v
 ruff check src tests scripts
 ```
 
-42 tests, ~2 s. **No** necesitan medidores reales ni credenciales Fabric:
+70 tests, ~2 s. **No** necesitan medidores reales ni credenciales Fabric:
 
+- `test_meter_modbus_client.py` (21 tests) — decode int32/float32 × word order
+  high/low, escala, y mapeo de errores (timeout/protocolo/formato) con un fake
+  pymodbus inyectado vía `client=`.
+- `test_meter_client_factory.py` (7 tests) — selección de cliente por
+  `METER_PROTOCOL` y `_validate()` protocol-aware.
 - `test_meter_client.py` (20 tests) — parser con fixture HTML real, mocks
   de `httpx.MockTransport` para 200/401/500/timeout/format errors.
 - `test_sign_convention.py` (10 tests) — función pura + integración con

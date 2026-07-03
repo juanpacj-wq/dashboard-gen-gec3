@@ -15,19 +15,20 @@ Servicio Python on-prem que extrae lecturas de potencia (`kW total`) de los 5 me
 
 Reemplaza el notebook de Fabric (`../notebook.py` o `notebook.py` en raíz Fabric) que corría cada 5 min consumiendo capacidad F2 y leía de la API `portalgeneracion`. Acá:
 
-- **Fuente nueva** — directo del medidor (HTTP red corp), sin pasar por la API portal (obsoleta).
+- **Fuente nueva** — directo del medidor (Modbus TCP red corp desde D-121; HTTP como rollback), sin pasar por la API portal (obsoleta).
 - **Cadencia fina** — 15 s vs 5 min del notebook.
 - **Cero capacidad Fabric** — corre on-prem, escribe directo a OneLake con `deltalake` (sin Spark, sin Java, sin notebook).
 
 ## Stack
 
 - **Python 3.11** (pinned via `.python-version` informativo).
-- **httpx** — cliente HTTP sync (Basic Auth + timeout).
-- **BeautifulSoup** — parser HTML del firmware ION 8650V409.
+- **pymodbus** — cliente Modbus TCP (FC03), **fuente de lectura primaria** desde D-121.
+- **httpx** — cliente HTTP sync (Basic Auth + timeout), **solo rollback** (`METER_PROTOCOL=http`).
+- **BeautifulSoup** — parser HTML del firmware ION 8650V409, solo en el rollback HTTP.
 - **deltalake** (delta-rs) — escritura Delta sin Spark.
 - **pyarrow** — Arrow Tables para `write_deltalake`.
 - **azure-identity** — auth para OneLake/Fabric (DefaultAzureCredential + cache propio de tokens).
-- **pytest** — 42 tests cubriendo cliente HTTP, signos, loop principal.
+- **pytest** — 70 tests: cliente Modbus, factory, cliente HTTP, signos, loop principal.
 
 ## Estructura
 
@@ -80,7 +81,7 @@ Misma topología que `../server/config.js`. Si una cambia, la otra también. Det
 
 4. **Inversión de signo a nivel unidad** (después de combinar). Mismo patrón que Node. Para GEC3 con `combine='sum'`: primero `sum`, después `aplicar_signo`. Función pura en `sign_convention.py` que normaliza `-0.0 → +0.0`.
 
-5. **Validación fail-fast al cargar `config.py`**: si falta cualquier IP/PSW/USER de medidor, levanta `ValueError` con la lista **completa** de variables faltantes. Saltable con `CONFIG_SKIP_VALIDATION=1` para tests/scripts ad-hoc.
+5. **Validación fail-fast al cargar `config.py`, protocol-aware**: con `METER_PROTOCOL=modbus` (default) solo exige las `IP_*`; con `http` exige además `USER_MEDIDORES`/`PSW_*`. Levanta `ValueError` con la lista **completa** de variables faltantes. Saltable con `CONFIG_SKIP_VALIDATION=1` para tests/scripts ad-hoc.
 
 6. **Cache de tokens por scope** en `fabric_writer.py`. Los scopes son DISTINTOS:
    - `https://storage.azure.com/.default` para writes a OneLake.
@@ -89,11 +90,13 @@ Misma topología que `../server/config.js`. Si una cambia, la otra también. Det
 
 7. **Detección automática GUID vs displayName del lakehouse**: si `lakehouse_name` matchea un UUID, omite el sufijo `.Lakehouse` (necesario en tenants con `FriendlyNameSupportDisabled`). Si es un nombre, lo agrega.
 
-8. **`MeterFormatError` separado de errores de red.** Si el HTML respondió 200 pero la celda `kW total` no existe, la unidad no es `kW`, o el número no es finito → es señal de **cambio de firmware**, NO transitorio. Operador debe verlo.
+8. **`MeterFormatError` separado de errores de red.** HTTP: 200 pero sin celda `kW total` / no-`kW` / número no finito. Modbus: respuesta con <2 registros o valor no finito. Ambos son señal de **cambio de firmware/Modbus map**, NO transitorio. Operador debe verlo. (Modbus además: `MeterModbusException` con `exception_code` para excepciones de protocolo 0x83… — p. ej. 0x02 = Modbus Map bloqueado por Advanced Security.)
 
 9. **TZ Bogotá vía offset fijo (`-5h`), no zoneinfo.** `now_bogota_utc5()` usa offset manual para evitar dependencia de `tzdata` en Windows. Colombia no tiene DST, offset puro es seguro.
 
 10. **Buffer rotativo de 3 filas + overwrite.** Cada 15s `write_overwrite(buffer)` escribe el buffer completo en `mode='overwrite' + schema_mode='overwrite'`. La tabla siempre refleja los últimos 3 ciclos. Ordenable por `ts_concat`.
+
+11. **Toggle `METER_PROTOCOL` (default `modbus`).** La lectura es Modbus TCP (`ION8650ModbusClient`, FC03, registro 40204/int32/high/scale 1000, unit 1, puerto 502) replicando el combo del Node. `make_client_factory` (`meter_client_factory.py`) elige cliente por protocolo y lo inyecta en `MeterPoller`; con `http` vuelve al scraping sin tocar código (rollback). El poller/service son agnósticos del protocolo. Detalle en `../docs/decisions.md` **D-121** (espejo de `[[D-118]]`).
 
 ## Loop principal (`service.py`)
 
@@ -139,12 +142,15 @@ Una iteración:
 
 ## Variables de entorno
 
-Definidas en `.env`. Validación fail-fast en `config.py`:
+Definidas en `.env` (ver `.env.example`). Validación fail-fast **protocol-aware** en `config.py`
+(los nombres reales que usa el código, no `METER_*_HOST`/`FABRIC_TENANT_ID`):
 
-- **Medidores**: `METER_{TGJ1,TGJ2,GEC3_A,GEC3_B,GEC32}_{HOST,USER,PASSWORD}` (15 vars: 5 medidores × 3 campos).
-- **Defaults**: `METER_OP_PATH`, `METER_POLL_INTERVAL_S=15`, `METER_TIMEOUT_S`.
-- **Fabric**: `FABRIC_TENANT_ID`, `FABRIC_CLIENT_ID`, `FABRIC_CLIENT_SECRET` (service principal), `FABRIC_WORKSPACE_NAME`, `FABRIC_LAKEHOUSE_NAME` (GUID o displayName), `FABRIC_TABLE_NAME` (`BRC_PGN_GENERACION_MEDIDORES`), `FABRIC_SCHEMA_NAME` (opcional).
-- **Operación**: `HEARTBEAT_PATH`, `LOG_LEVEL`.
+- **Hosts de medidores** (siempre requeridos): `IP_TGJ1`, `IP_TGJ2`, `IP_GEC3_1`, `IP_GEC3_2`, `IP_GEC32`.
+- **Protocolo de lectura**: `METER_PROTOCOL` (`modbus` default | `http`) + combo Modbus `METER_MODBUS_{PORT=502,UNIT_ID=1,REGISTER=40204,WORD_ORDER=high,DECODE=int32,SCALE=1000}`.
+- **Credenciales HTTP** (solo requeridas con `METER_PROTOCOL=http`): `USER_MEDIDORES` (usuario compartido) + `PSW_TGJ1`, `PSW_TGJ2`, `PSW_GEC3_1`, `PSW_GEC3_2`, `PSW_GEC32`.
+- **Defaults de lectura**: `METER_OP_PATH` (rollback HTTP), `METER_TIMEOUT_S`, `POLL_INTERVAL_S=15`, `BUFFER_SIZE=3`.
+- **Fabric**: `TENANT_ID`, `CLIENT_ID`, `CLIENT_SECRET` (service principal), `FABRIC_WORKSPACE_ID`, `FABRIC_LAKEHOUSE_NAME` (GUID o displayName), `FABRIC_LAKEHOUSE_SCHEMA` (opcional), `FABRIC_TABLE_NAME` (`BRC_PGN_GENERACION_MEDIDORES`), `FABRIC_SQL_ENDPOINT_ID` (opcional).
+- **Operación**: `HEARTBEAT_PATH`, `LOG_DIR`, `LOG_LEVEL`, `MAX_CONSECUTIVE_WRITE_FAILURES=5`, `SHUTDOWN_TIMEOUT_S=30`.
 
 `CONFIG_SKIP_VALIDATION=1` salta la validación (uso solo en tests/scripts).
 
