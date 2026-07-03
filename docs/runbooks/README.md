@@ -13,7 +13,7 @@ y cómo interpretar pass/fail.
 ## Estructura
 
 ```
-01-Medidores y PME/         meters ION8650 + orchestrator + PME hot-standby
+01-Medidores y PME/         meters ION8650 + orchestrator + PME (default off, D-120)
 02-Despacho Final (Email)/  Graph API + parser + persistencia DB
 03-XM Scrapers/             dDEC (despacho) + rDEC (redespacho)
 04-Frontend y Realtime/     WebSocket + hook + badges UI

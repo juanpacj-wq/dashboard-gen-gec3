@@ -62,6 +62,9 @@ típicamente `EHOSTUNREACH`, `ECONNRESET`, `MeterFormatError`.
 
 ### 2. `orchestrator:pme:{unitId}` — WARN
 
+> Solo aplica con el fallback PME reactivado (`PME_ENABLED=1`, D-120). Con el flag
+> apagado (default) `source` nunca vale `'pme'` y esta alerta no puede disparar.
+
 **Síntoma:** una unidad lleva > `ALERT_THRESH_PME_PERSIST_MIN` (default 10) min
 con `source='pme'`.
 
@@ -81,6 +84,9 @@ recoveryThreshold=2 OK consecutivos).
 
 ### 3. `orchestrator:pme:GLOBAL` — CRITICAL (con recovery)
 
+> Solo aplica con `PME_ENABLED=1` (D-120). Con el fallback apagado, el CRITICAL
+> global equivalente es `orchestrator:meterDown:GLOBAL` (escenario 3b).
+
 **Síntoma:** TODAS las unidades en PME simultáneamente durante >
 `ALERT_THRESH_PME_GLOBAL_MIN` (default 2) min.
 
@@ -95,6 +101,25 @@ hosts a la vez.
 
 **Recovery:** cuando ≥ 1 unidad vuelve a `meter` ≥ 1 ciclo de polling del
 alerter, sale un `RECOVERED`.
+
+### 3b. `orchestrator:meterDown:GLOBAL` — CRITICAL (con recovery, D-120)
+
+**Síntoma:** con el fallback PME deshabilitado (default), TODAS las unidades llevan
+≥ `ALERT_THRESH_METER_DOWN_GLOBAL_MIN` (default 2) min con el medidor caído y sin
+carry-forward activo (`holding=false`). En la práctica dispara al primer tick del
+alerter tras agotarse el hold TTL (~3 min): las 4 unidades están emitiendo `null`.
+
+**Causa:** la LAN de medidores cayó, o el server perdió ruta a todos los meter hosts
+a la vez. A diferencia del escenario 3, acá NO hay fuente secundaria: el dashboard
+muestra las unidades sin dato.
+
+**Fix:**
+- `ping` a cada meter host desde el server; revisar `conectividad-medidores.md`.
+- Si ninguno responde, escalar a infra (problema de red, no de Dashboard).
+- Paliativo mientras se repara la LAN (si el PME sí tiene datos): reactivar el
+  fallback con `PME_ENABLED=1` (ver `01-Medidores y PME/reactivar-pme.md`).
+
+**Recovery:** cuando ≥ 1 unidad vuelve a tener lectura del medidor, sale `RECOVERED`.
 
 ### 4. `emailDispatch:GEC` / `emailDispatch:TGJ` — WARN
 

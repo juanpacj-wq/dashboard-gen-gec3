@@ -1,8 +1,10 @@
 # Cutover / rollback de extracción Modbus (`METER_PROTOCOL`)
 
 **Qué hace:** cambia la fuente primaria de extracción de los medidores ION8650 entre
-HTTP (legacy) y Modbus TCP (D-118), por instancia, con rollback instantáneo. El PME
-sigue siendo fallback en ambos casos.
+HTTP (legacy) y Modbus TCP (D-118), por instancia, con rollback instantáneo. Desde
+D-120 `modbus` es el default y el fallback PME está deshabilitado salvo
+`PME_ENABLED=1` (ver `reactivar-pme.md`) — el toggle de protocolo es independiente
+del flag.
 
 ## Antes de empezar (una vez)
 
