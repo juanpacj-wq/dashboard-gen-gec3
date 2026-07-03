@@ -10,6 +10,9 @@ const DEFAULTS = {
   // umbral opera sobre meterPoller.perMeter (no-op en prod) y es defensivo.
   ALERT_THRESH_METER_CONSEC_ERRORS: 90,
   ALERT_THRESH_METER_DOWN_MIN: 3,
+  // Global "todas sin medidor" (D-120, solo con PME deshabilitado). Independiente de
+  // ALERT_THRESH_PME_GLOBAL_MIN: semántica distinta, tuneo aparte.
+  ALERT_THRESH_METER_DOWN_GLOBAL_MIN: 2,
   ALERT_THRESH_PME_PERSIST_MIN: 10,
   ALERT_THRESH_PME_GLOBAL_MIN: 2,
   ALERT_THRESH_EMAIL_STALE_MIN: 20,
@@ -164,6 +167,26 @@ export class Alerter {
     } else {
       this.#pmeGlobalSince = null
       this.#close(kGlobal, now, /*emitRecovery*/ true)   // CRITICAL = manda recovery
+    }
+
+    // Global: TODAS las unidades sin medidor — solo con el fallback PME deshabilitado
+    // (D-120; con PME on el CRITICAL global equivalente sigue siendo orchestrator:pme:GLOBAL).
+    // Gate estricto === false: snapshots legacy sin el campo no cambian de comportamiento.
+    // Sin reloj propio: meterDownSeconds del orchestrator ya corre durante el hold (D-116).
+    // El !holding evita el falso positivo mientras el carry-forward todavía sirve valores;
+    // en la práctica dispara en el primer tick tras agotarse el TTL.
+    const kMeterGlobal = 'orchestrator:meterDown:GLOBAL'
+    const pmeOff = orch?.pmeEnabled === false
+    const allMetersDown = pmeOff && unitIds.length > 0 && unitIds.every(u =>
+      !perUnit[u].holding &&
+      (perUnit[u].meterDownSeconds ?? 0) >= c.ALERT_THRESH_METER_DOWN_GLOBAL_MIN * 60)
+    if (allMetersDown) {
+      this.#open(kMeterGlobal, 'CRITICAL', {
+        title: 'TODAS las unidades sin medidor (PME deshabilitado)',
+        body: 'Probable falla de LAN de medidores. Sin fallback activo: valores en null. Revisar conectividad meter hosts.',
+      }, now)
+    } else {
+      this.#close(kMeterGlobal, now, /*emitRecovery*/ true)   // CRITICAL = manda recovery
     }
 
     // 3) EmailDispatch GEC + TGJ

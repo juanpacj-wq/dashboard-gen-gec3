@@ -302,3 +302,78 @@ describe('Alerter — lifecycle (start/stop con timers)', () => {
     expect(ticks).toBe(4)
   })
 })
+
+describe('Alerter — GLOBAL meterDown con PME deshabilitado (CRITICAL, D-120)', () => {
+  const K = 'orchestrator:meterDown:GLOBAL'
+  const unit = (over = {}) => ({ source: 'meter', holding: false, meterDownSeconds: 200, consecMeterErrors: 100, ...over })
+  const allDown = (pmeEnabled) => ({ services: { orchestrator: { pmeEnabled, perUnit: {
+    GEC3: unit(), GEC32: unit(), TGJ1: unit(), TGJ2: unit(),
+  } } } })
+
+  it('dispara CRITICAL con todas las unidades caídas y pmeEnabled=false', () => {
+    const { alerter, calls } = makeAlerter({ snapshot: allDown(false) })
+    alerter.tick()
+    const global = calls.find(c => c.incidentKey === K)
+    expect(global).toBeDefined()
+    expect(global.severity).toBe('CRITICAL')
+    expect(global.title).toMatch(/sin medidor/i)
+  })
+
+  it('NO dispara mientras alguna unidad hace holding (carry-forward activo)', () => {
+    const snap = { services: { orchestrator: { pmeEnabled: false, perUnit: {
+      GEC3: unit({ holding: true }), GEC32: unit(), TGJ1: unit(), TGJ2: unit(),
+    } } } }
+    const { alerter, calls } = makeAlerter({ snapshot: snap })
+    alerter.tick()
+    expect(calls.filter(c => c.incidentKey === K)).toHaveLength(0)
+  })
+
+  it('NO dispara con pmeEnabled=true ni con el campo ausente (snapshot legacy)', () => {
+    for (const snap of [allDown(true), allDown(undefined)]) {
+      const { alerter, calls } = makeAlerter({ snapshot: snap })
+      alerter.tick()
+      expect(calls.filter(c => c.incidentKey === K)).toHaveLength(0)
+    }
+  })
+
+  it('NO dispara si solo algunas unidades están caídas (las per-unit sí)', () => {
+    const snap = { services: { orchestrator: { pmeEnabled: false, perUnit: {
+      GEC3: unit(), GEC32: unit({ meterDownSeconds: 0 }), TGJ1: unit(), TGJ2: unit(),
+    } } } }
+    const { alerter, calls } = makeAlerter({ snapshot: snap })
+    alerter.tick()
+    expect(calls.filter(c => c.incidentKey === K)).toHaveLength(0)
+    expect(calls.find(c => c.incidentKey === 'orchestrator:meterDown:GEC3')).toBeDefined()
+  })
+
+  it('emite RECOVERED cuando una unidad vuelve', () => {
+    const { alerter, calls, advanceMs, setSnapshot } = makeAlerter({ snapshot: allDown(false) })
+    alerter.tick()  // CRITICAL
+    expect(calls.find(c => c.incidentKey === K && c.severity === 'CRITICAL')).toBeDefined()
+
+    setSnapshot({ services: { orchestrator: { pmeEnabled: false, perUnit: {
+      GEC3: unit({ meterDownSeconds: 0 }), GEC32: unit(), TGJ1: unit(), TGJ2: unit(),
+    } } } })
+    advanceMs(60 * 1000)
+    alerter.tick()
+    expect(calls.find(c => c.incidentKey === K && c.severity === 'RECOVERED')).toBeDefined()
+  })
+
+  it('cooldown: una sola alerta global en dos ticks consecutivos', () => {
+    const { alerter, calls, advanceMs } = makeAlerter({ snapshot: allDown(false) })
+    alerter.tick()
+    advanceMs(60 * 1000)
+    alerter.tick()
+    expect(calls.filter(c => c.incidentKey === K)).toHaveLength(1)
+  })
+
+  it('umbral configurable: no dispara por debajo de ALERT_THRESH_METER_DOWN_GLOBAL_MIN', () => {
+    const snap = { services: { orchestrator: { pmeEnabled: false, perUnit: {
+      GEC3: unit({ meterDownSeconds: 90 }), GEC32: unit({ meterDownSeconds: 90 }),
+      TGJ1: unit({ meterDownSeconds: 90 }), TGJ2: unit({ meterDownSeconds: 90 }),
+    } } } }
+    const { alerter, calls } = makeAlerter({ snapshot: snap, env: { ALERT_THRESH_METER_DOWN_GLOBAL_MIN: '2' } })
+    alerter.tick()
+    expect(calls.filter(c => c.incidentKey === K)).toHaveLength(0)
+  })
+})
