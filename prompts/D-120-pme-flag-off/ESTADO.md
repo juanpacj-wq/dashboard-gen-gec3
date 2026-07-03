@@ -12,7 +12,7 @@
 | Etapa | Estado | Resumen |
 |---|---|---|
 | E0 — Andamiaje | ✅ | Carpeta de prompts creada: `_CONTEXTO-BASE.md`, `PREGUNTAS-D-120.md`, `ESTADO.md`, `E1..E4`. |
-| E1 — Flag PME_ENABLED en config + default modbus | ⬜ | — |
+| E1 — Flag PME_ENABLED en config + default modbus | ✅ | `PME_ENABLED` exportado (default off), validación/`unit()` condicionadas, protocolo default modbus, `.env.example` corregido, 6 tests nuevos. |
 | E2 — Gate pmeEnabled en el orquestador | ⬜ | — |
 | E3 — CRITICAL global meterDown en alerter | ⬜ | — |
 | E4 — Docs + ADR D-120 + cleanup + cierre | ⬜ | — |
@@ -34,5 +34,17 @@ Leyenda: ⬜ pendiente · 🟡 en progreso · ✅ hecho y probado · ⛔ bloquea
   `E2-orchestrator-gate.md`, `E3-alerter-global.md`, `E4-docs-cleanup.md`.
 - Branch: `feat/pme-flag-off-2026-07` (desde `feat/multi-instancia-runtime-config`).
 - Sin código de producto todavía.
+
+### E1 — Flag PME_ENABLED en config + default modbus  ✅
+- **Archivos tocados:** `server/config.js` (export `PME_ENABLED === '1'`; validación de
+  `PME_PASSWORD` y exigencia de `pme.referencia` en `unit()` condicionadas al flag; retorno
+  `pme: null` si falta; `METER_DEFAULTS.protocol` default `'modbus'`; mensaje de validación
+  neutro), `.env.example` (bloque `PME_ENABLED` documentado, `METER_PROTOCOL=modbus`,
+  anotaciones "solo con PME_ENABLED=1" en PME_*/HEADLESS/PME_DIAGNOSE, nota obsoleta del
+  toggle eliminada), nuevo `server/__tests__/config.test.js` (6 casos con `vi.resetModules`
+  + `vi.stubEnv` + import dinámico).
+- **Verificación:** `cd server && npm test` → 12 archivos / 135 tests, todo verde.
+- **Desviaciones:** ninguna. (Ejecutada en la misma sesión de planeación por directiva del
+  usuario vía /goal, no en sesión limpia.)
 
 <!-- Cada etapa agrega su bloque: ### EX — <título>  ✅ con Archivos tocados / Verificación / Desviaciones. -->
