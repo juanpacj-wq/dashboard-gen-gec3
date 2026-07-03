@@ -322,3 +322,30 @@ anti-drift (fail-fast si nginx está namespaced pero el .env no lo declara).
 (c) El cert corporativo NO se autorrenueva — registrar vencimiento y renovar a mano. (d) Los
 updates son seguros ante el drift de base (guard + persistencia). Cross-ref: [[D-117]]
 (multi-instancia runtime), `../docs/deployment-unificado.md` (topología completa).
+
+## D-120 — Fallback PME deshabilitado por default (flag `PME_ENABLED`; extracción solo Modbus)
+
+**Fecha:** 2026-07-02
+
+**Contexto:** el `PMEScraper` (Playwright + Chromium headless con login a gpme) era el proceso
+que más recursos consumía en el servidor, y su valor como fallback cayó tras [[D-118]]: ambas
+instancias (GEC3 y Guajira) corren estables con `METER_PROTOCOL=modbus` (0.00% null en la
+validación en sombra; criterios del runbook de cutover cumplidos).
+
+**Decisión:** flag **`PME_ENABLED`** en config, default **apagado** (`=== '1'` para encender).
+Con el flag apagado el orquestador no instancia `PMEScraper` (cero navegador, cero login) y
+`pmeValid` se fuerza a false: `source` nunca vale `'pme'`; agotado el carry-forward de [[D-116]]
+la unidad emite `valueMW=null`. `PME_PASSWORD` y `pme.referencia` dejan de ser obligatorias sin
+el flag. `METER_PROTOCOL` pasa a default `'modbus'` (el cliente HTTP queda como rollback sin
+código). Nueva alerta CRITICAL `orchestrator:meterDown:GLOBAL` (env
+`ALERT_THRESH_METER_DOWN_GLOBAL_MIN`, default 2 min, no cuenta el hold) reemplaza a
+`orchestrator:pme:GLOBAL`, que solo aplica con PME encendido. El código PME se conserva
+completo: reactivación = `PME_ENABLED=1` + `PME_PASSWORD` + restart (runbook
+`runbooks/01-Medidores y PME/reactivar-pme.md`). No se tocó `deploy/` (Chromium se sigue
+instalando) ni el frontend (el badge PME simplemente no vuelve a aparecer).
+
+**Consecuencias:** (a) menos RAM/CPU en el servidor (sin Chromium en runtime) y sin dependencia
+operativa del portal PME. (b) Sin fallback: un corte de la LAN de medidores deja las 4 unidades
+en null (antes seguían con PME) — mitigado por la CRITICAL global nueva. (c) Los `.env` de
+producción no requieren cambios (el default apagado hace el trabajo; modbus ya es explícito
+allí). Cross-ref: [[D-116]], [[D-118]].

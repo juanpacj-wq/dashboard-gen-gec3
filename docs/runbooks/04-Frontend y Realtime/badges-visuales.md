@@ -44,10 +44,11 @@ a la derecha:
 ## Estados alternativos
 
 - 🟢 4 cards con **"MEDIDOR" verde** → estado ideal, todos los meters sirviendo.
-- 🟡 1+ cards con **"PME" ámbar** (color `#f59e0b`) → fallback activo. La card
-  sigue funcionando pero está leyendo del scraper, no del medidor físico. Es
-  comportamiento correcto del hot-standby — investigar el meter caído con
-  `01-Medidores y PME/conectividad-medidores.md`.
+- 🟡 1+ cards con **"PME" ámbar** (color `#f59e0b`) → fallback activo. Solo puede
+  aparecer con `PME_ENABLED=1` (desde D-120 el fallback está apagado por default; si
+  aparece con el flag apagado es un bug). La card sigue funcionando pero está leyendo
+  del scraper, no del medidor físico. Es comportamiento correcto del hot-standby —
+  investigar el meter caído con `01-Medidores y PME/conectividad-medidores.md`.
 - 🟡 Sin badge en alguna card durante los primeros 5-10 seg post-load → warming up,
   todavía no hay decisión del orchestrator. Debería aparecer en breve.
 - 🔴 **Ningún badge** después de 30s → el frontend no está recibiendo `units[].source`.

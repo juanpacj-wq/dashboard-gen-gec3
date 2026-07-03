@@ -1,5 +1,9 @@
 # PME Scraper (hot-standby)
 
+> **Deshabilitado por default desde D-120**: el server no instancia el scraper salvo
+> `PME_ENABLED=1` en el `.env` (ver `reactivar-pme.md`). Este runbook solo aplica con
+> el fallback reactivado.
+
 **Verifica:** el scraper Playwright que loguea a `gpme.gecelca.com.co` y
 observa el diagrama de balance está vivo y alimentando valores. Es la fuente
 secundaria — sirve cuando los medidores físicos caen.

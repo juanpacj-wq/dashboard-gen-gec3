@@ -11,7 +11,7 @@ Este archivo da el panorama. Para detalle del extractor de medidores ver `../ser
 | Capa | Tecnología |
 |---|---|
 | Frontend | React 19, Vite 5, estilos inline (objetos JS), sin Tailwind, sin router, sin state library |
-| Backend | Node.js ≥20, http nativo, ws (WebSocket), undici (HTTP keep-alive), playwright (PME hot-standby) |
+| Backend | Node.js ≥20, http nativo, ws (WebSocket), undici (HTTP keep-alive), modbus-serial (extracción primaria), playwright (fallback PME, deshabilitado por default desde D-120) |
 | BD | SQL Server 2019+, driver `mssql`, esquema `dashboard` |
 | Tests | Vitest forks (`--pool=forks` para el orchestrator), 15+ tests existentes |
 | Build | Vite (`npm run build` → `dist/`), deploy Ubuntu + nginx + systemd |
@@ -21,7 +21,7 @@ Este archivo da el panorama. Para detalle del extractor de medidores ver `../ser
 
 ## Cinco backend services orquestados por `server.js`
 
-1. **Extractor (medidores ION8650 + PME hot-standby)** — `ExtractorOrchestrator` arbitra entre `MeterPoller` (primario) y `PMEScraper` (fallback). State machine por unidad: 3 errores meter → switch a PME; 2 OK consecutivos → recovery. Tick cada 2s. Ver D-101 en `decisions.md`.
+1. **Extractor (medidores ION8650; fallback PME opcional)** — `ExtractorOrchestrator` con `MeterPoller` (primario, Modbus TCP por default desde D-118/D-120) y, solo con `PME_ENABLED=1`, `PMEScraper` como fallback. Carry-forward con TTL (D-116): nulls transitorios retienen el último valor bueno; agotado el TTL cede a PME si está habilitado, o emite null. Recovery con 2 OK consecutivos. Tick cada 2s. Ver D-101/D-116/D-120 en `decisions.md`.
 2. **Energy Accumulator** (`accumulator.js`) — integra trapezoidalmente las lecturas MW en MWh por periodo horario Colombia. Checkpointea cada 30s a `dashboard.generacion_acumulado` para recuperación post-restart.
 3. **Email Dispatch** (`emailDispatch.js`) — Microsoft Graph API lee redespacho notification emails de un mailbox compartido, parsea MW per unidad/periodo, persiste a `dashboard.despacho_final`. Fallback a XM `GeneProgRedesp` al minuto 55 de cada hora. Email filter desde `T01:00:00Z` (8 PM Colombia previo) para capturar early-period emails.
 4. **Redespacho Scraper** (`redespachoscraper.js`) — descarga `rDECMMDD.txt` de XM portal cada 5 min, parsea nuestras 4 unidades + todas las plantas nacionales (para ticker). Persiste a `dashboard.redespacho_programado` con audit log en `dashboard.redespacho_historico`.
@@ -38,7 +38,7 @@ Este archivo da el panorama. Para detalle del extractor de medidores ver `../ser
 - `meterClient.js` — `ION8650Client`. Una instancia por medidor físico. HTTP Basic + cheerio sobre `/Operation.html` (firmware ION 8650V409). Errores tipados: `MeterAuthError`, `MeterHttpError`, `MeterTimeoutError`, `MeterFormatError`. Timeout 4s default. Keep-alive via undici Agent compartido.
 - `meterPoller.js` — `MeterPoller`. Misma API pública que el viejo `PMEScraper` (`start/stop/getStatus/onData`). Polling concurrente con `Promise.all` por unidad y por medidor. **Aislamiento por unidad**: si CUALQUIER medidor de una unidad falla en un tick, esa unidad reporta `valueMW=null` para no contaminar el integrador. Inversión de signo a nivel unidad (después de combinar). `perMeter` en `getStatus()` permite saber qué medidor está fallando sin leer logs.
 - `extractorOrchestrator.js` — árbitro entre MeterPoller y PMEScraper. State machine por unidad con histeresis. Expone `source: 'meter' | 'pme' | null` en el payload WS (decisión D-102).
-- `scraper.js` — `PMEScraper` (Playwright). Quedó como hot-standby. Logueado al PME centralizado de Gecelca, observa mutaciones del diagrama balance.dgm.
+- `scraper.js` — `PMEScraper` (Playwright). Fallback opcional, **deshabilitado por default desde D-120** (`PME_ENABLED=1` para reactivar — runbook `runbooks/01-Medidores y PME/reactivar-pme.md`). Cuando corre, se loguea al PME centralizado de Gecelca y observa mutaciones del diagrama balance.dgm.
 - `config.js` — `UNITS` con `{ id, label, maxMW, combine: 'single'|'sum', meters: [{host, user, password}], frontierType: 'input'|'output' }`. Validación fail-fast al cargar.
 
 **Topología de medidores:**
@@ -183,7 +183,8 @@ curl -s http://localhost:3001/api/redespacho/national | node -e "process.stdin.o
 ## Variables de entorno (`.env` en raíz del repo, leído via `--env-file`)
 
 - `WS_PORT` — default 3001.
-- `PME_LOGIN_URL`, `PME_DIAGRAM_URL`, `PME_USER`, `PME_PASSWORD` — PME hot-standby.
+- `PME_ENABLED` — fallback PME, default apagado (D-120); `1` para reactivar.
+- `PME_LOGIN_URL`, `PME_DIAGRAM_URL`, `PME_USER`, `PME_PASSWORD` — fallback PME; solo aplican (y `PME_PASSWORD` solo es obligatoria) con `PME_ENABLED=1`.
 - `METER_*_HOST`, `METER_*_USER`, `METER_*_PASSWORD` — 5 medidores (TGJ1, TGJ2, GEC3_A, GEC3_B, GEC32). Validación fail-fast en `config.js`.
 - `METER_OP_PATH`, `METER_POLL_MS`, `METER_TIMEOUT_MS` — defaults configurables.
 - `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_PORT` — MSSQL. Named instances soportadas via `DB_HOST=host\instance`.

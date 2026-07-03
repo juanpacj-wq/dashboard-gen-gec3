@@ -1,6 +1,6 @@
 # Mapa del backend de extracción (medidores ION8650 directos)
 
-Reemplaza al antiguo `PME_BACKEND_MAP.md`. La extracción consulta **directamente cada medidor Schneider PowerLogic ION8650**. La fuente primaria es seleccionable por protocolo (`METER_PROTOCOL`, D-118): **`modbus`** (Modbus TCP FC03, recomendado) o **`http`** (raspado de `Operation.html`, legacy). **El PME centralizado NO fue eliminado**: sigue siendo el **fallback hot-standby por unidad** dentro de `extractorOrchestrator.js` (carry-forward TTL, D-116). El `ExtractorOrchestrator` envuelve el lector de medidores (primario) + `PMEScraper` (fallback).
+Reemplaza al antiguo `PME_BACKEND_MAP.md`. La extracción consulta **directamente cada medidor Schneider PowerLogic ION8650**. La fuente primaria es seleccionable por protocolo (`METER_PROTOCOL`, D-118; default **`modbus`** desde D-120): Modbus TCP FC03, o **`http`** (raspado de `Operation.html`, legacy, rollback). El código del PME centralizado NO fue eliminado, pero el fallback está **deshabilitado por default desde D-120**: solo con `PME_ENABLED=1` el `ExtractorOrchestrator` instancia `PMEScraper` y opera la conmutación por unidad (carry-forward TTL, D-116); con el flag apagado, agotado el TTL la unidad emite null.
 
 > **Flujo en una línea:** `meterClient.js` (HTTP) **o** `meterModbusClient.js` (Modbus TCP), seleccionados por `meterClientFactory.js` ↔ `meterPoller.js` (polling + agregación, agnóstico del protocolo) → `extractorOrchestrator.js` (merge medidor↔PME) → `server.js` (broadcast WebSocket) → `accumulator.js` (MW→MWh trapezoidal) + `projectionCalculator.js` → `db.js` (esquema `dashboard`).
 
@@ -205,7 +205,7 @@ Se cargan automáticamente desde `pruebas/.env` (Node `--env-file`). Plantilla e
 | `METER_TIMEOUT_MS` | `4000` | Timeout por fetch. Debe ser `<` `pollMs` para no encolar. |
 | `CONFIG_SKIP_VALIDATION` | — | `1` para saltar validación de env vars al cargar `config.js` (tests, scripts). |
 
-Las variables del PME viejo (`PME_LOGIN_URL`, `PME_DIAGRAM_URL`, `PME_USER`, `PME_PASSWORD`, `HEADLESS`) están **obsoletas** y se pueden eliminar del entorno.
+Las variables del PME (`PME_LOGIN_URL`, `PME_DIAGRAM_URL`, `PME_USER`, `PME_PASSWORD`, `HEADLESS`) solo aplican con **`PME_ENABLED=1`** (fallback reactivado, D-120); con el flag apagado (default) pueden eliminarse del entorno sin efecto.
 
 ---
 

@@ -4,6 +4,10 @@
 extractor (medidor primario vs PME hot-standby) está sirviendo la lectura de
 cada unidad, y que ese campo viaja por el WebSocket al frontend.
 
+> Desde D-120 el fallback PME está deshabilitado por default (`PME_ENABLED=1` para
+> reactivar): `source` solo puede ser `meter` o `null`, y tras agotarse el
+> carry-forward (D-116) la unidad emite `valueMW=null` en vez de conmutar a PME.
+
 ## Cuándo correrlo
 
 - Tras deploy (smoke pack mínimo).
