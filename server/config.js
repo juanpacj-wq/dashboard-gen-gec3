@@ -13,6 +13,11 @@ export const PME = {
   password:   process.env.PME_PASSWORD    || '',
 }
 
+// Fallback PME deshabilitado por default (D-120): con el flag apagado no se instancia el
+// PMEScraper (cero Playwright/Chromium) y la extracción queda solo con los medidores.
+// Reactivar = PME_ENABLED=1 explícito (+ PME_PASSWORD) y reiniciar.
+export const PME_ENABLED = process.env.PME_ENABLED === '1'
+
 // ─── Defaults del extractor de medidores ─────────────────────────────────────
 export const METER_DEFAULTS = {
   opPath:     process.env.METER_OP_PATH                  || '/Operation.html',
@@ -20,11 +25,11 @@ export const METER_DEFAULTS = {
   timeoutMs:  parseInt(process.env.METER_TIMEOUT_MS, 10) || 4000,
   // Carry-forward del último valor bueno del medidor ante nulls transitorios (D-116).
   holdTtlMin: parseFloat(process.env.METER_HOLD_TTL_MIN) || 3,
-  // Protocolo de la fuente primaria (D-118). 'http' = raspar /Operation.html (legacy);
-  // 'modbus' = leer Modbus TCP FC03 (validado en sombra: 0% null vs HTTP, ~50× más rápido).
-  // Rollback instantáneo: cambiar a 'http' + reiniciar. El cliente se selecciona en
-  // server.js vía createMeterClientFactory(); el PME sigue siendo fallback en ambos casos.
-  protocol:   process.env.METER_PROTOCOL || 'http',
+  // Protocolo de la fuente primaria (D-118; default modbus desde D-120). 'modbus' = leer
+  // Modbus TCP FC03 (validado en sombra: 0% null vs HTTP, ~50× más rápido); 'http' = raspar
+  // /Operation.html (legacy, queda como rollback instantáneo: METER_PROTOCOL=http +
+  // reiniciar). El cliente se selecciona en server.js vía createMeterClientFactory().
+  protocol:   process.env.METER_PROTOCOL || 'modbus',
   // Defaults = combo validado en el shadow (registro 40204 INT32 high /1000, unitId 1).
   modbus: {
     port:      parseInt(process.env.METER_MODBUS_PORT, 10)     || 502,
@@ -83,8 +88,10 @@ function unit({ id, label, maxMW, meterEnv, frontierType = 'output', pme }) {
   if (frontierType !== 'output' && frontierType !== 'input') {
     throw new Error(`config: unit ${id} frontierType inválido '${frontierType}'`)
   }
-  if (!pme || !pme.referencia) {
-    throw new Error(`config: unit ${id} requiere pme: { referencia, occurrence }`)
+  // pme solo es obligatorio con el fallback habilitado (D-120); las 4 unidades lo
+  // conservan hardcodeado como vía de rollback.
+  if (PME_ENABLED && (!pme || !pme.referencia)) {
+    throw new Error(`config: unit ${id} requiere pme: { referencia, occurrence } con PME_ENABLED=1`)
   }
   const meters = meterEnv.map(({ ip, psw }) => meterFromEnv({ ipKey: ip, pswKey: psw, unitId: id }))
   return {
@@ -94,7 +101,7 @@ function unit({ id, label, maxMW, meterEnv, frontierType = 'output', pme }) {
     frontierType,
     combine: meters.length > 1 ? 'sum' : 'single',
     meters,
-    pme: { referencia: pme.referencia, occurrence: pme.occurrence ?? 0 },
+    pme: pme ? { referencia: pme.referencia, occurrence: pme.occurrence ?? 0 } : null,
   }
 }
 
@@ -122,13 +129,13 @@ if (process.env.CONFIG_SKIP_VALIDATION !== '1') {
       if (!m.password) missing.push(`${m._pswKey}  (unit=${u.id})`)
     }
   }
-  // Validación del PME (fallback)
-  if (!PME.password) missing.push('PME_PASSWORD  (fallback)')
+  // Validación del PME (fallback) — solo obligatorio con el fallback habilitado (D-120)
+  if (PME_ENABLED && !PME.password) missing.push('PME_PASSWORD  (fallback PME, requerido con PME_ENABLED=1)')
 
   if (missing.length > 0) {
     const unique = [...new Set(missing)]
     const msg =
-      'Faltan variables de entorno (medidores + PME fallback):\n  - ' +
+      'Faltan variables de entorno (extracción de potencia):\n  - ' +
       unique.join('\n  - ') +
       '\n\nDefinirlas en dashboard-gen-gec3/.env. Para saltar la validación: CONFIG_SKIP_VALIDATION=1'
     throw new Error(msg)
