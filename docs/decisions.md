@@ -380,3 +380,32 @@ GEC32 input → +240 MW; GEC3 input → −1.5 MW, offline en consumo auxiliar).
 de protocolo como `ExceptionResponse.exception_code`; el cliente mapea ambos caminos + las
 excepciones lanzadas a los mismos tipos `Meter*`/`MeterModbusException` del lado HTTP. Rollback
 probado (probe HTTP responde). Cross-ref: [[D-112]], [[D-118]], [[D-120]].
+
+---
+
+## D-122 — Push `eventos-changed` de Bitácora → reflejo casi instantáneo de eventos MAND
+
+**Fecha:** 2026-07-04
+
+**Contexto:** el frontend leía `evento_dashboard` de Bitácora solo por polling
+(`useEventosBitacora`, `POLL_MS=60_000`), así que un guardado en sala de mando tardaba hasta
+60s en verse en el dashboard. Se quería reflejo casi instantáneo sin subir la carga (el poll por
+navegador escala con # de pestañas). Ambos repos comparten instancia MSSQL (esquemas distintos) y
+el dashboard ya tenía un WebSocket `/ws` a todos los clientes; solo llevaba datos de medidor.
+
+**Decisión:** webhook event-driven (no bajar el intervalo del poll ni sondear la BD). Bitácora
+empuja al backend del dashboard tras cada escritura de `evento_dashboard`; el dashboard reemite
+por el `/ws` existente y el frontend refetchea. Lado dashboard: endpoint interno
+`POST /internal/eventos-changed` en `server/server.js` (cuerpo tolerante `{plantas?,fecha?}`, 204,
+**no** expuesto por nginx → solo `localhost:3001`, token opcional `INTERNAL_NOTIFY_TOKEN` vía
+header `X-Internal-Token`). Al recibir, `wsSend({type:'eventos-changed',...})` — helper liviano que
+NO pasa por el pipeline del acumulador de `broadcast()`. `useRealtimeData` maneja ese type
+bumpeando un contador `eventosSignal`; `Dashboard.jsx` lo pasa a `useEventosBitacora(undefined,
+eventosSignal)`, que lo tiene en las deps del effect → refetch inmediato. El poll de 60s queda como
+**red de seguridad** (por si el push se pierde: WS reconectando, backend reiniciando).
+
+**Consecuencias:** (a) latencia ~0 en vez de ≤60s; carga en reposo cero (solo dispara al guardar).
+(b) Retrocompatible: si Bitácora no empuja, el poll sigue; el endpoint no expuesto no rompe nada.
+(c) Contrato nuevo documentado como **Contrato 3** en `../docs/interfaces-cross-repo.md`; lado
+emisor en Bitácora [[BIT D-043]]. (d) Emisor verificado E2E (helper contra HTTP de prueba); el
+flujo completo guardar→WS→refetch se valida en el servidor unificado post-deploy.

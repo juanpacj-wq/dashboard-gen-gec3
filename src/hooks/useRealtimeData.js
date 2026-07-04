@@ -16,6 +16,9 @@ export function useRealtimeData() {
   const [projection, setProjection] = useState({});
   const [desviacionPeriodos, setDesviacionPeriodos] = useState({});
   const [proyeccionPeriodos, setProyeccionPeriodos] = useState({});
+  // Contador-señal: se incrementa cuando Bitácora empuja 'eventos-changed' por el WS. Lo
+  // consume useEventosBitacora para refetchear al instante (sin esperar su poll de 60s).
+  const [eventosSignal, setEventosSignal] = useState(0);
 
   const ws = useRef(null);
   const timer = useRef(null);
@@ -105,6 +108,12 @@ export function useRealtimeData() {
   }, [status, loadSnapshots]);
 
   const handleMessage = useCallback((msg) => {
+    // Señal del webhook de Bitácora: no trae datos, solo indica que evento_dashboard cambió.
+    // Bumpeamos el contador para que useEventosBitacora dispare un refetch inmediato.
+    if (msg.type === 'eventos-changed') {
+      setEventosSignal((n) => n + 1);
+      return;
+    }
     if (msg.type !== 'update') return;
 
     // El backend (ExtractorOrchestrator) envía cada unit con shape:
@@ -196,5 +205,5 @@ export function useRealtimeData() {
     };
   }, [handleMessage]);
 
-  return { units, status, lastUpdate, accumulated, minuteAvgs, minuteDeviations, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos };
+  return { units, status, lastUpdate, accumulated, minuteAvgs, minuteDeviations, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos, eventosSignal };
 }

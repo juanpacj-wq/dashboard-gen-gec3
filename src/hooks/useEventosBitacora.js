@@ -29,7 +29,11 @@ async function fetchPlanta(planta_id, fecha) {
   return json.eventos || [];
 }
 
-export function useEventosBitacora(intervalMs = POLL_MS) {
+// `signal` es un contador que bumpea cuando Bitácora empuja 'eventos-changed' por el WS
+// (via useRealtimeData). Cada cambio dispara un refetch inmediato — así el reflejo bitácora→
+// dashboard es casi instantáneo. El poll de `intervalMs` queda como red de seguridad por si
+// un push se pierde (WS reconectando en ese momento, dashboard reiniciando, etc.).
+export function useEventosBitacora(intervalMs = POLL_MS, signal = 0) {
   // Shape: { [planta_id]: { [periodo]: { AUTH?: row, REDESP?: row, PRUEBA?: row } } }
   const [eventos, setEventos] = useState({});
   const [status, setStatus] = useState("loading");
@@ -66,7 +70,8 @@ export function useEventosBitacora(intervalMs = POLL_MS) {
     load();
     const t = setInterval(load, intervalMs);
     return () => { cancelled = true; clearInterval(t); };
-  }, [intervalMs]);
+    // `signal` en deps: cada push de Bitácora re-corre el effect → load() inmediato.
+  }, [intervalMs, signal]);
 
   return { eventos, status };
 }
