@@ -25,11 +25,13 @@ export default function Dashboard() {
   const [showChart, setShowChart] = useState(false);
   const [vh, setVh] = useState(window.innerHeight);
   const [vw, setVw] = useState(window.innerWidth);
-  const { units: rtUnits, status: wsStatus, lastUpdate, accumulated, minuteDeviations, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos } = useRealtimeData();
+  const { units: rtUnits, status: wsStatus, lastUpdate, accumulated, minuteDeviations, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos, eventosSignal } = useRealtimeData();
   const { dispatchData: xmDispatch, despachoManana } = useXmDispatch();
   // F8: el hook nuevo trae AUTH/REDESP/PRUEBA. Derivamos la shape antigua (`{uid_periodo}`)
   // sólo para AUTH para que UnitCards y los totales sigan funcionando sin cambios.
-  const { eventos: eventosBitacora } = useEventosBitacora();
+  // eventosSignal (del WS) dispara un refetch inmediato cuando Bitácora guarda — reflejo casi
+  // instantáneo; el poll interno del hook queda como red de seguridad.
+  const { eventos: eventosBitacora } = useEventosBitacora(undefined, eventosSignal);
   const autorizaciones = (() => {
     const out = {};
     for (const planta of Object.keys(eventosBitacora || {})) {

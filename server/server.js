@@ -127,6 +127,31 @@ const closingProjections = {}
 
 // ── HTTP + WebSocket server ──────────────────────────────────────────────────
 const httpServer = createServer(async (req, res) => {
+  // Push interno: Bitácora (:3002) avisa que cambiaron eventos_dashboard (guardar sala de mando)
+  // y reemitimos por WS para que el frontend refetchee al instante, sin esperar el poll de 60s
+  // de useEventosBitacora. NO se expone por nginx (deploy/nginx.conf solo proxya /api/* y /ws),
+  // así que solo es alcanzable en localhost:3001. Token opcional como defensa en profundidad.
+  if (req.url === '/internal/eventos-changed' && req.method === 'POST') {
+    const token = process.env.INTERNAL_NOTIFY_TOKEN || ''
+    if (token && req.headers['x-internal-token'] !== token) {
+      res.writeHead(403).end()
+      return
+    }
+    let body = ''
+    req.on('data', (c) => { body += c; if (body.length > 10_000) req.destroy() })
+    // Guard: un reset del socket (p.ej. el emisor abortando por su timeout de 1.5s) podría emitir
+    // 'error' en el request; sin listener y sin handler de uncaughtException a nivel proceso,
+    // tumbaría el server. No se reproduce en Node 20, pero el belt cuesta cero.
+    req.on('error', () => {})
+    req.on('end', () => {
+      let payload = {}
+      try { payload = body ? JSON.parse(body) : {} } catch { /* tolerante: señal sin cuerpo válido */ }
+      wsSend({ type: 'eventos-changed', plantas: payload.plantas ?? null, fecha: payload.fecha ?? null })
+      res.writeHead(204).end()
+    })
+    return
+  }
+
   // Detailed health (aditivo — el /health original sigue intacto debajo)
   if (req.url === '/health/detailed') {
     const snapshot = buildHealthSnapshot({
@@ -369,6 +394,19 @@ wss.on('connection', (ws, req) => {
 
   ws.on('error', (err) => console.warn('[WS] Error de cliente:', err.message))
 })
+
+// Envío liviano a todos los clientes. Para mensajes que NO pasan por el pipeline del
+// acumulador (p. ej. la señal 'eventos-changed' del webhook de Bitácora): solo serializa y
+// manda, sin tocar proyección/deviation. function declaration → hoisted, usable desde el
+// handler HTTP de arriba.
+function wsSend(obj) {
+  const data = JSON.stringify(obj)
+  for (const ws of clients) {
+    if (ws.readyState === 1) {
+      try { ws.send(data) } catch { /* cliente cayéndose; el 'close' lo limpia */ }
+    }
+  }
+}
 
 // ── Broadcast a todos los clientes conectados ────────────────────────────────
 function broadcast(payload) {
