@@ -216,4 +216,50 @@ describe('ION8650ModbusClient.fetchKwTotal', () => {
     expect(calls.connectTCP).toBeGreaterThanOrEqual(2) // reconectó tras marcar desconexión
     await client.close()
   })
+
+  it('recreates the modbus instance on disconnect (recovers from a wedged socket)', async () => {
+    // Reproduce el incidente de prod: la 1ª instancia conecta, su socket muere en la
+    // lectura y luego queda WEDGED — reconectar sobre ella falla para siempre. El fix
+    // recrea la instancia vía la factory, así una instancia NUEVA sí conecta y lee.
+    const instances = []
+    let n = 0
+    const factory = () => {
+      const idx = n++
+      const inst = {
+        idx,
+        isOpen: false,
+        _connectedOnce: false,
+        setID() {}, setTimeout() {},
+        connectTCP() {
+          // La instancia #0, una vez muerta, nunca vuelve a conectar (wedged).
+          if (idx === 0 && inst._connectedOnce) {
+            const e = new Error('wedged'); e.code = 'ECONNRESET'
+            return Promise.reject(e)
+          }
+          inst._connectedOnce = true; inst.isOpen = true
+          return Promise.resolve()
+        },
+        readHoldingRegisters() {
+          if (idx === 0) { const e = new Error('socket hang up'); e.code = 'ECONNRESET'; return Promise.reject(e) }
+          return Promise.resolve({ buffer: int32Buf(1000) })
+        },
+        close(cb) { inst.isOpen = false; if (cb) cb() },
+      }
+      instances.push(inst)
+      return inst
+    }
+    const client = new ION8650ModbusClient({
+      host: '192.168.3.40', register: 40204, wordOrder: 'high', decode: 'int32',
+      scale: 1000, timeoutMs: 1000, modbusFactory: factory,
+    })
+
+    // 1er fetch: la instancia #0 conecta pero la lectura muere (ECONNRESET).
+    await expect(client.fetchKwTotal()).rejects.toBeInstanceOf(MeterError)
+    // 2º fetch: SIN el fix reusaría #0 (wedged, connectTCP rechaza) y fallaría; CON el
+    // fix usa la instancia #1 fresca y lee bien.
+    const res = await client.fetchKwTotal()
+    expect(res.kw).toBeCloseTo(1, 5)
+    expect(instances.length).toBeGreaterThanOrEqual(2) // se recreó la instancia
+    await client.close()
+  })
 })

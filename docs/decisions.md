@@ -409,3 +409,36 @@ eventosSignal)`, que lo tiene en las deps del effect → refetch inmediato. El p
 (c) Contrato nuevo documentado como **Contrato 3** en `../docs/interfaces-cross-repo.md`; lado
 emisor en Bitácora [[BIT D-043]]. (d) Emisor verificado E2E (helper contra HTTP de prueba); el
 flujo completo guardar→WS→refetch se valida en el servidor unificado post-deploy.
+
+## D-123 — Self-heal del cliente Modbus: recrear la instancia al desconectar
+
+**Fecha:** 2026-07-07
+
+**Contexto:** en prod, los medidores de Guajira (TGJ1/TGJ2, subred remota `192.168.3.x` sobre
+enlace WAN) quedaron **~43 h sin lecturas** (`meterValue=null`, ~78.475 errores consecutivos,
+`meterDownSeconds≈157.015`) mientras GEC3/GEC32 (LAN local `192.168.200.x`) seguían perfectos. El
+dashboard mostraba en las Guajiras el `acumulado` **congelado** del acumulador (rotulado como "MW"
+en el gauge vía `UnitCards.jsx`) y `generacion_periodos` sin filas del día → celdas de generación
+en 0/valores viejos vía el fallback de `proyeccion_historico`. **Un simple `update.sh` (restart,
+sin tocar env, PME sigue apagado) lo resolvió al instante** → no era ni red caída ni PME: era la
+conexión Modbus **colgada**. `ION8650ModbusClient` reusa una única instancia `modbus-serial` por
+medidor (creada una vez en `MeterPoller`) y, aunque `#markDisconnected` marcaba desconexión y
+`#ensureConnected` reconectaba cada tick, `connectTCP` sobre la **misma** instancia wedged fallaba
+indefinidamente tras un blip del enlace. Un proceso nuevo (restart) crea sockets frescos → arregla.
+
+**Decisión:** el cliente guarda su `modbusFactory` y **recrea la instancia `ModbusRTU` en cada
+`#markDisconnected`** (cierra la muerta + `this.#client = this.#modbusFactory()`). Cada reconexión
+arranca de un socket limpio — el equivalente al restart, pero automático y por-tick. Elimina de
+paso el race de `#ensureConnected` (tras `close()` async, `#client.isOpen` podía seguir `true` y
+saltarse el reconnect). Test nuevo en `meterModbusClient.test.js` que reproduce el wedge (instancia
+vieja irrecuperable, instancia nueva conecta) — falla sin el fix. Suite 150 verde.
+
+**Consecuencias:** (a) el server se auto-recupera de caídas de socket a los medidores sin necesidad
+de restart manual — crítico para TGJ1/TGJ2 por el enlace WAN inestable. (b) Costo nulo en operación
+normal (solo recrea ante error, ~1 objeto barato por tick durante un corte). (c) **No** cambia el
+diagnóstico de red: el server de GEC3 **sí** alcanza los medidores de Guajira (routing prod OK; una
+prueba desde otro segmento puede dar inalcanzable y es esperable). (d) Deuda relacionada sin cerrar:
+la alerta per-unit `meterDown` no llegó a nadie en 43 h — revisar el cableado del alerter
+(`ALERT_THRESH_METER_DOWN_MIN`); y el gauge muestra el acumulado congelado como potencia real con
+badge "MEDIDOR" cuando `valueMW=null` (engañoso) — endurecer el frontend a "SIN DATO". Cross-ref:
+[[D-116]], [[D-118]], [[D-120]].

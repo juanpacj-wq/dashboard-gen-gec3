@@ -42,6 +42,7 @@ export class ION8650ModbusClient {
   #scale
   #timeoutMs
   #client
+  #modbusFactory
   #connected = false
   #connecting = null
   #queue = Promise.resolve()
@@ -79,7 +80,10 @@ export class ION8650ModbusClient {
     this.#decode = decode
     this.#scale = scale
     this.#timeoutMs = timeoutMs
-    this.#client = (modbusFactory ?? (() => new ModbusRTU()))()
+    // Se guarda para poder RECREAR la instancia en cada desconexión (ver #markDisconnected):
+    // modbus-serial reutilizado puede quedar wedged y no reconectar nunca.
+    this.#modbusFactory = modbusFactory ?? (() => new ModbusRTU())
+    this.#client = this.#modbusFactory()
   }
 
   get host() { return this.#host }
@@ -155,7 +159,16 @@ export class ION8650ModbusClient {
 
   #markDisconnected() {
     this.#connected = false
-    try { this.#client.close(() => {}) } catch { /* ignore */ }
+    // Cierra el socket muerto Y REEMPLAZA la instancia por una fresca. modbus-serial
+    // puede quedar en un estado interno irrecuperable tras ciertos errores de socket:
+    // reconectar (connectTCP) sobre la MISMA instancia falla indefinidamente aunque la
+    // red ya esté sana. Visto en prod (2026-07-07): un enlace WAN inestable a los
+    // medidores de Guajira dejó la conexión colgada ~43 h con miles de errores
+    // consecutivos y solo se recuperó al reiniciar el proceso. Recrear la instancia da
+    // un socket limpio en cada reconexión — el equivalente al restart, pero por-tick.
+    const dead = this.#client
+    try { dead.close(() => {}) } catch { /* ignore */ }
+    this.#client = this.#modbusFactory()
   }
 
   #mapError(err) {
