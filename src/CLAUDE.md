@@ -235,6 +235,7 @@ Color palette and typography constants are defined in `src/theme.js` as `C` (col
 - The `TOTAL` line in rDEC files is filtered out in `parseAllPlants()` to prevent it from appearing in the Top 10 ticker.
 - Plant name normalization for matching: uppercase + remove all spaces (e.g., `"GECELCA 3"` → `"GECELCA3"`).
 - **Negative PME clamping**: PME readings can have negative spikes that propagate into the energy accumulator and projection. The frontend clamps display values to `>=0` for consistency: `final_` (generación) in `Table.jsx`, `proyGeneracion` (P. Generación) in `Table.jsx`, and the live `deviation` is recomputed in both `Table.jsx` (current period) and `UnitCards.jsx` using `Math.max(0, projection)` against `redespacho` (formula: `((clampedProj - redespacho) / redespacho) * 100`). `UnitCards` receives `xmDispatch` from `Dashboard.jsx` to access the current-period redespacho.
+- **Jerarquía de "Despacho Final" (D-124)**: el valor mostrado por celda es **email > bitácora REDESP > xm_fallback > rDEC**; el correo parseado es la fuente definitiva del número. La bitácora conserva sus señales (💾 + celda ámbar SIEMPRE que exista el evento, con su MW en el tooltip del 💾) aunque el valor venga del correo. `despFinalSource` es procedencia pura del valor — las señales visuales van en `isRedespBitacora`/`hasEmailFinal`. Detalle en `docs/decisions.md` D-124.
 
 ## Cómo evolucionar este archivo
 
