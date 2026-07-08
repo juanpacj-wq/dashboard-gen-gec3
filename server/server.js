@@ -75,8 +75,14 @@ const accumulator = new EnergyAccumulator({
     const periodo = hour + 1
     const redespacho = redespScraper.getState()?.[unitId]?.[hour] ?? null
     const dfEntry = getMergedDespachoFinal()?.[unitId]?.[periodo]
-    const despFinalEmail = dfEntry?.valor_mw ?? null
-    const result = computeClosed({ generacionMwh: mwh, despFinalEmail, redespachoMw: redespacho })
+    // D-124: pasar la fuente real ('email' | 'xm_fallback') para que desviacion_periodos
+    // registre la procedencia verdadera (antes todo se etiquetaba 'email').
+    const result = computeClosed({
+      generacionMwh: mwh,
+      despFinalMw: dfEntry?.valor_mw ?? null,
+      despFinalSource: dfEntry?.source ?? null,
+      redespachoMw: redespacho,
+    })
     try {
       await saveDesviacionPeriodo(unitId, date, periodo, result)
       console.log(`[Server] Desviación periodo guardada: ${unitId} p=${periodo} dev=${result.desviacionPct?.toFixed(2)}% src=${result.despFinalSource}`)

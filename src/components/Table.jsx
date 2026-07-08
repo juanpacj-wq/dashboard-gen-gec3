@@ -9,6 +9,13 @@ const EMOJI_AUTH = "⚑";
 const EMOJI_REDESP = "💾";
 const EMOJI_EMAIL = "✉"; // ✉
 
+// Tooltip del 💾: expone el valor de bitácora aunque el número mostrado venga del correo
+// (D-124: el correo manda en el valor; la bitácora conserva su señal y el valor queda
+// consultable acá para poder comparar ambas fuentes cuando difieren).
+const bitacoraTitle = (row) => row.bitacoraValorMw != null
+  ? `Redespacho desde bitácora: ${Math.round(row.bitacoraValorMw)} MW`
+  : "Redespacho desde bitácora";
+
 function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, despachoFinal, projection, desviacionPeriodos, proyeccionPeriodos, autorizaciones, eventosBitacora) {
   const baseData = ALL_DATA[unitId];
   const unit = UNITS.find(u=>u.id===unitId);
@@ -45,28 +52,32 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
     const redespSimulated = hasXmRedesp && xmRedesp == null;
     const hasRedespacho = Math.abs(despacho - redespacho) > 0.05;
 
-    // D. Final: email first, fallback to P. Despacho (redespacho) if no email
+    // D. Final — jerarquía de fuentes del VALOR mostrado (D-124):
+    //   email > bitácora REDESP > xm_fallback > redespacho (rDEC, solo periodos <= actual).
+    // El correo parseado es la fuente definitiva: si hay fila source='email' para la celda,
+    // ese es el número, sin excepción. Bitácora solo aporta el valor cuando no hay correo
+    // (le sigue ganando al xm_fallback de la API XM). despFinalSource registra la procedencia
+    // PURA del valor; las señales visuales (💾/✉/ámbar) van en flags aparte del return.
     const periodo = i + 1;
     const dfEntry = despachoFinal?.[unitId]?.[periodo];
+    const evCell = eventosBitacora?.[unitId]?.[periodo] || {};
+    const redespBitacora = evCell.REDESP;
+    const hasEmailFinal = dfEntry?.source === 'email' && dfEntry?.valor_mw != null;
+    const bitacoraValorMw = redespBitacora?.valor_mw ?? null;
     let despFinal = null;
     let despFinalSource = null;
-    if (dfEntry?.valor_mw != null) {
+    if (hasEmailFinal) {
       despFinal = dfEntry.valor_mw;
-      despFinalSource = dfEntry.source;
+      despFinalSource = 'email';
+    } else if (bitacoraValorMw != null) {
+      despFinal = bitacoraValorMw;
+      despFinalSource = 'bitacora';
+    } else if (dfEntry?.valor_mw != null) {
+      despFinal = dfEntry.valor_mw;
+      despFinalSource = dfEntry.source; // xm_fallback
     } else if (i <= currentIdx) {
       despFinal = redespacho;
       despFinalSource = 'redespacho';
-    }
-
-    // F8: REDESP de bitácora pisa al email. Si ambos coexisten (email + bitácora), el valor
-    // que se muestra es el de bitácora pero ambos emojis se superponen para no perder la
-    // señal del correo (preguntas2.md respuesta C).
-    const evCell = eventosBitacora?.[unitId]?.[periodo] || {};
-    const redespBitacora = evCell.REDESP;
-    const hasEmailDespFinal = dfEntry?.source === 'email' && dfEntry?.valor_mw != null;
-    if (redespBitacora?.valor_mw != null) {
-      despFinal = redespBitacora.valor_mw;
-      despFinalSource = hasEmailDespFinal ? 'bitacora+email' : 'bitacora';
     }
 
     // Deviation:
@@ -114,14 +125,16 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
 
     // F8: AUTH/REDESP de bitácora en la grilla.
     //  - AUTH: suprime desviación (0% + emoji autorización ⚑), incluso en futuros.
-    //  - REDESP: pisa despFinal (manejado arriba).
+    //  - REDESP: aporta el valor a despFinal solo si no hay correo (D-124, manejado arriba);
+    //    su señal visual (💾 + ámbar) se muestra SIEMPRE que exista el evento, con el valor
+    //    de bitácora en el tooltip cuando el número mostrado viene del correo.
     //  - PRUEBA: ya no se renderiza en DESVIACION — su señal vive en `UnitCards` como
     //    badge "EN PRUEBAS" para no quitarle prioridad visual a las autorizaciones.
     const isAutorizado = !!evCell.AUTH || !!autorizaciones?.[`${unitId}_${periodo}`];
     if (isAutorizado) dev = 0;
     const isRedespBitacora = !!redespBitacora;
 
-    return { ...row, despacho, redespacho, final: final_, despFinal, despFinalSource, despSimulated, redespSimulated, hasRedespacho, dev, proyGeneracion, isAutorizado, isRedespBitacora };
+    return { ...row, despacho, redespacho, final: final_, despFinal, despFinalSource, despSimulated, redespSimulated, hasRedespacho, dev, proyGeneracion, isAutorizado, isRedespBitacora, hasEmailFinal, bitacoraValorMw };
   });
 
   const hasEmailRedesp = despachoFinal?.[unitId] && Object.keys(despachoFinal[unitId]).length > 0;
@@ -267,12 +280,12 @@ function HorizontalTable({ data, unit, currentIdx, despachoManana }) {
                   content = Math.round(val);
                 } else if(rd.key==="despFinal"){
                   if(row.despFinal != null){
-                    const isFromEmail = row.despFinalSource === 'email' || row.despFinalSource === 'bitacora+email';
+                    const isFromEmail = row.hasEmailFinal;
                     const isFromBitacora = row.isRedespBitacora;
                     color = isFromBitacora ? C.amber : isFromEmail ? C.cyan : isCurrent ? C.text : C.textSec;
                     content = <>
                       {Math.round(row.despFinal)}
-                      {isFromBitacora && <span title="Redespacho desde bitácora" style={{fontSize:8,marginLeft:1}}>{EMOJI_REDESP}</span>}
+                      {isFromBitacora && <span title={bitacoraTitle(row)} style={{fontSize:8,marginLeft:1}}>{EMOJI_REDESP}</span>}
                       {isFromEmail && <span title="Despacho final del correo" style={{fontSize:8,color:C.cyan,marginLeft:1}}>{EMOJI_EMAIL}</span>}
                     </>;
                   } else {
@@ -455,7 +468,7 @@ function VerticalTable({ data, unit, currentIdx, despachoManana }) {
                 </td>
                 {/* D. Final */}
                 {(() => {
-                  const isFromEmail = row.despFinalSource === 'email' || row.despFinalSource === 'bitacora+email';
+                  const isFromEmail = row.hasEmailFinal;
                   const isFromBitacora = row.isRedespBitacora;
                   const cellColor = row.despFinal == null
                     ? C.textMuted
@@ -466,7 +479,7 @@ function VerticalTable({ data, unit, currentIdx, despachoManana }) {
                       {row.despFinal != null ? (
                         <span>
                           {Math.round(row.despFinal)}
-                          {isFromBitacora && <span title="Redespacho desde bitácora" style={{fontSize:11,marginLeft:3}}>{EMOJI_REDESP}</span>}
+                          {isFromBitacora && <span title={bitacoraTitle(row)} style={{fontSize:11,marginLeft:3}}>{EMOJI_REDESP}</span>}
                           {isFromEmail && <span title="Despacho final del correo" style={{fontSize:11,marginLeft:3,color:C.cyan}}>{EMOJI_EMAIL}</span>}
                         </span>
                       ) : (

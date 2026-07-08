@@ -264,15 +264,21 @@ export class RedespachoscraperService {
       this.#consecutiveErrors = 0
       console.log(`[RedespScraper] Datos cargados: ${Object.keys(this.#cache).join(', ')} | ${this.#nationalCache.length} plantas nacionales | ${this.#lastChangesCount} cambios`)
     } else {
-      // Archivo aún no publicado (caso esperado los primeros minutos del día)
-      this.#cache = parsed
+      // Archivo no disponible: esperado los primeros minutos del día, pero también pasa por
+      // fallos transitorios de la API a mitad del día. D-124: NUNCA pisar datos reales con
+      // los ceros sintéticos de buildEmptyItems — solo sirven de placeholder cuando aún no
+      // hay nada (cache vacío) y jamás se persisten (redespacho_programado/historico deben
+      // contener solo contenido real del archivo).
+      if (this.#cache == null) this.#cache = parsed
       this.#lastErrorAt = Date.now()
       this.#lastError = 'file-not-yet-published'
       this.#consecutiveErrors++
-      console.log(`[RedespScraper] Datos cargados: ${Object.keys(this.#cache).join(', ')} | sin datos nacionales`)
+      console.log(`[RedespScraper] Archivo rDEC no disponible — cache ${this.#cache === parsed ? 'placeholder en ceros' : 'previo retenido'} | sin datos nacionales`)
+      return
     }
 
-    // Persistir en DB (detecta cambios y audita automáticamente)
+    // Persistir en DB (detecta cambios y audita automáticamente). Solo se llega acá con
+    // contenido real del archivo (la rama sin archivo retorna arriba).
     if (this.#dbAvailable) {
       const todayStr = getColombiaDate().toISOString().slice(0, 10)
       try {

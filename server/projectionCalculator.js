@@ -37,20 +37,26 @@ export function computeLive({ acumuladoMwh, currentMw, redespachoMw, now = new D
 }
 
 /**
- * Closed-period deviation. Denominator preference: email despFinal > redespacho fallback.
+ * Closed-period deviation. Denominator preference: despacho_final row > redespacho fallback.
+ *
+ * D-124: la fuente registrada es la REAL de la fila de despacho_final ('email' | 'xm_fallback'),
+ * no un literal fijo — desviacion_periodos.desp_final_source es dato de auditoría y antes
+ * etiquetaba 'email' incluso cuando el valor venía del fallback de la API XM. Paridad con
+ * recoverSkippedPeriods (server.js), que ya atribuía dfEntry.source.
  *
  * @param {Object} args
  * @param {number} args.generacionMwh
- * @param {number|null} args.despFinalEmail - MW from email dispatch (preferred denominator)
- * @param {number|null} args.redespachoMw   - fallback denominator
+ * @param {number|null} args.despFinalMw     - MW de la fila de despacho_final (denominador preferido)
+ * @param {string|null} args.despFinalSource - fuente real de esa fila ('email' | 'xm_fallback')
+ * @param {number|null} args.redespachoMw    - denominador de fallback (rDEC)
  * @returns {{ generacionMwh: number, despFinalMw: number|null, despFinalSource: string|null, desviacionPct: number|null }}
  */
-export function computeClosed({ generacionMwh, despFinalEmail, redespachoMw }) {
+export function computeClosed({ generacionMwh, despFinalMw, despFinalSource, redespachoMw }) {
   let denominator = null
   let source = null
-  if (despFinalEmail != null && despFinalEmail > 0) {
-    denominator = despFinalEmail
-    source = 'email'
+  if (despFinalMw != null && despFinalMw > 0) {
+    denominator = despFinalMw
+    source = despFinalSource ?? null
   } else if (redespachoMw != null && redespachoMw > 0) {
     denominator = redespachoMw
     source = 'redespacho'

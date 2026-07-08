@@ -442,3 +442,39 @@ la alerta per-unit `meterDown` no llegó a nadie en 43 h — revisar el cableado
 (`ALERT_THRESH_METER_DOWN_MIN`); y el gauge muestra el acumulado congelado como potencia real con
 badge "MEDIDOR" cuando `valueMW=null` (engañoso) — endurecer el frontend a "SIN DATO". Cross-ref:
 [[D-116]], [[D-118]], [[D-120]].
+
+## D-124 — Jerarquía email-first en "Despacho Final" + atribución real de fuente + rDEC no pisa datos con ceros
+
+**Fecha:** 2026-07-08
+
+**Contexto:** la columna **Despacho Final** mostraba el valor de bitácora REDESP por encima del
+correo parseado (F8/[[D-114]]: `Table.jsx` pisaba `dfEntry` con `evento_dashboard`). Operativamente
+se decidió que el correo del CND es la fuente definitiva del número. Además, dos defectos de
+auditoría: (1) `computeClosed` etiquetaba `desp_final_source='email'` en `desviacion_periodos`
+aunque la fila viniera del fallback `xm_fallback` de la API XM (el camino de recovery
+`recoverSkippedPeriods` sí atribuía `dfEntry.source`); (2) ante un fallo transitorio de descarga
+del rDEC a mitad del día, `redespachoscraper.js` reemplazaba el cache por ceros sintéticos y los
+**persistía**, inundando `redespacho_historico` con cambios `real→0→real` y mostrando redespacho=0.
+
+**Decisión:** jerarquía del VALOR mostrado en D. Final (por unidad+periodo): **email > bitácora
+REDESP > xm_fallback > rDEC (`'redespacho'`, solo periodos ≤ actual) > simulado**. En
+`useTableData` se separó procedencia de señal: `despFinalSource` es procedencia pura
+(`email|bitacora|xm_fallback|redespacho`; desaparece el compuesto `bitacora+email`) y las señales
+visuales van en flags propios (`isRedespBitacora`, `hasEmailFinal`): 💾 + celda ámbar SIEMPRE que
+exista el evento de bitácora (aunque el número sea del correo, con su valor consultable en el
+tooltip del 💾), ✉ siempre que haya fila email. Backend: `computeClosed` acepta
+`despFinalMw`+`despFinalSource` y registra la fuente real; `onPeriodComplete` se la pasa desde
+`dfEntry.source`. `redespachoscraper.#refresh`: los ceros de `buildEmptyItems` solo se usan como
+placeholder con cache vacío y **nunca se persisten** (retorno temprano antes de
+`saveRedespachoProgBulk`).
+
+**Consecuencias:** (a) el operador ve el valor del CND (correo) sin excepción; la bitácora conserva
+señal + valor en tooltip para comparar. (b) `desviacion_periodos.desp_final_source` ya es confiable
+para auditoría (`'xm_fallback'` cabe: columna `VARCHAR(20)` sin CHECK, sin migración). (c) El
+fallback local de desviación de periodos pasados en el front ahora calcula contra el correo cuando
+coexisten fuentes — alineado con el backend, que siempre fue email-first (`computeClosed`, MERGE de
+`despacho_final`). (d) La desviación del periodo ACTUAL sigue calculándose solo contra rDEC
+(decisión explícita, sin cambio). (e) `redespacho_programado`/`redespacho_historico` solo contienen
+datos reales del archivo; un blip de la API XM retiene el último dato bueno en memoria. (f) El
+contrato cross-repo con Bit-cora-g3 no cambia (mismo consumo de `eventos-dashboard`). Cross-ref:
+[[D-114]], [[D-122]].
