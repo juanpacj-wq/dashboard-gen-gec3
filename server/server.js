@@ -23,6 +23,7 @@ import { EmailDispatchService } from './emailDispatch.js'
 import { RedespachoscraperService } from './redespachoscraper.js'
 import { DespachoscraperService } from './despachoscraper.js'
 import { computeLive, computeClosed } from './projectionCalculator.js'
+import { clampGenerationMw, clampGenerationMwh, clampDeviationPct } from '../shared/domain/generation.js'
 import { buildHealthSnapshot } from './healthSnapshot.js'
 import { Alerter } from './alerter.js'
 import { createAlertDispatcher } from './alertDispatcher.js'
@@ -94,24 +95,27 @@ const accumulator = new EnergyAccumulator({
     // closingProjection was computed synchronously in accumulator.update()
     // BEFORE the broadcast overwrites lastProjection with the new period's data.
     try {
-      const proyCierre = closingProjection ?? mwh
+      // D-125: proyección y desviación con la misma invariante que computeClosed. Antes el
+      // piso vivía solo acá (Math.max ad hoc) y no en la fórmula de desviacion_periodos:
+      // por eso las dos tablas se contradecían para el mismo periodo.
+      const proyCierre = clampGenerationMwh(closingProjection ?? mwh) ?? 0
       const desv = redespacho != null && redespacho > 0
-        ? ((Math.max(0, proyCierre) - redespacho) / redespacho) * 100
+        ? clampDeviationPct(((proyCierre - redespacho) / redespacho) * 100)
         : result.desviacionPct
       await saveProyeccionPeriodo(unitId, date, periodo, {
         proyeccionCierreMwh: proyCierre,
-        generacionRealMwh: mwh,
+        generacionRealMwh: result.generacionMwh,
         redespachoMw: redespacho,
         desviacionPct: desv,
       })
       // Feed in-memory map so the next broadcast pushes this to all clients
       ;(closingProjections[unitId] ||= {})[periodo] = {
         proyeccion_cierre_mwh: proyCierre,
-        generacion_real_mwh: mwh,
+        generacion_real_mwh: result.generacionMwh,
         redespacho_mw: redespacho,
         desviacion_pct: desv,
       }
-      console.log(`[Server] Proyección cierre guardada: ${unitId} p=${periodo} proy=${proyCierre.toFixed(2)} real=${mwh.toFixed(2)}`)
+      console.log(`[Server] Proyección cierre guardada: ${unitId} p=${periodo} proy=${proyCierre.toFixed(2)} real=${result.generacionMwh.toFixed(2)}`)
     } catch (err) {
       console.error('[Server] Error guardando proyección cierre:', err.message)
     }
@@ -428,8 +432,11 @@ function broadcast(payload) {
   const { accumulated: accSnap } = accumulator.getState()
   const projection = {}
   for (const unit of payload.units) {
-    const acumulado = accSnap[unit.id] ?? 0
-    const currentMw = unit.valueMW ?? 0
+    // D-125: acumulado y lectura instantánea con piso 0 antes de proyectar. computeLive ya
+    // los clampa, pero estos dos valores viajan tal cual en el frame WS (acumulado_mwh /
+    // current_mw), así que el piso tiene que aplicarse acá también.
+    const acumulado = clampGenerationMwh(accSnap[unit.id]) ?? 0
+    const currentMw = clampGenerationMw(unit.valueMW) ?? 0
     const redespacho = redespState?.[unit.id]?.[currentHour] ?? null
     const live = computeLive({ acumuladoMwh: acumulado, currentMw, redespachoMw: redespacho, now })
     projection[unit.id] = {
@@ -447,7 +454,9 @@ function broadcast(payload) {
     // Defensa en profundidad (D-116): con carry-forward null casi nunca llega, pero si
     // ambas fuentes mueren un null residual NO debe reintroducir un valle en el minute-bucket.
     if (unit.valueMW != null) {
-      accumulator.feedDeviation(unit.id, currentHour, colMinute, live.deviation)
+      // D-125: piso -100 en origen, no solo en la presentación. Así el minute-bucket
+      // que alimenta el chart CEP no puede guardar el valle aunque llegue dato legacy.
+      accumulator.feedDeviation(unit.id, currentHour, colMinute, clampDeviationPct(live.deviation))
     }
 
     // Feed the 3-min aggregation buffer for audit history
@@ -486,11 +495,13 @@ function broadcast(payload) {
         const prev = tracerPrevByUnit.get(unit.id)
         const acumuladoMwh = accumulated[unit.id] ?? null
         const currentMw = unit.valueMW
+        // D-125: desde E2 el valueMW del payload ya viene clampado, así que detectar
+        // negativos sobre él dejaría el flag negativeMw muerto justo en el escenario que
+        // el tracer existe para diagnosticar. La detección mira el crudo pre-clamp.
+        const currentMwRaw = unit.valueMwRaw ?? null
         const currentMwIsNull = currentMw == null
-        const currentMwIsNegative = !currentMwIsNull && currentMw < 0
-        const currentMwAfterClamp = currentMwIsNull
-          ? 0
-          : Math.max(0, Number.isFinite(currentMw) ? currentMw : 0)
+        const currentMwIsNegative = currentMwRaw != null && currentMwRaw < 0
+        const currentMwAfterClamp = clampGenerationMw(currentMw) ?? 0
 
         const dtSecondsFromPrev = prev ? (nowMs - prev.tsMs) / 1000 : null
         const areaAddedMwh = (prev && acumuladoMwh != null && prev.acumuladoMwh != null)
@@ -526,6 +537,7 @@ function broadcast(payload) {
           holding: orchSnap.holding,
           heldTicks: orchSnap.heldTicks,
           currentMw,
+          currentMwRaw,
           currentMwIsNegative,
           currentMwIsNull,
           accumulator: {
@@ -737,15 +749,19 @@ async function recoverSkippedPeriods() {
         const missingDesv = !presentDesv.has(`${unitId}_${periodo}`)
         if (!missingGen && !missingProy && !missingDesv) continue
 
-        const proyCierre = hist.proyeccion_mwh ?? 0
-        const generacion = hist.acumulado_mwh ?? 0
+        // D-125: la recovery lee de proyeccion_historico, que puede tener filas legacy
+        // negativas anteriores al backfill. Sin este piso, un arranque las reinyecta en
+        // generacion_periodos / proyeccion_periodos / desviacion_periodos y revienta la
+        // CHECK de E6 — con el extractor ya limpio.
+        const proyCierre = clampGenerationMwh(hist.proyeccion_mwh) ?? 0
+        const generacion = clampGenerationMwh(hist.acumulado_mwh) ?? 0
         const redespacho = redespState?.[unitId]?.[hora] ?? hist.redespacho_mw ?? null
         const dfEntry = dfState?.[unitId]?.[periodo]
         const despFinal = dfEntry?.valor_mw ?? null
         const denom = despFinal != null ? despFinal : redespacho
         const desv = (denom != null && denom > 0)
-          ? ((Math.max(0, proyCierre) - denom) / denom) * 100
-          : (hist.desviacion_pct ?? null)
+          ? clampDeviationPct(((proyCierre - denom) / denom) * 100)
+          : clampDeviationPct(hist.desviacion_pct ?? null)
 
         try {
           if (missingGen)  await savePeriod(unitId, today, hora, generacion)

@@ -1,5 +1,6 @@
 import { savePeriod, saveAccumState, loadAccumState } from './db.js'
 import { computeLive } from './projectionCalculator.js'
+import { clampGenerationMwh } from '../shared/domain/generation.js'
 
 // Colombia is UTC-5 (no daylight saving)
 function colombiaTime(date = new Date()) {
@@ -35,7 +36,10 @@ export class EnergyAccumulator {
       const rowDate = new Date(row.fecha).toISOString().slice(0, 10)
       if (rowDate === todayStr && row.hora === currentHour) {
         this.#state[row.unit_id] = {
-          mwh: row.energia_mwh,
+          // D-125: el checkpoint puede ser previo al backfill y traer energía negativa.
+          // Sin este piso, un restart la reinyecta y el siguiente #persistState() la
+          // vuelve a escribir, violando la CHECK de E6.
+          mwh: clampGenerationMwh(row.energia_mwh) ?? 0,
           lastMW: row.last_mw,
           lastTime: new Date(row.last_time),
           hour: row.hora,
@@ -86,7 +90,9 @@ export class EnergyAccumulator {
       } else {
         const dtHours = (now - prev.lastTime) / 3_600_000
         const areaMWh = ((prev.lastMW + mw) / 2) * dtHours
-        prev.mwh += areaMWh
+        // D-125: con el clamp del orchestrator `mw` ya llega ≥ 0, así que el área no puede
+        // ser negativa. El piso queda igual como red de seguridad del estado acumulado.
+        prev.mwh = clampGenerationMwh(prev.mwh + areaMWh) ?? 0
         prev.lastMW = mw
         prev.lastTime = now
       }
@@ -153,20 +159,24 @@ export class EnergyAccumulator {
   // hour is 0-23, stored in DB as 0-23 (maps to period hour+1 on the client)
   async #completePeriod(unitId, date, hour, mwh, closingProjection) {
     if (!this.#completed[unitId]) this.#completed[unitId] = {}
+    // D-125: el periodo cerrado sale con piso 0 hacia las tres salidas — broadcast,
+    // generacion_periodos (savePeriod) y onPeriodComplete, que es quien alimenta
+    // desviacion_periodos y proyeccion_periodos.
+    const energiaMwh = clampGenerationMwh(mwh) ?? 0
     // 2 decimales en el broadcast del periodo cerrado para la tabla despivotada
     // (VerticalTable, .toFixed(2)). La BD guarda full precision con savePeriod abajo.
-    this.#completed[unitId][hour] = Math.round(mwh * 100) / 100
+    this.#completed[unitId][hour] = Math.round(energiaMwh * 100) / 100
 
     try {
-      await savePeriod(unitId, date, hour, mwh)
-      console.log(`[Accumulator] Periodo guardado: ${unitId} hora=${hour} periodo=${hour + 1} energia=${mwh.toFixed(3)} MWh proyCierre=${closingProjection?.toFixed(3)}`)
+      await savePeriod(unitId, date, hour, energiaMwh)
+      console.log(`[Accumulator] Periodo guardado: ${unitId} hora=${hour} periodo=${hour + 1} energia=${energiaMwh.toFixed(3)} MWh proyCierre=${closingProjection?.toFixed(3)}`)
     } catch (err) {
       console.error(`[Accumulator] Error guardando periodo:`, err.message)
     }
 
     if (this.#onPeriodComplete) {
       try {
-        await this.#onPeriodComplete(unitId, date, hour, mwh, closingProjection)
+        await this.#onPeriodComplete(unitId, date, hour, energiaMwh, closingProjection)
       } catch (err) {
         console.error(`[Accumulator] Error en onPeriodComplete:`, err.message)
       }
