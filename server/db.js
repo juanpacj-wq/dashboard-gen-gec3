@@ -216,6 +216,94 @@ export async function initDB() {
   `)
 
   console.log('[DB] Schema y tablas verificadas')
+
+  await applyInvariantConstraints(db)
+}
+
+// ─── Invariante de dominio en la BD (D-125) ──────────────────────────────────
+//
+// Diez CHECK que vuelven IMPOSIBLE persistir generación negativa o desviación bajo -100%.
+// Con esto la invariante deja de depender de que cada call-site se acuerde de clampar.
+//
+// Los `IS NULL OR` no son laxitud: una desviación NULL significa "sin denominador, no
+// calculable" (periodo sin despacho final) y es un estado válido del dominio. Un
+// current_mw NULL significa "sin lectura", que es justo lo que D-105/D-116 protegen.
+
+const INVARIANT_CONSTRAINTS = [
+  { tabla: 'generacion_periodos',  nombre: 'CK_gen_periodos_no_negativa',      expr: 'energia_mwh >= 0' },
+  { tabla: 'generacion_acumulado', nombre: 'CK_gen_acum_no_negativa',          expr: 'energia_mwh >= 0' },
+  { tabla: 'desviacion_periodos',  nombre: 'CK_desv_periodos_gen_no_negativa', expr: 'generacion_mwh >= 0' },
+  { tabla: 'desviacion_periodos',  nombre: 'CK_desv_periodos_piso',            expr: 'desviacion_pct IS NULL OR desviacion_pct >= -100' },
+  { tabla: 'proyeccion_periodos',  nombre: 'CK_proy_periodos_no_negativa',     expr: 'proyeccion_cierre_mwh >= 0 AND (generacion_real_mwh IS NULL OR generacion_real_mwh >= 0)' },
+  { tabla: 'proyeccion_periodos',  nombre: 'CK_proy_periodos_piso',            expr: 'desviacion_pct IS NULL OR desviacion_pct >= -100' },
+  { tabla: 'proyeccion_actual',    nombre: 'CK_proy_actual_no_negativa',       expr: 'acumulado_mwh >= 0 AND proyeccion_mwh >= 0 AND (current_mw IS NULL OR current_mw >= 0)' },
+  { tabla: 'proyeccion_actual',    nombre: 'CK_proy_actual_piso',              expr: 'desviacion_pct IS NULL OR desviacion_pct >= -100' },
+  { tabla: 'proyeccion_historico', nombre: 'CK_proy_hist_no_negativa',         expr: 'acumulado_mwh >= 0 AND proyeccion_mwh >= 0 AND (current_mw IS NULL OR current_mw >= 0)' },
+  { tabla: 'proyeccion_historico', nombre: 'CK_proy_hist_piso',                expr: 'desviacion_pct IS NULL OR desviacion_pct >= -100' },
+]
+
+let invariantConstraintsStatus = {
+  total: INVARIANT_CONSTRAINTS.length,
+  constraintsAplicadas: 0,
+  constraintsFaltantes: INVARIANT_CONSTRAINTS.map((c) => c.nombre),
+  ok: false,
+  evaluado: false,
+}
+
+/**
+ * Estado de las constraints de invariante, para que una que no se aplicó no sea una falla
+ * SILENCIOSA: sin esto el sistema parecería blindado sin estarlo. Lo expone
+ * `/health/detailed` vía `buildHealthSnapshot`.
+ */
+export function getInvariantConstraintsStatus() {
+  return { ...invariantConstraintsStatus, constraintsFaltantes: [...invariantConstraintsStatus.constraintsFaltantes] }
+}
+
+async function applyInvariantConstraints(db) {
+  for (const c of INVARIANT_CONSTRAINTS) {
+    try {
+      // WITH CHECK es deliberado: valida los datos existentes al crearla. Un WITH NOCHECK
+      // crearía una constraint que ignora el pasado y vaciaría de sentido la auditoría.
+      await db.request().query(`
+        IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = '${c.nombre}')
+          ALTER TABLE dashboard.${c.tabla} WITH CHECK ADD CONSTRAINT ${c.nombre} CHECK (${c.expr});
+      `)
+    } catch (err) {
+      // NO se relanza: un initDB que tumba el arranque convierte un problema de DATOS en una
+      // caída total del dashboard (la lección del crash-loop de modbus-serial del 2026-07-04).
+      console.error(
+        `[DB] D-125: no se pudo crear ${c.nombre} sobre dashboard.${c.tabla} — ${err?.message ?? err}\n` +
+        `     Causa típica: la tabla todavía tiene filas que violan la invariante.\n` +
+        `     Corregilas y reiniciá:  node --env-file=<env> scripts/backfill-d125.js --apply\n` +
+        `     Diagnóstico:            node --env-file=<env> scripts/verify-invariants.js`,
+      )
+    }
+  }
+
+  // La verdad se le pregunta a la BD, no se deduce de que el ALTER no haya tirado error:
+  // una constraint creada en un arranque anterior también cuenta como aplicada.
+  try {
+    const nombres = INVARIANT_CONSTRAINTS.map((c) => `'${c.nombre}'`).join(', ')
+    const { recordset } = await db.request().query(
+      `SELECT name FROM sys.check_constraints WHERE name IN (${nombres})`,
+    )
+    const existentes = new Set(recordset.map((r) => r.name))
+    const faltantes = INVARIANT_CONSTRAINTS.filter((c) => !existentes.has(c.nombre)).map((c) => c.nombre)
+    invariantConstraintsStatus = {
+      total: INVARIANT_CONSTRAINTS.length,
+      constraintsAplicadas: INVARIANT_CONSTRAINTS.length - faltantes.length,
+      constraintsFaltantes: faltantes,
+      ok: faltantes.length === 0,
+      evaluado: true,
+    }
+    if (faltantes.length === 0) {
+      console.log(`[DB] D-125: ${INVARIANT_CONSTRAINTS.length} constraints de invariante activas`)
+    } else {
+      console.error(`[DB] D-125: FALTAN ${faltantes.length} constraints de invariante — ${faltantes.join(', ')}`)
+    }
+  } catch (err) {
+    console.error(`[DB] D-125: no se pudo verificar el estado de las constraints — ${err?.message ?? err}`)
+  }
 }
 
 /** Save a completed period */

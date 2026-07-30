@@ -17,6 +17,7 @@ import {
   getTodayProyeccionPeriodos,
   getLastHistoricoPerPeriodToday,
   savePeriod,
+  getInvariantConstraintsStatus,
 } from './db.js'
 import { EnergyAccumulator } from './accumulator.js'
 import { EmailDispatchService } from './emailDispatch.js'
@@ -172,6 +173,7 @@ const httpServer = createServer(async (req, res) => {
       emailDispatchTGJ,
       despachoScraper: despScraper,
       redespachoScraper: redespScraper,
+      invariantConstraints: getInvariantConstraintsStatus,   // D-125
       clientsCount: clients.size,
     })
     res.writeHead(200, { 'Content-Type': 'application/json' })

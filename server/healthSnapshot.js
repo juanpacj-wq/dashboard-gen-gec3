@@ -17,6 +17,10 @@
  * @param {object} [deps.despachoScraper]    DespachoscraperService (.getStatus())
  * @param {object} [deps.redespachoScraper]  RedespachoscraperService (.getStatus())
  * @param {number} [deps.clientsCount]       Conexiones WS activas (server.js sabe clients.size)
+ * @param {object|Function} [deps.invariantConstraints] Estado de las CHECK de invariante
+ *                                           (D-125): `getInvariantConstraintsStatus` de db.js,
+ *                                           o su resultado. Se inyecta en vez de importar db.js
+ *                                           acá porque ese módulo abre el pool al importarse.
  * @param {number} [deps.now=Date.now()]     Inyectable para tests
  * @returns {object} snapshot canónico
  */
@@ -26,6 +30,14 @@ export function buildHealthSnapshot(deps) {
     if (svc == null || typeof svc.getStatus !== 'function') return null
     try { return svc.getStatus() } catch { return null }
   }
+
+  // Una constraint que no se aplicó tiene que ser VISIBLE: si no, el sistema parece blindado
+  // sin estarlo, que es peor que no tener blindaje.
+  const invariantes = (() => {
+    const v = deps.invariantConstraints
+    if (v == null) return null
+    try { return typeof v === 'function' ? v() : v } catch { return null }
+  })()
 
   return {
     evaluatedAt: new Date(now).toISOString(),
@@ -38,6 +50,7 @@ export function buildHealthSnapshot(deps) {
       despachoScraper:   safe(deps.despachoScraper),
       redespachoScraper: safe(deps.redespachoScraper),
     },
+    invariantes,
     summary: {
       clientsConnected: deps.clientsCount ?? null,
     },
