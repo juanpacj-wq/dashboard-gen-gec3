@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { C, FONT, MONO, tint } from "../theme";
 import { UNITS, ALL_DATA } from "../data/units";
+import { clampGenerationMwh, clampDeviationPct } from "../../shared/domain/generation.js";
 
 // F8: emojis para los efectos de bitácora. Sujetos a refinamiento con el usuario; si cambia
 // el set, modificar acá y propaga a todos los renders. PRUEBA ya no se renderiza en
@@ -47,7 +48,7 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
     } else {
       final_ = 0;
     }
-    final_ = Math.max(0, final_);
+    final_ = clampGenerationMwh(final_) ?? 0;
     const despSimulated = hasXmDesp && xmDesp == null;
     const redespSimulated = hasXmRedesp && xmRedesp == null;
     const hasRedespacho = Math.abs(despacho - redespacho) > 0.05;
@@ -95,17 +96,21 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
       // would otherwise yield bogus deviations even when generation is 0).
       const rawProj = liveProjection?.projection;
       if (rawProj != null && redespacho > 0) {
-        const clampedProj = Math.max(0, rawProj);
-        dev = ((clampedProj - redespacho) / redespacho) * 100;
+        const clampedProj = clampGenerationMwh(rawProj) ?? 0;
+        dev = clampDeviationPct(((clampedProj - redespacho) / redespacho) * 100);
       } else {
-        dev = liveProjection?.deviation ?? null;
+        dev = clampDeviationPct(liveProjection?.deviation);
       }
     } else {
+      // D-125: la fila histórica se pintaba VERBATIM mientras GENERACION y P. GENERACION de
+      // la misma columna sí se clampaban. Esa asimetría es la que mostraba "0.0 MWh" junto a
+      // "-142%". El clamp del front sigue haciendo falta acá porque la BD conserva filas
+      // legacy hasta el backfill, y porque la 2ª instancia puede quedar sin migrar.
       const histEntry = unitDesvHist[periodo];
       if (histEntry?.desviacion_pct != null) {
-        dev = histEntry.desviacion_pct;
+        dev = clampDeviationPct(histEntry.desviacion_pct);
       } else if (despFinal != null && despFinal > 0) {
-        dev = ((final_ - despFinal) / despFinal) * 100;
+        dev = clampDeviationPct(((final_ - despFinal) / despFinal) * 100);
       }
     }
 
@@ -121,7 +126,7 @@ function useTableData(unitId, xmDispatch, pmeAccumulated, completedPeriods, desp
     } else {
       proyGeneracion = unitProyHist[periodo]?.proyeccion_cierre_mwh ?? null;
     }
-    if (proyGeneracion != null) proyGeneracion = Math.max(0, proyGeneracion);
+    if (proyGeneracion != null) proyGeneracion = clampGenerationMwh(proyGeneracion) ?? 0;
 
     // F8: AUTH/REDESP de bitácora en la grilla.
     //  - AUTH: suprime desviación (0% + emoji autorización ⚑), incluso en futuros.

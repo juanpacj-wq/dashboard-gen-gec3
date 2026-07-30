@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { C, FONT, MONO, tint } from "../theme";
 import { UNITS } from "../data/units";
+import { clampGenerationMw, clampDeviationPct } from "../../shared/domain/generation.js";
 
 export function Chart({ unitId, width, height, minuteDeviations, realtimeUnit }) {
   const [tip, setTip] = useState(null);
@@ -21,11 +22,15 @@ export function Chart({ unitId, width, height, minuteDeviations, realtimeUnit })
   const unit = UNITS.find(u => u.id === unitId);
 
   const chartData = useMemo(() => {
+    // D-125: la serie no tenía ningún filtro, así que con el acumulado negativo el CEP
+    // dibujaba una sierra de -100% a -140% dentro de cada hora. Los null se preservan como
+    // huecos: convertirlos en -100 inventaría puntos que nunca se midieron.
     const raw = minuteDeviations?.[unitId] || [];
     const pts = [];
     for (let m = 0; m < 60; m++) {
       if (raw[m] != null) {
-        pts.push({ x: m, y: raw[m] });
+        const y = clampDeviationPct(raw[m]);
+        if (y != null) pts.push({ x: m, y });
       }
     }
     return pts;
@@ -97,7 +102,7 @@ export function Chart({ unitId, width, height, minuteDeviations, realtimeUnit })
       </div>
       {realtimeUnit?.valueMW != null && (
         <div style={{ display: "flex", alignItems: "baseline", gap: 3, paddingLeft: 17, marginBottom: 2, flexShrink: 0 }}>
-          <span style={{ fontSize: 42, fontWeight: 800, color: unit.color, fontFamily: MONO }}>{Math.max(0, realtimeUnit.valueMW).toFixed(1)}</span>
+          <span style={{ fontSize: 42, fontWeight: 800, color: unit.color, fontFamily: MONO }}>{(clampGenerationMw(realtimeUnit.valueMW) ?? 0).toFixed(1)}</span>
           <span style={{ fontSize: 30, fontWeight: 500, color: C.textMuted, fontFamily: MONO }}>MW</span>
         </div>
       )}

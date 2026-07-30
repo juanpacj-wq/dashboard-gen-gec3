@@ -10,6 +10,7 @@ import { Table } from "./components/Table";
 import { useRealtimeData } from "./hooks/useRealtimeData";
 import { useXmDispatch } from "./hooks/useXmDispatch";
 import { useEventosBitacora } from "./hooks/useEventosBitacora";
+import { clampGenerationMw } from "../shared/domain/generation.js";
 
 
 const STATUS_CFG = {
@@ -58,7 +59,7 @@ export default function Dashboard() {
   const totalGen = UNITS.reduce((s, u) => {
     if (isUnitAuthorized(u.id)) return s;
     const rt = rtUnits.find(r => r.id === u.id);
-    return s + Math.max(0, rt?.valueMW ?? 0);
+    return s + (clampGenerationMw(rt?.valueMW) ?? 0);
   }, 0);
   const totalRedesp = UNITS.reduce((s, u) => {
     if (isUnitAuthorized(u.id)) return s;

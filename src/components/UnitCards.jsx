@@ -2,11 +2,13 @@ import { useMemo } from "react";
 import { C, MONO, FONT } from "../theme";
 import { UNITS } from "../data/units";
 import { MiniGauge } from "./MiniGauge";
+import { clampGenerationMw, clampGenerationMwh, clampDeviationPct } from "../../shared/domain/generation.js";
 
 function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, projection, xmDispatch, autorizaciones, eventosBitacora }) {
   // Generación actual (PME acumulado del periodo actual)
-  const pmeGen = Math.max(0, pmeAccumulated?.[u.id] ?? 0);
-  const currentMW = realtimeUnit?.valueMW != null ? Math.max(0, realtimeUnit.valueMW) : pmeGen;
+  const pmeGen = clampGenerationMwh(pmeAccumulated?.[u.id]) ?? 0;
+  // Sin lectura (valueMW null) cae al acumulado, no a 0: el helper propaga el null.
+  const currentMW = clampGenerationMw(realtimeUnit?.valueMW) ?? pmeGen;
   const maxMW = realtimeUnit?.maxMW ?? u.capacity;
 
   // Badge debug: indica si el valor viene del medidor primario (ION8650) o del fallback PME.
@@ -29,10 +31,10 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
   const currentIdx = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Bogota" })).getHours();
   const redespacho = xmDispatch?.[u.id]?.redespacho?.[currentIdx];
   const rawProj = projection?.[u.id]?.projection;
-  let dev = projection?.[u.id]?.deviation ?? 0;
+  let dev = clampDeviationPct(projection?.[u.id]?.deviation) ?? 0;
   if (rawProj != null && redespacho != null && redespacho > 0) {
-    const clampedProj = Math.max(0, rawProj);
-    dev = ((clampedProj - redespacho) / redespacho) * 100;
+    const clampedProj = clampGenerationMwh(rawProj) ?? 0;
+    dev = clampDeviationPct(((clampedProj - redespacho) / redespacho) * 100);
   }
 
   // Autorización vigente: suprime la desviación (dev=0, verde, banderita).
