@@ -1,5 +1,6 @@
 import { MeterPoller } from './meterPoller.js'
 import { PMEScraper } from './scraper.js'
+import { clampGenerationMw } from '../shared/domain/generation.js'
 
 const DEFAULT_POLL_MS = 2000
 const DEFAULT_RECOVERY_THRESHOLD = 2
@@ -318,12 +319,20 @@ export class ExtractorOrchestrator {
       }
 
       // ── Cálculo de valueMW ─────────────────────────────────────────────────
-      let valueMW
-      if (state.source === 'meter')    valueMW = meterValid ? meter.value : (state.holding ? state.lastGoodMeter.value : null)
-      else if (state.source === 'pme') valueMW = pmeValid ? pme.value : null
-      else                             valueMW = null
+      let valueMwRaw
+      if (state.source === 'meter')    valueMwRaw = meterValid ? meter.value : (state.holding ? state.lastGoodMeter.value : null)
+      else if (state.source === 'pme') valueMwRaw = pmeValid ? pme.value : null
+      else                             valueMwRaw = null
 
-      mergedUnits.push({ id: unit.id, label: unit.label, valueMW, maxMW: unit.maxMW, source: state.source, holding: state.holding })
+      // Invariante de dominio (D-125): la generación nunca es negativa. Este es el único
+      // punto donde nace el valueMW canónico — fusiona medidor, PME y carry-forward —, así
+      // que un solo clamp acá cubre las tres procedencias y todo lo que va aguas abajo
+      // (accumulator, proyección, broadcast, BD). clampGenerationMw propaga null a
+      // propósito: "sin lectura" nunca se convierte en "generando 0 MW" (D-105/D-116).
+      // valueMwRaw viaja en el payload para que el clamp sea observable y no silencioso.
+      const valueMW = clampGenerationMw(valueMwRaw)
+
+      mergedUnits.push({ id: unit.id, label: unit.label, valueMW, valueMwRaw, maxMW: unit.maxMW, source: state.source, holding: state.holding })
 
       if (valueMW !== null) {
         const prevVal = this.#prevValuesByUnit.get(unit.id)

@@ -129,7 +129,10 @@ describe('ExtractorOrchestrator — caso ideal (meter primario sirviendo)', () =
     const last = onData.mock.calls.at(-1)[0]
     expect(last.type).toBe('update')
     expect(last.units.find((u) => u.id === 'TGJ1').valueMW).toBe(70)
-    expect(last.units.find((u) => u.id === 'GEC3').valueMW).toBe(-0.5)
+    // D-125: el -0.5 del medidor (auxiliares en frontera de entrada) ya no se propaga como
+    // generación; el canónico es 0 y el crudo queda visible en valueMwRaw.
+    expect(last.units.find((u) => u.id === 'GEC3').valueMW).toBe(0)
+    expect(last.units.find((u) => u.id === 'GEC3').valueMwRaw).toBe(-0.5)
 
     const status = orch.getStatus()
     for (const id of ['TGJ1', 'TGJ2', 'GEC3', 'GEC32']) {
@@ -591,5 +594,102 @@ describe('ExtractorOrchestrator — pmeEnabled=false (D-120)', () => {
     emitAll(meter, null); await tick()
     expect(orch.getStatus().perUnit.TGJ1.source).toBe('pme')
     expect(orch.getStatus().pmeEnabled).toBe(true)
+  })
+})
+
+describe('ExtractorOrchestrator — invariante de generación (D-125)', () => {
+  let orch, meter, pme, onData
+  afterEach(async () => { await orch?.stop(); vi.useRealTimers() })
+
+  const unitOf = (last, id) => last.units.find((u) => u.id === id)
+
+  // Caso GEC32 del 2026-07-30: la unidad estaba parada consumiendo auxiliares y el medidor,
+  // que está en frontera de entrada, entregaba ≈ -14.7 MW. Ese negativo se integraba como
+  // energía y terminaba en una desviación de -142.27% en desviacion_periodos.
+  it('unidad en reserva: el medidor entrega -14.7 → canónico 0, crudo visible', async () => {
+    vi.useFakeTimers()
+    ;({ orch, meter, onData } = buildOrchestrator())
+    await orch.start()
+    emitAll(meter, -14.7); await tick()
+
+    const gec32 = unitOf(onData.mock.calls.at(-1)[0], 'GEC32')
+    expect(gec32.valueMW).toBe(0)
+    expect(gec32.valueMwRaw).toBe(-14.7)
+    expect(gec32.source).toBe('meter')
+  })
+
+  // LIVENESS — este test es el que impide que el clamp se coma la alerta de medidor caído.
+  // null significa "sin lectura", no "cero": si el canónico fuera 0, el accumulator volvería
+  // a integrar (D-105/D-116 hacen continue con null) y el medidor muerto se vería sano.
+  it('medidor muerto: null sigue siendo null, nunca 0', async () => {
+    vi.useFakeTimers()
+    ;({ orch, meter, onData } = buildOrchestrator({ holdTtlMs: 2 * POLL_MS }))
+    await orch.start()
+
+    // Arranque en frío sin lastGoodMeter ni PME
+    emitAll(meter, null); await tick()
+    let tgj1 = unitOf(onData.mock.calls.at(-1)[0], 'TGJ1')
+    expect(tgj1.valueMW).toBeNull()
+    expect(tgj1.valueMwRaw).toBeNull()
+
+    // Y también después de haber tenido lecturas buenas, con el TTL del hold ya expirado
+    emitAll(meter, 50); await tick()
+    emitAll(meter, null); await tick()   // HOLD
+    emitAll(meter, null); await tick()   // TTL expira, sin PME
+    tgj1 = unitOf(onData.mock.calls.at(-1)[0], 'TGJ1')
+    expect(tgj1.valueMW).toBeNull()
+    expect(tgj1.valueMwRaw).toBeNull()
+  })
+
+  it('hold (D-116) con último valor bueno negativo: retiene -14.7 crudo y sirve 0', async () => {
+    vi.useFakeTimers()
+    ;({ orch, meter, onData } = buildOrchestrator())   // TTL default 3 min: no expira
+    await orch.start()
+    emitAll(meter, -14.7); await tick()
+    emitAll(meter, null); await tick()
+
+    const gec3 = unitOf(onData.mock.calls.at(-1)[0], 'GEC3')
+    expect(gec3.valueMW).toBe(0)
+    expect(gec3.valueMwRaw).toBe(-14.7)
+    expect(gec3.holding).toBe(true)
+    expect(gec3.source).toBe('meter')
+    // El carry-forward guarda el crudo: el clamp no contamina la evidencia forense.
+    expect(orch.getTickSnapshot('GEC3').lastGoodMeterValue).toBe(-14.7)
+  })
+
+  it('generación real: el clamp no toca valores válidos', async () => {
+    vi.useFakeTimers()
+    ;({ orch, meter, onData } = buildOrchestrator())
+    await orch.start()
+    emitAll(meter, 150); await tick()
+
+    const gec32 = unitOf(onData.mock.calls.at(-1)[0], 'GEC32')
+    expect(gec32.valueMW).toBe(150)
+    expect(gec32.valueMwRaw).toBe(150)
+  })
+
+  it('el clamp también aplica al valor servido por PME', async () => {
+    vi.useFakeTimers()
+    ;({ orch, meter, pme, onData } = buildOrchestrator({ holdTtlMs: 2 * POLL_MS }))
+    await orch.start()
+    emitAll(meter, 50); emitAll(pme, -12.3); await tick()
+    emitAll(meter, null); emitAll(pme, -12.3); await tick()   // HOLD
+    emitAll(meter, null); emitAll(pme, -12.3); await tick()   // TTL expira → pme
+
+    const tgj1 = unitOf(onData.mock.calls.at(-1)[0], 'TGJ1')
+    expect(tgj1.source).toBe('pme')
+    expect(tgj1.valueMW).toBe(0)
+    expect(tgj1.valueMwRaw).toBe(-12.3)
+  })
+
+  it('los caches quedan crudos: getStatus().meterValue y getTickSnapshot() no se clampan', async () => {
+    vi.useFakeTimers()
+    ;({ orch, meter } = buildOrchestrator())
+    await orch.start()
+    emitAll(meter, -14.7); await tick()
+
+    // Observabilidad del extractor ≠ dato de negocio: acá se ve lo que el medidor midió.
+    expect(orch.getStatus().perUnit.GEC32.meterValue).toBe(-14.7)
+    expect(orch.getTickSnapshot('GEC32').meterRaw).toBe(-14.7)
   })
 })
