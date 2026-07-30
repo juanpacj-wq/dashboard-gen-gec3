@@ -68,6 +68,19 @@ La normalización de `−0 → 0` es por estética: `Object.is(-0, 0)` retorna `
 
 La inversión es un **concern del extractor solamente**. Lo demás del pipeline ve los datos en la misma convención que veía cuando leía del PME.
 
+## Separación de capas: signo físico ≠ invariante de dominio (D-125)
+
+Este documento describe **una sola** de las dos reglas que actúan sobre el valor. No confundirlas:
+
+| Capa | Regla | Dónde vive |
+|---|---|---|
+| **Física** | Inversión de signo por frontera de medición (entrada vs salida) | `meterPoller.js` — lo que describe este archivo |
+| **Dominio** | Generación ≥ 0 · desviación ≥ −100% | `shared/domain/generation.js`, aplicada en `ExtractorOrchestrator.#tick()` |
+
+**El poller sigue emitiendo valores negativos y eso es correcto.** Con una unidad parada consumiendo auxiliares, `−0.745 MW` es la lectura física verdadera y así viaja hasta el orchestrator, que recién ahí aplica el piso de dominio. El valor pre-clamp queda disponible en `valueMwRaw` del payload y en el trace (`deviationTracer`), así que siempre se puede auditar **cuál de las dos capas** produjo un número.
+
+Mezclarlas —clampar dentro del poller— habría hecho imposible distinguir "el medidor leyó negativo" de "el sistema decidió reportar 0", y habría invalidado los tres tests de convención de signos. Detalle en `docs/decisions.md` D-125.
+
 ## Si en el futuro aparece un nuevo medidor
 
 Para una unidad nueva, identificar la frontera física:
@@ -83,7 +96,7 @@ Para una unidad nueva, identificar la frontera física:
 ## Edge cases
 
 - **Cero exacto:** El medidor reporta `0.00 kW`. Después de invertir → `−0`. La normalización lo lleva a `0`. ✓
-- **Valores negativos en frontera output:** Posible cuando una Guajira está parada y consume auxiliares por la línea de salida. El medidor reporta negativo, no se invierte → llega negativo al dashboard, igual que el PME. ✓
+- **Valores negativos en frontera output:** Posible cuando una Guajira está parada y consume auxiliares por la línea de salida. El medidor reporta negativo y el poller **no lo invierte** (correcto: es la lectura física). Desde D-125 ese negativo **no llega negativo al dashboard**: el orchestrator lo clampa a `0` y el crudo queda en `valueMwRaw` y en el trace. ✓
 - **Frontera mixta (un medidor por dirección):** No es nuestro caso hoy. Si llega a aparecer (poco probable en una planta), la solución es campos `frontierType` por medidor en lugar de por unidad. No vale la pena complicar la API hasta que aparezca.
 
 ## Tests

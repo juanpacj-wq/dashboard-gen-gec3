@@ -478,3 +478,64 @@ coexisten fuentes — alineado con el backend, que siempre fue email-first (`com
 datos reales del archivo; un blip de la API XM retiene el último dato bueno en memoria. (f) El
 contrato cross-repo con Bit-cora-g3 no cambia (mismo consumo de `eventos-dashboard`). Cross-ref:
 [[D-114]], [[D-122]].
+
+## D-125 — Invariante de dominio: la generación nunca es negativa, la desviación nunca baja de −100%
+
+**Fecha:** 2026-07-30
+
+**Contexto:** los ION8650 de Gecelca están en **frontera de entrada**, así que con la unidad
+parada consumiendo auxiliares el valor canónico queda negativo (≈ −14,7 MW en GEC32). Eso es
+físicamente correcto y `meterPoller.js` lo trata bien ([[D-118]], `SIGN_CONVENTION.md`). El
+defecto era aguas abajo: `computeClosed()` era la **única fórmula de desviación del repo sin
+piso en el numerador**, así que GEC32 el 2026-07-30 p8 (−14,79 MWh contra un despacho final de
+35 MW) daba **−142,27 %** en `desviacion_periodos`, mientras `proyeccion_periodos` —escrita
+tres líneas más abajo, en el mismo callback `onPeriodComplete`— ya decía **−100**. Dos tablas
+contradiciéndose en BD para el mismo periodo. En pantalla el efecto era una celda con
+`GENERACION 0.0` al lado de `DESVIACION −142 %`, porque el front clampaba la generación pero
+pintaba la desviación histórica verbatim. `computeLive` clampaba `currentMw` pero no el
+acumulado, así que la desviación viva caía de −100 % a −140 % dentro de cada hora y el chart
+CEP dibujaba una sierra descendente.
+
+**Decisión:** definir la invariante **una sola vez** en `shared/domain/generation.js`
+(directorio nuevo en la raíz, lo importan `server/` y `src/`) con
+`clampGenerationMw/Mwh/DeviationPct`, y blindarla en tres capas:
+
+1. **Código.** El clamp canónico va en `ExtractorOrchestrator.#tick()`, el único punto donde
+   nace el `valueMW` del sistema — fusiona medidor, PME y carry-forward ([[D-116]]), así que un
+   solo clamp cubre las tres procedencias. El payload gana `valueMwRaw` con el valor pre-clamp
+   para que el clamp sea **observable y no silencioso**. Aguas abajo se blindan los cálculos
+   derivados, incluidos tres caminos que el diagnóstico inicial no había visto: lo que
+   `saveProyeccionPeriodo` persiste (el `Math.max` de `server.js` solo cubría el cálculo de la
+   desviación, no las columnas guardadas), los campos `acumulado_mwh`/`current_mw` del frame WS
+   (que no pasaban por `computeLive`), y la hidratación del checkpoint en `accumulator.init()`.
+2. **Datos.** Backfill auditable de lo ya persistido (`scripts/backfill-d125.js`), con rastro
+   celda por celda en `dashboard.correccion_d125`.
+3. **BD.** Diez CHECK `WITH CHECK` creadas en `initDB()` que vuelven la violación **imposible**.
+
+**Separación de capas — la decisión central.** La **inversión de signo** por frontera de
+medición es dominio **físico** y sigue viviendo en `meterPoller.js`: el poller sigue emitiendo
+negativos y eso es correcto. La **invariante** (generación ≥ 0) es dominio de **negocio** y vive
+en el módulo compartido, aplicada aguas abajo. Mezclarlas habría hecho imposible auditar cuál de
+las dos produjo un valor, y habría invalidado `SIGN_CONVENTION.md`.
+
+**Null-safety (restricción dura).** Los tres helpers propagan `null`. `Math.max(0, null)`
+devuelve `0`, y eso convertiría un medidor muerto en "generando 0 MW": el accumulator volvería a
+integrarlo —rompiendo [[D-105]]/[[D-116]], que explícitamente hacen `continue` con null— y la
+alerta de medidor caído se apagaría. Un `Math.max` pelado en un call-site de esta invariante es
+un bug de liveness disfrazado.
+
+**Consecuencias:** (a) `computeClosed` devuelve la generación **clampada**, que es lo que se
+persiste, así que las dos escrituras de `onPeriodComplete` por fin coinciden. (b) Corregidas en
+`PortalG3` **61.802 filas / 172.621 celdas** en las 6 tablas —el grueso, 161.440 celdas, en
+`proyeccion_historico`, que es append-only cada 3 min—, peor caso −162,39 % y −20,26 MWh; el
+original de cada celda es recuperable desde `correccion_d125`. (c) Una desviación `NULL` sigue
+siendo válida y significa "sin denominador, no calculable" (periodo sin despacho final); la UI
+la pinta como `–` y las constraints la admiten explícitamente. (d) `/health/detailed` expone
+`invariantes.{constraintsAplicadas, constraintsFaltantes, ok}`: una constraint que no se aplicó
+sería si no una falla silenciosa, con el sistema pareciendo blindado sin estarlo. (e) El `ALTER`
+va en try/catch por constraint — un `initDB()` que tumba el arranque convertiría un problema de
+datos en una caída total del dashboard. (f) **Orden obligatorio al desplegar en una instancia
+nueva: código → backfill → reiniciar.** Una CHECK sobre datos sucios falla. Runbook en
+`docs/runbooks/99-Diagnostico/invariante-generacion.md`. (g) Divergencia deliberada: el sink
+Python ([[D-121]]) sigue escribiendo kW **crudo con signo** al Lakehouse — es almacén de
+telemetría, no de dominio. Cross-ref: [[D-116]], [[D-118]], [[D-121]], [[D-124]].

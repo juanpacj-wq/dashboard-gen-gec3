@@ -81,6 +81,8 @@ Misma topología que `../server/config.js`. Si una cambia, la otra también. Det
 
 4. **Inversión de signo a nivel unidad** (después de combinar). Mismo patrón que Node. Para GEC3 con `combine='sum'`: primero `sum`, después `aplicar_signo`. Función pura en `sign_convention.py` que normaliza `-0.0 → +0.0`.
 
+   **Divergencia deliberada con el dashboard (D-125): acá NO se clampa a 0.** Desde D-125 el Node side aplica una invariante de dominio (generación ≥ 0) y reporta `0` cuando la unidad solo consume auxiliares. Este sink **sigue escribiendo el kW crudo con signo**, negativos incluidos, porque el Lakehouse es **almacén de telemetría**, no de dominio: clamparlo destruiría el dato real del consumo de auxiliares, que es justamente lo que se quiere poder analizar en Power BI. Que Fabric muestre `-14700 kW` mientras el dashboard muestra `0 MW` para el mismo instante **no es un bug** — son dos capas distintas mirando el mismo medidor. No "arreglar" la diferencia. Detalle en `../docs/decisions.md` **D-125**.
+
 5. **Validación fail-fast al cargar `config.py`, protocol-aware**: con `METER_PROTOCOL=modbus` (default) solo exige las `IP_*`; con `http` exige además `USER_MEDIDORES`/`PSW_*`. Levanta `ValueError` con la lista **completa** de variables faltantes. Saltable con `CONFIG_SKIP_VALIDATION=1` para tests/scripts ad-hoc.
 
 6. **Cache de tokens por scope** en `fabric_writer.py`. Los scopes son DISTINTOS:
