@@ -3,5 +3,5 @@
   "unitOrder": ["TGJ1", "TGJ2", "GEC3", "GEC32"],
   "defaultUnit": "TGJ1",
   "bitacoraPlantas": ["GEC3", "GEC32"],
-  "branding": { "title": "Dashboard Generación", "logo": "/G3 blanco.png", "logoAlt": "Gecelca" }
+  "branding": { "title": "Dashboard Generación", "logo": "/logo-g3-blanco.png", "logoAlt": "Gecelca" }
 }

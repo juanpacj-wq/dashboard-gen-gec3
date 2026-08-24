@@ -14,7 +14,7 @@ const DEFAULTS = {
   unitOrder: ["GEC3", "GEC32", "TGJ1", "TGJ2"],
   defaultUnit: "GEC3",
   bitacoraPlantas: ["GEC3", "GEC32"],
-  branding: { title: "Dashboard Generación", logo: "/G3 blanco.png", logoAlt: "Gecelca" },
+  branding: { title: "Dashboard Generación", logo: "/logo-g3-blanco.png", logoAlt: "Gecelca" },
 };
 
 let cfg = DEFAULTS;
