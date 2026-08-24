@@ -766,7 +766,12 @@ async function recoverSkippedPeriods() {
           : clampDeviationPct(hist.desviacion_pct ?? null)
 
         try {
-          if (missingGen)  await savePeriod(unitId, today, hora, generacion)
+          if (missingGen) {
+            await savePeriod(unitId, today, hora, generacion)
+            // El broadcast lee accumulator.#completed: sin esto el periodo recuperado
+            // queda en BD pero el front lo sigue viendo en 0.0 hasta el próximo restart.
+            accumulator.setCompleted(unitId, hora, generacion)
+          }
           if (missingProy) {
             await saveProyeccionPeriodo(unitId, today, periodo, {
               proyeccionCierreMwh: proyCierre,
@@ -860,8 +865,14 @@ async function start() {
 start()
 
 // ── Apagado limpio ───────────────────────────────────────────────────────────
-process.on('SIGINT', async () => {
-  console.log('\n[Server] Apagando…')
+// systemd manda SIGTERM (no SIGINT). Sin este handler el proceso no cerraba ordenado:
+// systemd esperaba 90 s y lo mataba con SIGKILL (journal 2026-08-24), sin flush del
+// acumulador ni cierre del navegador del scraper.
+let shuttingDown = false
+async function shutdown(signal) {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log(`\n[Server] Apagando… (${signal})`)
   alerter.stop()
   clearInterval(projectionSaveInterval)
   clearInterval(proyHistFlushInterval)
@@ -874,4 +885,6 @@ process.on('SIGINT', async () => {
   await tracer.close()
   httpServer.close()
   process.exit(0)
-})
+}
+process.on('SIGINT', () => shutdown('SIGINT'))
+process.on('SIGTERM', () => shutdown('SIGTERM'))

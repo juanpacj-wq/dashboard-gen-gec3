@@ -4,9 +4,53 @@ vi.mock('../db.js', () => ({
   savePeriod: vi.fn().mockResolvedValue(undefined),
   saveAccumState: vi.fn().mockResolvedValue(undefined),
   loadAccumState: vi.fn().mockResolvedValue([]),
+  getTodayPeriods: vi.fn().mockResolvedValue([]),
 }))
 
 const { EnergyAccumulator } = await import('../accumulator.js')
+const db = await import('../db.js')
+
+// Hora Bogotá actual (0-23), igual que colombiaTime() del módulo
+const bogotaHour = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' })).getHours()
+
+describe('EnergyAccumulator.init() — rehidratación de periodos cerrados (restart)', () => {
+  it('carga en completedPeriods las horas < actual que hay en generacion_periodos', async () => {
+    const h = bogotaHour()
+    db.getTodayPeriods.mockResolvedValueOnce([
+      { unit_id: 'GEC3', hora: Math.max(0, h - 2), energia_mwh: 158.567 },
+      { unit_id: 'GEC3', hora: Math.max(0, h - 1), energia_mwh: 158.8 },
+      { unit_id: 'GEC3', hora: h, energia_mwh: 50 },          // hora en curso: NO es periodo cerrado
+      { unit_id: 'TGJ1', hora: Math.max(0, h - 1), energia_mwh: -3 }, // legacy negativo → piso 0 (D-125)
+    ])
+    const acc = new EnergyAccumulator()
+    await acc.init()
+    const { completedPeriods } = acc.getState()
+    if (h >= 2) {
+      expect(completedPeriods.GEC3[h - 2]).toBe(158.57)
+      expect(completedPeriods.GEC3[h - 1]).toBe(158.8)
+      expect(completedPeriods.TGJ1[h - 1]).toBe(0)
+    }
+    expect(completedPeriods.GEC3?.[h]).toBeUndefined()
+    await acc.stop()
+  })
+
+  it('si la consulta falla, arranca sin periodos pero no revienta', async () => {
+    db.getTodayPeriods.mockRejectedValueOnce(new Error('db down'))
+    const acc = new EnergyAccumulator()
+    await expect(acc.init()).resolves.toBeUndefined()
+    expect(acc.getState().completedPeriods).toEqual({})
+    await acc.stop()
+  })
+})
+
+describe('EnergyAccumulator.setCompleted()', () => {
+  it('registra con 2 decimales y no pisa un valor existente', () => {
+    const acc = new EnergyAccumulator()
+    acc.setCompleted('GEC3', 3, 158.567)
+    acc.setCompleted('GEC3', 3, 1)
+    expect(acc.getState().completedPeriods).toEqual({ GEC3: { 3: 158.57 } })
+  })
+})
 
 describe('EnergyAccumulator.getStatus() — shape canónico', () => {
   it('instancia recién creada → todos los campos en null/0', () => {

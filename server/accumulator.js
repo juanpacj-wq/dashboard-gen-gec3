@@ -1,4 +1,4 @@
-import { savePeriod, saveAccumState, loadAccumState } from './db.js'
+import { savePeriod, saveAccumState, loadAccumState, getTodayPeriods } from './db.js'
 import { computeLive } from './projectionCalculator.js'
 import { clampGenerationMwh } from '../shared/domain/generation.js'
 
@@ -48,6 +48,23 @@ export class EnergyAccumulator {
       }
     }
     console.log('[Accumulator] Estado restaurado:', Object.keys(this.#state).length, 'unidades')
+
+    // Rehidratar los periodos YA cerrados de hoy desde generacion_periodos. #completed vive
+    // solo en memoria y antes arrancaba vacío: tras un restart el broadcast traía únicamente
+    // los periodos cerrados por ESTE proceso y el front pintaba 0.0 / -100% en todos los
+    // anteriores aunque estuvieran en la BD (incidente 2026-08-24, restart por deploy).
+    try {
+      const rows = await getTodayPeriods()
+      let n = 0
+      for (const row of rows) {
+        if (row.hora >= currentHour) continue
+        this.setCompleted(row.unit_id, row.hora, row.energia_mwh)
+        n++
+      }
+      console.log(`[Accumulator] Periodos cerrados rehidratados: ${n}`)
+    } catch (err) {
+      console.error('[Accumulator] Error rehidratando periodos cerrados:', err.message)
+    }
 
     // Persist state to DB every 30 seconds
     this.#saveInterval = setInterval(() => this.#persistState(), 30_000)
@@ -119,6 +136,17 @@ export class EnergyAccumulator {
       mb.buckets[minute].sum += deviation
       mb.buckets[minute].count += 1
     }
+  }
+
+  /**
+   * Registra un periodo cerrado sin pasar por #completePeriod (rehidratación al arrancar,
+   * recovery de huecos). No pisa un valor ya presente: el cierre en vivo es la fuente canónica.
+   */
+  setCompleted(unitId, hour, mwh) {
+    if (!this.#completed[unitId]) this.#completed[unitId] = {}
+    if (this.#completed[unitId][hour] != null) return
+    const energiaMwh = clampGenerationMwh(mwh) ?? 0
+    this.#completed[unitId][hour] = Math.round(energiaMwh * 100) / 100
   }
 
   /** Get state to broadcast to clients */
