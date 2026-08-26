@@ -38,7 +38,17 @@ export function useRealtimeData() {
           if (!periods[row.unit_id]) periods[row.unit_id] = {};
           periods[row.unit_id][row.hora] = row.energia_mwh;
         }
-        setCompletedPeriods(prev => ({ ...periods, ...prev }));
+        // Merge POR UNIDAD: el WS (prev) gana hora a hora, pero no borra las horas que solo
+        // trae REST. El spread plano anterior ({ ...periods, ...prev }) descartaba todo el
+        // objeto REST de una unidad en cuanto el WS traía una sola hora de ella — tras un
+        // restart del backend, los periodos anteriores quedaban en 0.0 (2026-08-24).
+        setCompletedPeriods(prev => {
+          const merged = { ...prev };
+          for (const [unitId, hours] of Object.entries(periods)) {
+            merged[unitId] = { ...hours, ...(merged[unitId] || {}) };
+          }
+          return merged;
+        });
       })
       .catch(() => {});
 
