@@ -13,7 +13,7 @@ y cómo interpretar pass/fail.
 ## Estructura
 
 ```
-01-Medidores y PME/         meters ION8650 + orchestrator + PME (default off, D-120)
+01-Medidores y PME/         meters ION8650 + orchestrator (fuente única; PME retirado, D-126)
 02-Despacho Final (Email)/  Graph API + parser + persistencia DB
 03-XM Scrapers/             dDEC (despacho) + rDEC (redespacho)
 04-Frontend y Realtime/     WebSocket + hook + badges UI
@@ -29,7 +29,7 @@ y cómo interpretar pass/fail.
 - Permisos para `sudo systemctl` y `sudo journalctl`.
 
 **Para tests locales (Windows):**
-- `dashboard-gen-gec3/.env` con todas las vars (`GRAPH_*`, `DB_*`, `PME_*`).
+- `dashboard-gen-gec3/.env` con todas las vars (`GRAPH_*`, `DB_*`, `IP_*`/`PSW_*` de medidores).
 - Node 20+ instalado.
 - Si el test usa `Invoke-WebRequest`, ejecutar en PowerShell, no `cmd`.
 - Para tests de DB: server local arrancado (`cd server; npm start`) o uso directo de scripts en `99-Diagnostico/`.
@@ -40,7 +40,7 @@ Para verificar rápido que un deploy quedó sano, correr en orden:
 
 1. `05-Servicio y Deploy/service-restart.md` — confirmar que el servicio levantó limpio.
 2. `05-Servicio y Deploy/health-overview.md` — `status: ok`, sin componentes stale.
-3. `01-Medidores y PME/orchestrator-fuente.md` — las 4 unidades en `meter` o `pme`.
+3. `01-Medidores y PME/orchestrator-fuente.md` — las 4 unidades en `meter`.
 4. `02-Despacho Final (Email)/observabilidad-stale.md` — emailDispatch.{gec,tgj}.stale = false.
 5. `04-Frontend y Realtime/badges-visuales.md` — abrir dashboard, ver badges.
 
@@ -50,7 +50,7 @@ del archivo correspondiente.
 ## Convenciones
 
 - 🟢 = comportamiento esperado / pass.
-- 🟡 = degradado pero funcionando (ej: PME en lugar de meter).
+- 🟡 = degradado pero funcionando (ej: carry-forward reteniendo el último valor bueno).
 - 🔴 = falla, requiere investigación.
 
 Los comandos prod asumen estar en el server Ubuntu vía SSH. Los comandos local

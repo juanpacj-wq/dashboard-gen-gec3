@@ -539,3 +539,76 @@ nueva: código → backfill → reiniciar.** Una CHECK sobre datos sucios falla.
 `docs/runbooks/99-Diagnostico/invariante-generacion.md`. (g) Divergencia deliberada: el sink
 Python ([[D-121]]) sigue escribiendo kW **crudo con signo** al Lakehouse — es almacén de
 telemetría, no de dominio. Cross-ref: [[D-116]], [[D-118]], [[D-121]], [[D-124]].
+
+## D-126 — Retiro del fallback PME: la extracción queda con fuente ÚNICA (y sin Playwright)
+
+**Fecha:** 2026-07-31
+
+**Contexto:** [[D-120]] dejó el `PMEScraper` apagado por default pero **conservó todo el código**
+y `deploy/` siguió instalando Chromium. En producción el `.env` heredaba `PME_ENABLED=1`, así que
+el scraper siguió corriendo un mes. La evidencia del servidor `capibara`: **392 lanzamientos de
+navegador en 24 h** (ráfagas de uno cada ~5 s) con **`VALUE-WATCHDOG` = 1** — o sea 391 de 392 no
+fueron el watchdog reciclando un feed congelado, sino el propio `#run()` reventando al arrancar
+(login/navegación a gpme) y reintentando. Cada lanzamiento levanta 5 procesos de Chromium: era el
+grueso del pico de 540 MB y de la CPU de `dashboard-ws`.
+
+El argumento de fondo lo puso el dueño del dominio y es más fuerte que la telemetría: **el PME lee
+los MISMOS 5 medidores ION8650**. No es una fuente independiente, es la misma fuente por un camino
+más largo (medidor → servidor PME → login → DOM del diagrama). Si el medidor o su red caen, caen
+los dos. Un "fallback" que comparte el punto único de falla con el primario no aporta redundancia,
+solo superficie de error propia — y encima, al conmutar por tiempo ([[D-116]]), un PME inestable
+podía ensuciar el dato mostrado en vez de protegerlo.
+
+**Decisión:** se **elimina** el fallback, no se apaga. Fuera `server/scraper.js`, el `#pmeCache` /
+`#pmeScraper` / `#pmeEnabled` del orquestador, la rama `meter→pme` de decisión de fuente, el
+`recoveryThreshold` ([[D-102]], que solo existía para el recovery `pme→meter`), `unitsForPME`, el
+bloque `PME` de `config.js` y el `pme:` de las 4 unidades, las alertas `orchestrator:pme:*` con sus
+`ALERT_THRESH_PME_*`, el badge ámbar "PME" del front y las env `PME_*` / `HEADLESS` / `PME_DIAGNOSE`.
+`source` ahora es `'meter' | null`. **Playwright sale del proyecto entero**: no quedaba ni un import
+(los scrapers de XM bajan sus archivos por HTTP con `undici`/`cheerio`), así que se retira de
+`server/package.json` y de `setup.sh`/`update.sh` — cero Chromium en el servidor.
+
+Lo que **sobrevive** porque nunca fue del PME: el carry-forward con TTL ([[D-116]]), el clamp de la
+invariante de dominio ([[D-125]]), el merge por unidad, freshness y toda la observabilidad
+(`source`/`holding`/`heldTicks`/`meterDownSeconds`). El `ExtractorOrchestrator` no desaparece con el
+árbitro: seguía siendo el único punto donde nace el `valueMW` canónico.
+
+**Consecuencias:** (a) **Sin plan B**: un corte de la LAN de medidores deja las 4 unidades en `null`.
+Es el trade-off aceptado — la compensación correcta no es un navegador sino la alerta, así que el
+CRITICAL `orchestrator:meterDown:GLOBAL` deja de estar condicionado a `pmeEnabled === false` y pasa a
+ser **LA** alerta de falla total de extracción. (b) La llave `pme` de `GET /health` **se conserva a
+propósito**: es el nombre histórico del estado del extractor y la consumen ~8 runbooks con `jq`
+(`.pme.perUnit`, `.pme.meter.perMeter`, `.pme.stale`); renombrarla es un cambio de contrato aparte,
+y hoy es un misnomer documentado, no un fallback vivo. (c) Los args viejos (`pme`, `pmeEnabled`,
+`pmeScraperCtor`, `recoveryThreshold`) quedan **inertes** — el destructuring los descarta —, con un
+test que lo fija para que el fallback no vuelva por la puerta de atrás. (d) `server/traces/analyze.js`
+conserva la columna `pme` para poder leer traces grabados **antes** de esta decisión. (e) En prod hay
+que borrar `PME_ENABLED=1` del `.env` y se puede eliminar el caché huérfano
+`/var/www/dashboard-gen/.ms-playwright`. Cross-ref: [[D-102]], [[D-116]], [[D-118]], [[D-120]], [[D-125]].
+
+## D-127 — Sink dual del `fabric-meter-sink`: espejo a Azure PostgreSQL `dl_captura`
+
+**Fecha:** 2026-08-11
+
+**Contexto:** el sink Python ([[D-121]]) escribía solo a Fabric Lakehouse
+(`BRC_PGN_GENERACION_MEDIDORES`, buffer rotativo de 3 filas overwrite cada 15 s). Se
+necesita el mismo dato en el datalake corporativo Postgres (`dl_captura`, Azure
+Database for PostgreSQL) para consumidores que no leen Fabric.
+
+**Decisión:** el mismo loop escribe el **mismo buffer** a
+`generacion.brc_pgn_generacion_medidores` vía un `PostgresWriter` (`psycopg`,
+`sslmode=require`) — misma cadencia, mismas columnas (incluida `ge32` sin C, [[D-112]]),
+mismos kW crudos con signo ([[D-125]] aplica igual: telemetría, no dominio). Overwrite
+como `DELETE`+`INSERT` transaccional (no `TRUNCATE`, para no bloquear lectores). El sink
+es **opcional** (se enciende solo si `HOSTDL`/`DB`/`USERDL`/`PSWDL` están en `.env`;
+parcial = fail-fast) y **best-effort**: su fallo se loggea con contador propio pero no
+cuenta para `MAX_CONSECUTIVE_WRITE_FAILURES` ni frena el flujo a Fabric, que sigue
+siendo el sink primario. Conexión con self-heal (cerrar y reconectar al fallar, patrón
+[[D-123]]) y DDL `IF NOT EXISTS` idempotente por conexión.
+
+**Consecuencias:** (a) la tabla PG siempre tiene solo las últimas 3 filas — es un
+espejo del snapshot de Fabric, NO un histórico; si algún consumidor necesita
+acumulado, eso es otra tabla/decisión. (b) Un outage de Azure PG pasa desapercibido
+para Fabric/Power BI, pero deja `PG FAILED` en el log de cada ciclo. (c) Validación
+E2E con `scripts/probe_dl_pg.py` (crea schema/tabla y hace write+read dummy).
+Cross-ref: [[D-112]], [[D-121]], [[D-123]], [[D-125]].

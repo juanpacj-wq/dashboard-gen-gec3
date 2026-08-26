@@ -5,18 +5,17 @@ import { MiniGauge } from "./MiniGauge";
 import { clampGenerationMw, clampGenerationMwh, clampDeviationPct } from "../../shared/domain/generation.js";
 
 function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, projection, xmDispatch, autorizaciones, eventosBitacora }) {
-  // Generación actual (PME acumulado del periodo actual)
+  // Generación actual (energía acumulada del periodo actual)
   const pmeGen = clampGenerationMwh(pmeAccumulated?.[u.id]) ?? 0;
   // Sin lectura (valueMW null) cae al acumulado, no a 0: el helper propaga el null.
   const currentMW = clampGenerationMw(realtimeUnit?.valueMW) ?? pmeGen;
   const maxMW = realtimeUnit?.maxMW ?? u.capacity;
 
-  // Badge debug: indica si el valor viene del medidor primario (ION8650) o del fallback PME.
+  // Badge debug: MEDIDOR cuando el valor viene del ION8650 (fuente única desde D-126);
+  // nada mientras la unidad no tenga fuente (warming o sin lectura).
   const source = realtimeUnit?.source ?? null;
   const sourceBadge = source === 'meter'
     ? { label: 'MEDIDOR', color: C.green, bg: C.greenDim, border: C.greenBorder }
-    : source === 'pme'
-    ? { label: 'PME', color: C.amber, bg: C.amberDim, border: C.amberBorder }
     : null;
 
   // capacidad %
@@ -27,7 +26,7 @@ function UnitCard({ u, isSel, onSelect, height, realtimeUnit, pmeAccumulated, pr
 
   // Desviación: lógica VB6 (proyección a fin de hora vs redespacho), calculada en el backend.
   // Recalculamos con la proyección clamped a >=0 para evitar desviaciones espurias por
-  // picos negativos del PME (consistente con la generación que también se clampa a 0).
+  // picos negativos del medidor (consistente con la generación que también se clampa a 0).
   const currentIdx = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Bogota" })).getHours();
   const redespacho = xmDispatch?.[u.id]?.redespacho?.[currentIdx];
   const rawProj = projection?.[u.id]?.projection;

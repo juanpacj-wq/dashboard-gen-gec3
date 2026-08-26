@@ -13,15 +13,17 @@
     "probe:modbus": "node --env-file=../.env scripts/probe-modbus.js",
     "shadow:modbus": "node --env-file=../.env scripts/shadow-modbus-watch.js",
     "shadow:analyze": "node scripts/analyze-shadow.js",
+    "shadow:reserva": "node --env-file=../.env scripts/shadow-reserva-watch.js",
+    "shadow:reserva:analyze": "node scripts/analyze-reserva.js",
+    "shadow:registros": "node --env-file=../.env scripts/shadow-registros-watch.js",
+    "shadow:registros:analyze": "node scripts/analyze-registros.js",
     "smoke": "node --env-file=../.env scripts/smoke-poller.js",
-    "test": "vitest run --pool=forks --poolOptions.forks.singleFork=true",
-    "install:browsers": "playwright install chromium"
+    "test": "vitest run --pool=forks --poolOptions.forks.singleFork=true"
   },
   "dependencies": {
     "cheerio": "^1.0.0",
     "modbus-serial": "^8.0.25",
     "mssql": "^11.0.1",
-    "playwright": "^1.50.0",
     "undici": "^6.19.8",
     "ws": "^8.18.0"
   },

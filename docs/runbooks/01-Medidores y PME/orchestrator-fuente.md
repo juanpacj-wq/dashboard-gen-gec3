@@ -1,24 +1,26 @@
 # Orchestrator: fuente activa por unidad (`source`)
 
-**Verifica:** el `ExtractorOrchestrator` está reportando correctamente cuál
-extractor (medidor primario vs PME hot-standby) está sirviendo la lectura de
-cada unidad, y que ese campo viaja por el WebSocket al frontend.
+**Verifica:** el `ExtractorOrchestrator` está reportando correctamente el estado de la
+lectura de cada unidad, y que ese campo viaja por el WebSocket al frontend.
 
-> Desde D-120 el fallback PME está deshabilitado por default (`PME_ENABLED=1` para
-> reactivar): `source` solo puede ser `meter` o `null`, y tras agotarse el
-> carry-forward (D-116) la unidad emite `valueMW=null` en vez de conmutar a PME.
+> **D-126:** la extracción tiene **fuente única** (medidores ION8650 por Modbus TCP). El
+> fallback PME se retiró del código, así que `source` solo puede ser `"meter"` o `null`.
+> Agotado el carry-forward (D-116), la unidad emite `valueMW=null` — no hay a quién ceder.
+>
+> La llave `pme` de `/health` es el **nombre histórico** del estado del extractor y se
+> conserva a propósito (la usan estos runbooks); ya no implica que exista un scraper PME.
 
 ## Cuándo correrlo
 
 - Tras deploy (smoke pack mínimo).
-- Si una card del dashboard muestra "PME" ámbar — para confirmar la causa
-  (¿realmente cayó el medidor o es bug del orchestrator?).
+- Si una card del dashboard pierde el badge "MEDIDOR" o queda sin valor — para confirmar
+  la causa (¿realmente cayó el medidor o es bug del orchestrator?).
 
 ## En el server (Ubuntu)
 
 ```bash
 curl -s http://localhost:3001/health \
-  | jq '.pme.perUnit | to_entries[] | {unit: .key, source: .value.source, consecMeterOk: .value.consecMeterOk, consecMeterErrors: .value.consecMeterErrors}'
+  | jq '.pme.perUnit | to_entries[] | {unit: .key, source: .value.source, holding: .value.holding, meterDownSeconds: .value.meterDownSeconds, consecMeterErrors: .value.consecMeterErrors}'
 ```
 
 ## En local (PowerShell)
@@ -34,10 +36,10 @@ curl -s http://localhost:3001/health \
 ## Esperado (estado normal)
 
 ```json
-{ "unit": "TGJ1",  "source": "meter", "consecMeterOk": 142, "consecMeterErrors": 0 }
-{ "unit": "TGJ2",  "source": "meter", "consecMeterOk": 142, "consecMeterErrors": 0 }
-{ "unit": "GEC3",  "source": "meter", "consecMeterOk": 142, "consecMeterErrors": 0 }
-{ "unit": "GEC32", "source": "meter", "consecMeterOk": 142, "consecMeterErrors": 0 }
+{ "unit": "TGJ1",  "source": "meter", "holding": false, "meterDownSeconds": 0, "consecMeterErrors": 0 }
+{ "unit": "TGJ2",  "source": "meter", "holding": false, "meterDownSeconds": 0, "consecMeterErrors": 0 }
+{ "unit": "GEC3",  "source": "meter", "holding": false, "meterDownSeconds": 0, "consecMeterErrors": 0 }
+{ "unit": "GEC32", "source": "meter", "holding": false, "meterDownSeconds": 0, "consecMeterErrors": 0 }
 ```
 
 ## Verificar que el WS también propaga `source`
@@ -62,15 +64,20 @@ import('ws').then(({WebSocket}) => {
 
 ## Interpretación
 
-- 🟢 `source: "meter"` en las 4 → primario sirviendo, ideal.
-- 🟡 `source: "pme"` en alguna → fallback activo. Cruzar con `conectividad-medidores.md`
-  para entender qué medidor cayó. El dashboard la muestra con badge "PME" ámbar.
+- 🟢 `source: "meter"` con `holding: false` en las 4 → medidores sirviendo, ideal.
+- 🟡 `holding: true` → carry-forward activo (D-116): el medidor dio null pero el TTL no
+  expiró y se está emitiendo el último valor bueno. Transitorio y esperado.
 - 🟡 `source: null` → orchestrator todavía warming up (primer minuto post-restart).
-- 🔴 Mismatch entre `/health.perUnit.X.source` y `units[i].source` del WS frame
-  → bug en el broadcast, revisar `extractorOrchestrator.js:226`.
+- 🔴 `valueMW: null` con `holding: false` y `meterDownSeconds` creciendo → **el medidor está
+  caído de verdad** y el TTL ya se agotó. Ir a `conectividad-medidores.md`. Con las 4 así,
+  el alerter abre el CRITICAL `orchestrator:meterDown:GLOBAL`.
+- 🔴 `source: "pme"` → **imposible desde D-126**. Si aparece, alguien reintrodujo el
+  fallback o el binario desplegado es anterior a esa decisión: verificar la versión.
+- 🔴 Mismatch entre `/health.pme.perUnit.X.source` y `units[i].source` del WS frame
+  → bug en el broadcast, revisar `extractorOrchestrator.js` (`#tick`).
 
 ## Si falla
 
 - Reset blando: `sudo systemctl restart dashboard-ws` y reverificar tras 30s.
-- Si una unidad queda permanentemente en `pme`: ese medidor está caído de verdad,
+- Si una unidad queda permanentemente sin lectura: ese medidor está caído de verdad,
   ir a `conectividad-medidores.md`.

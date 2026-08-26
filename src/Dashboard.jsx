@@ -51,7 +51,7 @@ export default function Dashboard() {
   const currentIdx = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Bogota" })).getHours();
 
   // Totales globales reales del periodo actual
-  // Gen Total = suma de los valores instantáneos PME (valueMW), negativos cuentan como 0
+  // Gen Total = suma de los valores instantáneos del medidor (valueMW), negativos cuentan como 0
   // Las unidades con autorización vigente en el periodo actual se excluyen del cálculo
   // (no contribuyen ni al numerador ni al denominador).
   const currentPeriodo = currentIdx + 1;

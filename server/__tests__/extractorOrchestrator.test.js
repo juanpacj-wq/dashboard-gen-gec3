@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { ExtractorOrchestrator, unitsForPME } from '../extractorOrchestrator.js'
+import { ExtractorOrchestrator } from '../extractorOrchestrator.js'
 
 const POLL_MS = 1000
 
@@ -8,12 +8,10 @@ function buildUnits() {
     {
       id: 'TGJ1', label: 'GUAJIRA 1', maxMW: 145, combine: 'single', frontierType: 'output',
       meters: [{ host: '10.0.0.10', user: 'u', password: 'p' }],
-      pme: { referencia: 'kW tot', occurrence: 0 },
     },
     {
       id: 'TGJ2', label: 'GUAJIRA 2', maxMW: 130, combine: 'single', frontierType: 'output',
       meters: [{ host: '10.0.0.11', user: 'u', password: 'p' }],
-      pme: { referencia: 'kW tot', occurrence: 1 },
     },
     {
       id: 'GEC3', label: 'GECELCA 3', maxMW: 164, combine: 'sum', frontierType: 'input',
@@ -21,19 +19,15 @@ function buildUnits() {
         { host: '10.0.0.12', user: 'u', password: 'p' },
         { host: '10.0.0.13', user: 'u', password: 'p' },
       ],
-      pme: { referencia: 'KWTOT_G3', occurrence: 0 },
     },
     {
       id: 'GEC32', label: 'GECELCA 32', maxMW: 270, combine: 'single', frontierType: 'input',
       meters: [{ host: '10.0.0.14', user: 'u', password: 'p' }],
-      pme: { referencia: 'KWTOT_G32', occurrence: 0 },
     },
   ]
 }
 
-const PME_CONFIG = { loginUrl: 'x', diagramUrl: 'x', user: 'x', password: 'x' }
-
-// Fake MeterPoller / PMEScraper que el test controla manualmente.
+// Fake MeterPoller que el test controla manualmente.
 function makeFakeSubExtractor() {
   let storedOnData = null
   const ctor = vi.fn(({ onData }) => {
@@ -50,24 +44,19 @@ function makeFakeSubExtractor() {
   }
 }
 
-function buildOrchestrator({ onData = vi.fn(), fallbackThreshold = 3, recoveryThreshold = 2, holdTtlMs } = {}) {
+function buildOrchestrator({ onData = vi.fn(), holdTtlMs } = {}) {
   const meter = makeFakeSubExtractor()
-  const pme = makeFakeSubExtractor()
   const orch = new ExtractorOrchestrator({
     units: buildUnits(),
-    pme: PME_CONFIG,
     onData,
     pollMs: POLL_MS,
-    fallbackThreshold,
-    recoveryThreshold,
-    holdTtlMs,  // undefined → default 3 min; tests de switch pasan un TTL corto
+    holdTtlMs,  // undefined → default 3 min; los tests de expiración pasan un TTL corto
     meterPollerCtor: meter.ctor,
-    pmeScraperCtor: pme.ctor,
   })
-  return { orch, meter, pme, onData }
+  return { orch, meter, onData }
 }
 
-// Emite el mismo valor para las 4 unidades en el sub-extractor dado.
+// Emite el mismo valor para las 4 unidades.
 function emitAll(sub, value) {
   sub.emit(buildUnits().map((u) => ({ id: u.id, label: u.label, valueMW: value, maxMW: u.maxMW })))
 }
@@ -81,39 +70,26 @@ async function tick({ ms = POLL_MS } = {}) {
   await flushPromises()
 }
 
-describe('unitsForPME', () => {
-  it('produce shape legacy de PMEScraper sin campos nuevos', () => {
-    const adapted = unitsForPME(buildUnits())
-    expect(adapted).toHaveLength(4)
-    for (const u of adapted) {
-      expect(Object.keys(u).sort()).toEqual(['id', 'label', 'maxMW', 'occurrence', 'referencia'])
-    }
-    const gec3 = adapted.find((u) => u.id === 'GEC3')
-    expect(gec3.referencia).toBe('KWTOT_G3')
-    expect(gec3.occurrence).toBe(0)
-  })
-})
-
 describe('ExtractorOrchestrator constructor', () => {
   it('lanza si units está vacío', () => {
-    expect(() => new ExtractorOrchestrator({ units: [], pme: PME_CONFIG, onData: () => {} }))
+    expect(() => new ExtractorOrchestrator({ units: [], onData: () => {} }))
       .toThrow(TypeError)
   })
   it('lanza si onData no es función', () => {
-    expect(() => new ExtractorOrchestrator({ units: buildUnits(), pme: PME_CONFIG, onData: null }))
+    expect(() => new ExtractorOrchestrator({ units: buildUnits(), onData: null }))
       .toThrow(TypeError)
   })
-  it('lanza si pme falta', () => {
+  it('NO exige config de una segunda fuente: units + onData bastan (D-126)', () => {
     expect(() => new ExtractorOrchestrator({ units: buildUnits(), onData: () => {} }))
-      .toThrow(TypeError)
+      .not.toThrow()
   })
 })
 
-describe('ExtractorOrchestrator — caso ideal (meter primario sirviendo)', () => {
-  let orch, meter, pme, onData
+describe('ExtractorOrchestrator — caso ideal (medidor sirviendo)', () => {
+  let orch, meter, onData
   beforeEach(() => {
     vi.useFakeTimers()
-    ;({ orch, meter, pme, onData } = buildOrchestrator())
+    ;({ orch, meter, onData } = buildOrchestrator())
   })
   afterEach(async () => { await orch.stop(); vi.useRealTimers() })
 
@@ -142,7 +118,7 @@ describe('ExtractorOrchestrator — caso ideal (meter primario sirviendo)', () =
 })
 
 describe('ExtractorOrchestrator — carry-forward con TTL (D-116)', () => {
-  let orch, meter, pme, onData
+  let orch, meter, onData
   afterEach(async () => { await orch.stop(); vi.useRealTimers() })
 
   const valueOf = (last, id) => last.units.find((u) => u.id === id).valueMW
@@ -176,19 +152,6 @@ describe('ExtractorOrchestrator — carry-forward con TTL (D-116)', () => {
     emitAll(meter, null); await tick()
     expect(orch.getStatus().perUnit.TGJ1.heldTicks).toBe(3)
     expect(orch.getStatus().perUnit.TGJ1.source).toBe('meter')  // sigue en meter
-  })
-
-  it('prioridad sobre PME: dentro del TTL emite el retenido, no PME (caso 3)', async () => {
-    vi.useFakeTimers()
-    ;({ orch, meter, pme, onData } = buildOrchestrator())
-    await orch.start()
-    emitAll(meter, 70); emitAll(pme, 200); await tick()
-    emitAll(meter, null); emitAll(pme, 200); await tick()
-
-    const last = onData.mock.calls.at(-1)[0]
-    expect(valueOf(last, 'TGJ1')).toBe(70)   // retenido, no 200
-    expect(last.units.find((u) => u.id === 'TGJ1').source).toBe('meter')
-    expect(holdingOf(last, 'TGJ1')).toBe(true)
   })
 
   it('lastGoodMeter se sella solo con lecturas válidas: 70, null, 71 (caso 7)', async () => {
@@ -238,34 +201,19 @@ describe('ExtractorOrchestrator — carry-forward con TTL (D-116)', () => {
   })
 })
 
-describe('ExtractorOrchestrator — TTL expira → cede a PME', () => {
-  let orch, meter, pme, onData
+describe('ExtractorOrchestrator — TTL expira → null (fuente única, D-126)', () => {
+  let orch, meter, onData
   afterEach(async () => { await orch.stop(); vi.useRealTimers() })
 
   const valueOf = (last, id) => last.units.find((u) => u.id === id).valueMW
 
-  it('al expirar el TTL cede a PME si está válido (caso 4)', async () => {
-    vi.useFakeTimers()
-    ;({ orch, meter, pme, onData } = buildOrchestrator({ holdTtlMs: 2 * POLL_MS }))
-    await orch.start()
-    emitAll(meter, 50); emitAll(pme, 60); await tick()
-    emitAll(meter, null); emitAll(pme, 60); await tick()   // 1er null < TTL → HOLD
-    expect(orch.getStatus().perUnit.TGJ1.source).toBe('meter')
-    expect(orch.getStatus().perUnit.TGJ1.holding).toBe(true)
-
-    emitAll(meter, null); emitAll(pme, 60); await tick()   // TTL expira → pme
-    expect(orch.getStatus().perUnit.TGJ1.source).toBe('pme')
-    expect(orch.getStatus().perUnit.TGJ1.holding).toBe(false)
-    expect(valueOf(onData.mock.calls.at(-1)[0], 'TGJ1')).toBe(60)
-  })
-
-  it('TTL expira sin PME válido → valueMW=null, holding=false, source previo (caso 5)', async () => {
+  it('TTL expira → valueMW=null, holding=false, source previo (caso 5)', async () => {
     vi.useFakeTimers()
     ;({ orch, meter, onData } = buildOrchestrator({ holdTtlMs: 2 * POLL_MS }))
     await orch.start()
-    emitAll(meter, 50); await tick()                       // pme nunca emite
+    emitAll(meter, 50); await tick()
     emitAll(meter, null); await tick()                     // HOLD
-    emitAll(meter, null); await tick()                     // TTL expira, sin pme
+    emitAll(meter, null); await tick()                     // TTL expira
 
     const st = orch.getStatus().perUnit.TGJ1
     expect(st.holding).toBe(false)
@@ -273,18 +221,7 @@ describe('ExtractorOrchestrator — TTL expira → cede a PME', () => {
     expect(valueOf(onData.mock.calls.at(-1)[0], 'TGJ1')).toBeNull()  // sin spike
   })
 
-  it('arranque sin lastGoodMeter + null + PME válido → pme directo (caso 6a)', async () => {
-    vi.useFakeTimers()
-    ;({ orch, meter, pme, onData } = buildOrchestrator())
-    await orch.start()
-    emitAll(meter, null); emitAll(pme, 200); await tick()
-
-    expect(orch.getStatus().perUnit.TGJ1.source).toBe('pme')
-    expect(orch.getStatus().perUnit.TGJ1.holding).toBe(false)
-    expect(valueOf(onData.mock.calls.at(-1)[0], 'TGJ1')).toBe(200)
-  })
-
-  it('arranque sin lastGoodMeter + null + sin PME → null sin spike (caso 6b)', async () => {
+  it('arranque sin lastGoodMeter + null → null sin spike (caso 6b)', async () => {
     vi.useFakeTimers()
     ;({ orch, meter, onData } = buildOrchestrator())
     await orch.start()
@@ -294,45 +231,38 @@ describe('ExtractorOrchestrator — TTL expira → cede a PME', () => {
     expect(valueOf(onData.mock.calls.at(-1)[0], 'TGJ1')).toBeNull()
   })
 
-  it('flapping ok/null/ok/null resetea el TTL → nunca cae a PME (caso 8)', async () => {
+  it('flapping ok/null/ok/null resetea el TTL → nunca deja de servir (caso 8)', async () => {
     vi.useFakeTimers()
-    ;({ orch, meter, pme } = buildOrchestrator({ holdTtlMs: 2 * POLL_MS }))
+    ;({ orch, meter } = buildOrchestrator({ holdTtlMs: 2 * POLL_MS }))
     await orch.start()
-    emitAll(meter, 50); emitAll(pme, 99); await tick()
+    emitAll(meter, 50); await tick()
     for (let i = 0; i < 3; i++) {
-      emitAll(meter, null); emitAll(pme, 99); await tick()  // 1 null (gap < TTL) → HOLD
-      emitAll(meter, 50);   emitAll(pme, 99); await tick()  // OK resetea lastGood.at
+      emitAll(meter, null); await tick()  // 1 null (gap < TTL) → HOLD
+      emitAll(meter, 50);   await tick()  // OK resetea lastGood.at
       expect(orch.getStatus().perUnit.TGJ1.source).toBe('meter')
     }
   })
-})
 
-describe('ExtractorOrchestrator — recovery pme → meter (preserva D-102)', () => {
-  let orch, meter, pme, onData
-  afterEach(async () => { await orch.stop(); vi.useRealTimers() })
-
-  it('en pme con 1 OK del meter NO recupera; con 2 OK consecutivos sí (caso 9)', async () => {
+  it('el medidor vuelve tras el null: reanuda emisión de valor', async () => {
     vi.useFakeTimers()
-    ;({ orch, meter, pme, onData } = buildOrchestrator({ holdTtlMs: 2 * POLL_MS, recoveryThreshold: 2 }))
+    ;({ orch, meter, onData } = buildOrchestrator({ holdTtlMs: 2 * POLL_MS }))
     await orch.start()
-    // forzar fallback a pme (TTL corto)
-    emitAll(meter, 50); emitAll(pme, 60); await tick()
-    emitAll(meter, null); emitAll(pme, 60); await tick()
-    emitAll(meter, null); emitAll(pme, 60); await tick()
-    expect(orch.getStatus().perUnit.TGJ1.source).toBe('pme')
-
-    emitAll(meter, 50); emitAll(pme, 60); await tick()  // OK 1 — no recupera aún
-    expect(orch.getStatus().perUnit.TGJ1.source).toBe('pme')
-    emitAll(meter, 51); emitAll(pme, 60); await tick()  // OK 2 — recovery
-    expect(orch.getStatus().perUnit.TGJ1.source).toBe('meter')
-    expect(onData.mock.calls.at(-1)[0].units.find((u) => u.id === 'TGJ1').valueMW).toBe(51)
+    emitAll(meter, 70); await tick()
+    emitAll(meter, null); await tick()
+    emitAll(meter, null); await tick()
+    emitAll(meter, null); await tick()   // TTL agotado → null
+    emitAll(meter, 68); await tick()     // el medidor vuelve
+    const st = orch.getStatus().perUnit.TGJ1
+    expect(st.source).toBe('meter')
+    expect(st.holding).toBe(false)
+    expect(onData.mock.calls.at(-1)[0].units.find((u) => u.id === 'TGJ1').valueMW).toBe(68)
   })
 })
 
 describe('ExtractorOrchestrator — independencia entre unidades', () => {
-  it('TGJ1 puede estar en pme mientras TGJ2/GEC3/GEC32 siguen en meter', async () => {
+  it('TGJ1 puede quedar sin lectura mientras TGJ2/GEC3/GEC32 siguen en meter', async () => {
     vi.useFakeTimers()
-    const { orch, meter, pme, onData } = buildOrchestrator({ holdTtlMs: 2 * POLL_MS })
+    const { orch, meter, onData } = buildOrchestrator({ holdTtlMs: 2 * POLL_MS })
     try {
       await orch.start()
 
@@ -343,15 +273,9 @@ describe('ExtractorOrchestrator — independencia entre unidades', () => {
         { id: 'GEC3', label: 'GECELCA 3', valueMW: -0.5, maxMW: 164 },
         { id: 'GEC32', label: 'GECELCA 32', valueMW: -3, maxMW: 270 },
       ])
-      pme.emit([
-        { id: 'TGJ1', label: 'GUAJIRA 1', valueMW: 71, maxMW: 145 },
-        { id: 'TGJ2', label: 'GUAJIRA 2', valueMW: 60, maxMW: 130 },
-        { id: 'GEC3', label: 'GECELCA 3', valueMW: -0.5, maxMW: 164 },
-        { id: 'GEC32', label: 'GECELCA 32', valueMW: -3, maxMW: 270 },
-      ])
       await tick()
 
-      // Solo TGJ1 falla (TTL corto la cede a pme tras el hold); las otras siguen sirviendo
+      // Solo TGJ1 falla; las otras siguen sirviendo
       for (let i = 0; i < 3; i++) {
         meter.emit([
           { id: 'TGJ1', label: 'GUAJIRA 1', valueMW: null, maxMW: 145 },
@@ -363,15 +287,14 @@ describe('ExtractorOrchestrator — independencia entre unidades', () => {
       }
 
       const status = orch.getStatus()
-      expect(status.perUnit.TGJ1.source).toBe('pme')
+      expect(status.perUnit.TGJ1.holding).toBe(false)   // TTL agotado
       expect(status.perUnit.TGJ2.source).toBe('meter')
       expect(status.perUnit.GEC3.source).toBe('meter')
       expect(status.perUnit.GEC32.source).toBe('meter')
 
       const last = onData.mock.calls.at(-1)[0]
-      expect(last.units.find((u) => u.id === 'TGJ1').valueMW).toBe(71)  // pme
-      expect(last.units.find((u) => u.id === 'TGJ2').valueMW).toBe(60)  // meter
-      expect(last.units.find((u) => u.id === 'TGJ1').source).toBe('pme')
+      expect(last.units.find((u) => u.id === 'TGJ1').valueMW).toBeNull()
+      expect(last.units.find((u) => u.id === 'TGJ2').valueMW).toBe(60)
       expect(last.units.find((u) => u.id === 'TGJ2').source).toBe('meter')
       expect(last.units.find((u) => u.id === 'GEC3').source).toBe('meter')
       expect(last.units.find((u) => u.id === 'GEC32').source).toBe('meter')
@@ -383,15 +306,14 @@ describe('ExtractorOrchestrator — independencia entre unidades', () => {
 })
 
 describe('ExtractorOrchestrator.getStatus shape', () => {
-  it('contiene todos los campos compatibles con PMEScraper más extensiones', async () => {
+  it('expone los campos de estado del extractor, sin rastro de una 2ª fuente (D-126)', async () => {
     vi.useFakeTimers()
-    const { orch, meter, pme } = buildOrchestrator()
+    const { orch, meter } = buildOrchestrator()
     await orch.start()
     meter.emit(buildUnits().map((u) => ({ id: u.id, label: u.label, valueMW: 50, maxMW: u.maxMW })))
     await tick()
 
     const s = orch.getStatus()
-    // PMEScraper-compat fields:
     expect(s).toHaveProperty('running')
     expect(s).toHaveProperty('warming')
     expect(s).toHaveProperty('lastDataAt')
@@ -402,10 +324,11 @@ describe('ExtractorOrchestrator.getStatus shape', () => {
     expect(s).toHaveProperty('errorCount')
     expect(s).toHaveProperty('stale')
     expect(s).toHaveProperty('valueStale')
-    // Extension fields:
     expect(s).toHaveProperty('meter')
-    expect(s).toHaveProperty('pme')
     expect(s).toHaveProperty('perUnit')
+    // El fallback se retiró: estas llaves no deben volver.
+    expect(s).not.toHaveProperty('pme')
+    expect(s).not.toHaveProperty('pmeEnabled')
     expect(Object.keys(s.perUnit)).toHaveLength(4)
     expect(s.perUnit.TGJ1).toMatchObject({
       source: expect.any(String),
@@ -415,43 +338,89 @@ describe('ExtractorOrchestrator.getStatus shape', () => {
       heldTicks: expect.any(Number),
       meterDownSeconds: expect.any(Number),
     })
+    expect(s.perUnit.TGJ1).not.toHaveProperty('pmeValue')
+
+    await orch.stop()
+    vi.useRealTimers()
+  })
+
+  it('getTickSnapshot no expone campos de una 2ª fuente (D-126)', async () => {
+    vi.useFakeTimers()
+    const { orch, meter } = buildOrchestrator()
+    await orch.start()
+    emitAll(meter, 50); await tick()
+
+    const snap = orch.getTickSnapshot('TGJ1')
+    expect(snap).toHaveProperty('meterRaw')
+    expect(snap).not.toHaveProperty('pmeRaw')
+    expect(snap).not.toHaveProperty('pmeAgeMs')
 
     await orch.stop()
     vi.useRealTimers()
   })
 })
 
-describe('ExtractorOrchestrator — start no bloquea si sub-extractor no resuelve', () => {
-  // Regresión: PMEScraper.start() real nunca resuelve (while running infinito).
-  // El orquestador NO debe await sus sub-extractores en start, porque si lo hace
-  // los setInterval del #tick/#heartbeat nunca se programan y onData nunca corre.
-  it('tickea aunque pmeScraper.start() nunca resuelva', async () => {
+describe('ExtractorOrchestrator — el fallback no vuelve por la puerta de atrás (D-126)', () => {
+  it('los args legacy pme/pmeEnabled/pmeScraperCtor son inertes: nada se instancia', async () => {
+    vi.useFakeTimers()
+    const meter = makeFakeSubExtractor()
+    const pmeCtorEspia = vi.fn()
+    const orch = new ExtractorOrchestrator({
+      units: buildUnits(),
+      onData: vi.fn(),
+      pollMs: POLL_MS,
+      // Restos de la configuración vieja: deben ser descartados por el destructuring.
+      pme: { loginUrl: 'x', diagramUrl: 'x', user: 'x', password: 'x' },
+      pmeEnabled: true,
+      pmeScraperCtor: pmeCtorEspia,
+      recoveryThreshold: 2,
+      fallbackThreshold: 3,
+      meterPollerCtor: meter.ctor,
+    })
+    try {
+      await orch.start()
+      emitAll(meter, 70); await tick()
+      expect(pmeCtorEspia).not.toHaveBeenCalled()
+      expect(orch.getStatus().perUnit.TGJ1.source).toBe('meter')
+    } finally {
+      await orch.stop()
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('ExtractorOrchestrator — start no bloquea si el sub-extractor no resuelve', () => {
+  // Regresión heredada del PMEScraper (su start() nunca resolvía). La invariante sigue
+  // valiendo para cualquier sub-extractor: el orquestador NO debe await-earlo en start,
+  // porque si lo hace los setInterval de #tick/#heartbeat nunca se programan.
+  it('tickea aunque meterPoller.start() nunca resuelva', async () => {
     vi.useFakeTimers()
     const onData = vi.fn()
 
-    const meter = makeFakeSubExtractor()
-    // Fake pmeScraper con start() que solo resuelve al stop() — modela el
-    // comportamiento real de PMEScraper (while running infinito).
-    let pmeStartResolver
-    const pmeCtor = vi.fn(({ onData: cb }) => {
+    let storedOnData = null
+    let startResolver
+    const meterCtor = vi.fn(({ onData: cb }) => {
+      storedOnData = cb
       return {
-        start: vi.fn(() => new Promise((resolve) => { pmeStartResolver = resolve })),
-        stop: vi.fn(() => { pmeStartResolver?.(); return Promise.resolve() }),
+        start: vi.fn(() => new Promise((resolve) => { startResolver = resolve })),
+        stop: vi.fn(() => { startResolver?.(); return Promise.resolve() }),
         getStatus: vi.fn(() => ({ running: true })),
       }
     })
 
     const orch = new ExtractorOrchestrator({
       units: buildUnits(),
-      pme: PME_CONFIG,
       onData,
       pollMs: POLL_MS,
-      meterPollerCtor: meter.ctor,
-      pmeScraperCtor: pmeCtor,
+      meterPollerCtor: meterCtor,
     })
     try {
-      await orch.start()  // no debe colgarse esperando pme
-      meter.emit(buildUnits().map((u) => ({ id: u.id, label: u.label, valueMW: 50, maxMW: u.maxMW })))
+      await orch.start()  // no debe colgarse esperando al poller
+      storedOnData({
+        type: 'update',
+        units: buildUnits().map((u) => ({ id: u.id, label: u.label, valueMW: 50, maxMW: u.maxMW })),
+        timestamp: new Date().toISOString(),
+      })
       await tick()
       expect(onData).toHaveBeenCalled()
       const last = onData.mock.calls.at(-1)[0]
@@ -464,9 +433,9 @@ describe('ExtractorOrchestrator — start no bloquea si sub-extractor no resuelv
 })
 
 describe('ExtractorOrchestrator — lifecycle', () => {
-  it('stop() detiene los timers y los sub-extractores', async () => {
+  it('stop() detiene los timers y el sub-extractor', async () => {
     vi.useFakeTimers()
-    const { orch, meter, pme, onData } = buildOrchestrator()
+    const { orch, meter, onData } = buildOrchestrator()
     await orch.start()
     meter.emit(buildUnits().map((u) => ({ id: u.id, label: u.label, valueMW: 50, maxMW: u.maxMW })))
     await tick()
@@ -479,126 +448,8 @@ describe('ExtractorOrchestrator — lifecycle', () => {
   })
 })
 
-describe('ExtractorOrchestrator — pmeEnabled=false (D-120)', () => {
-  let orch
-  afterEach(async () => { if (orch) await orch.stop(); orch = null; vi.useRealTimers() })
-
-  // Builder propio: sin config pme (con el flag apagado no debe ser obligatoria).
-  function buildOff({ onData = vi.fn(), holdTtlMs } = {}) {
-    const meter = makeFakeSubExtractor()
-    const pme = makeFakeSubExtractor()
-    orch = new ExtractorOrchestrator({
-      units: buildUnits(),
-      pmeEnabled: false,
-      onData,
-      pollMs: POLL_MS,
-      holdTtlMs,
-      meterPollerCtor: meter.ctor,
-      pmeScraperCtor: pme.ctor,
-    })
-    return { meter, pme, onData }
-  }
-
-  it('constructor sin pme NO lanza con pmeEnabled=false', () => {
-    vi.useFakeTimers()
-    expect(() => buildOff()).not.toThrow()
-  })
-
-  it('jamás instancia el PMEScraper y start/stop no revientan', async () => {
-    vi.useFakeTimers()
-    const { pme, meter } = buildOff()
-    await orch.start()
-    emitAll(meter, 70)
-    await tick()
-    expect(pme.ctor).not.toHaveBeenCalled()
-    await orch.stop()
-    expect(pme.ctor).not.toHaveBeenCalled()
-  })
-
-  it('meter caído: hold dentro del TTL y al expirar null con source sticky (nunca pme)', async () => {
-    vi.useFakeTimers()
-    const { meter, pme, onData } = buildOff({ holdTtlMs: 2 * POLL_MS })
-    await orch.start()
-    emitAll(meter, 70); await tick()
-    // El fake pme "emite" pero nunca fue instanciado → no tiene efecto alguno.
-    emitAll(pme, 55)
-    emitAll(meter, null); await tick()
-    let st = orch.getStatus().perUnit.TGJ1
-    expect(st.source).toBe('meter')
-    expect(st.holding).toBe(true)
-    expect(onData.mock.calls.at(-1)[0].units.find((u) => u.id === 'TGJ1').valueMW).toBe(70)
-
-    emitAll(meter, null); await tick()
-    emitAll(meter, null); await tick()
-    st = orch.getStatus().perUnit.TGJ1
-    expect(st.source).toBe('meter')      // sticky: jamás conmuta a 'pme'
-    expect(st.holding).toBe(false)
-    expect(onData.mock.calls.at(-1)[0].units.find((u) => u.id === 'TGJ1').valueMW).toBe(null)
-  })
-
-  it('recovery del meter tras el null: vuelve a emitir valor', async () => {
-    vi.useFakeTimers()
-    const { meter, onData } = buildOff({ holdTtlMs: 2 * POLL_MS })
-    await orch.start()
-    emitAll(meter, 70); await tick()
-    emitAll(meter, null); await tick()
-    emitAll(meter, null); await tick()
-    emitAll(meter, null); await tick()   // TTL agotado → null
-    emitAll(meter, 68); await tick()     // el medidor vuelve
-    const st = orch.getStatus().perUnit.TGJ1
-    expect(st.source).toBe('meter')
-    expect(st.holding).toBe(false)
-    expect(onData.mock.calls.at(-1)[0].units.find((u) => u.id === 'TGJ1').valueMW).toBe(68)
-  })
-
-  it('arranque en frío sin lectura válida: source null y valueMW null', async () => {
-    vi.useFakeTimers()
-    const { onData } = buildOff()
-    await orch.start()
-    await tick()
-    const st = orch.getStatus().perUnit.TGJ1
-    expect(st.source).toBe(null)
-    expect(onData.mock.calls.at(-1)[0].units.find((u) => u.id === 'TGJ1').valueMW).toBe(null)
-  })
-
-  it('getStatus expone pmeEnabled=false y pme=null', async () => {
-    vi.useFakeTimers()
-    buildOff()
-    await orch.start()
-    const status = orch.getStatus()
-    expect(status.pmeEnabled).toBe(false)
-    expect(status.pme).toBe(null)
-  })
-
-  it('sanity flag-on: pmeEnabled=true explícito conmuta a pme al agotar el TTL (como hoy)', async () => {
-    vi.useFakeTimers()
-    const meter = makeFakeSubExtractor()
-    const pme = makeFakeSubExtractor()
-    orch = new ExtractorOrchestrator({
-      units: buildUnits(),
-      pme: PME_CONFIG,
-      pmeEnabled: true,
-      onData: vi.fn(),
-      pollMs: POLL_MS,
-      holdTtlMs: 2 * POLL_MS,
-      meterPollerCtor: meter.ctor,
-      pmeScraperCtor: pme.ctor,
-    })
-    await orch.start()
-    expect(pme.ctor).toHaveBeenCalledTimes(1)
-    emitAll(meter, 70); await tick()
-    emitAll(pme, 55)
-    emitAll(meter, null); await tick()
-    emitAll(meter, null); await tick()
-    emitAll(pme, 55)
-    emitAll(meter, null); await tick()
-    expect(orch.getStatus().perUnit.TGJ1.source).toBe('pme')
-    expect(orch.getStatus().pmeEnabled).toBe(true)
-  })
-})
-
 describe('ExtractorOrchestrator — invariante de generación (D-125)', () => {
-  let orch, meter, pme, onData
+  let orch, meter, onData
   afterEach(async () => { await orch?.stop(); vi.useRealTimers() })
 
   const unitOf = (last, id) => last.units.find((u) => u.id === id)
@@ -626,7 +477,7 @@ describe('ExtractorOrchestrator — invariante de generación (D-125)', () => {
     ;({ orch, meter, onData } = buildOrchestrator({ holdTtlMs: 2 * POLL_MS }))
     await orch.start()
 
-    // Arranque en frío sin lastGoodMeter ni PME
+    // Arranque en frío sin lastGoodMeter
     emitAll(meter, null); await tick()
     let tgj1 = unitOf(onData.mock.calls.at(-1)[0], 'TGJ1')
     expect(tgj1.valueMW).toBeNull()
@@ -635,7 +486,7 @@ describe('ExtractorOrchestrator — invariante de generación (D-125)', () => {
     // Y también después de haber tenido lecturas buenas, con el TTL del hold ya expirado
     emitAll(meter, 50); await tick()
     emitAll(meter, null); await tick()   // HOLD
-    emitAll(meter, null); await tick()   // TTL expira, sin PME
+    emitAll(meter, null); await tick()   // TTL expira
     tgj1 = unitOf(onData.mock.calls.at(-1)[0], 'TGJ1')
     expect(tgj1.valueMW).toBeNull()
     expect(tgj1.valueMwRaw).toBeNull()
@@ -666,20 +517,6 @@ describe('ExtractorOrchestrator — invariante de generación (D-125)', () => {
     const gec32 = unitOf(onData.mock.calls.at(-1)[0], 'GEC32')
     expect(gec32.valueMW).toBe(150)
     expect(gec32.valueMwRaw).toBe(150)
-  })
-
-  it('el clamp también aplica al valor servido por PME', async () => {
-    vi.useFakeTimers()
-    ;({ orch, meter, pme, onData } = buildOrchestrator({ holdTtlMs: 2 * POLL_MS }))
-    await orch.start()
-    emitAll(meter, 50); emitAll(pme, -12.3); await tick()
-    emitAll(meter, null); emitAll(pme, -12.3); await tick()   // HOLD
-    emitAll(meter, null); emitAll(pme, -12.3); await tick()   // TTL expira → pme
-
-    const tgj1 = unitOf(onData.mock.calls.at(-1)[0], 'TGJ1')
-    expect(tgj1.source).toBe('pme')
-    expect(tgj1.valueMW).toBe(0)
-    expect(tgj1.valueMwRaw).toBe(-12.3)
   })
 
   it('los caches quedan crudos: getStatus().meterValue y getTickSnapshot() no se clampan', async () => {

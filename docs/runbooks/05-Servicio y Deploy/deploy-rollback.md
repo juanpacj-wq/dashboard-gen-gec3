@@ -74,8 +74,9 @@ curl -s http://localhost:3001/health | jq '.status'
 ## Interpretación del smoke post-deploy
 
 - 🟢 `status: "ok"` y los 3 stale en `false` → deploy exitoso, listo.
-- 🟡 `pme.stale: true` durante el primer minuto → warming up de Playwright,
-  esperar 30-60 segundos más y reverificar.
+- 🟡 `pme.stale: true` durante el primer minuto → warming up del extractor (la llave
+  `pme` del health es el nombre histórico del estado del extractor, D-126), esperar
+  30-60 segundos más y reverificar.
 - 🔴 `status: "degraded"` persistente tras 2 minutos → algo del cambio rompió un
   componente. Identificar cuál con `jq '.pme, .emailDispatch'` y consultar el
   archivo correspondiente.

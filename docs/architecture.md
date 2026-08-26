@@ -36,9 +36,9 @@ Este archivo da el panorama. Para detalle del extractor de medidores ver `../ser
 **Componentes:**
 
 - `meterClient.js` — `ION8650Client`. Una instancia por medidor físico. HTTP Basic + cheerio sobre `/Operation.html` (firmware ION 8650V409). Errores tipados: `MeterAuthError`, `MeterHttpError`, `MeterTimeoutError`, `MeterFormatError`. Timeout 4s default. Keep-alive via undici Agent compartido.
-- `meterPoller.js` — `MeterPoller`. Misma API pública que el viejo `PMEScraper` (`start/stop/getStatus/onData`). Polling concurrente con `Promise.all` por unidad y por medidor. **Aislamiento por unidad**: si CUALQUIER medidor de una unidad falla en un tick, esa unidad reporta `valueMW=null` para no contaminar el integrador. Inversión de signo a nivel unidad (después de combinar). `perMeter` en `getStatus()` permite saber qué medidor está fallando sin leer logs.
-- `extractorOrchestrator.js` — árbitro entre MeterPoller y PMEScraper. State machine por unidad con histeresis. Expone `source: 'meter' | 'pme' | null` en el payload WS (decisión D-102).
-- `scraper.js` — `PMEScraper` (Playwright). Fallback opcional, **deshabilitado por default desde D-120** (`PME_ENABLED=1` para reactivar — runbook `runbooks/01-Medidores y PME/reactivar-pme.md`). Cuando corre, se loguea al PME centralizado de Gecelca y observa mutaciones del diagrama balance.dgm.
+- `meterPoller.js` — `MeterPoller`. API pública `start/stop/getStatus/onData`. Polling concurrente con `Promise.all` por unidad y por medidor. **Aislamiento por unidad**: si CUALQUIER medidor de una unidad falla en un tick, esa unidad reporta `valueMW=null` para no contaminar el integrador. Inversión de signo a nivel unidad (después de combinar). `perMeter` en `getStatus()` permite saber qué medidor está fallando sin leer logs.
+- `extractorOrchestrator.js` — envuelve al `MeterPoller`, **fuente única desde D-126**. Ya no arbitra entre dos extractores (el fallback PME se retiró: leía los mismos medidores y compartía su punto único de falla). Sigue siendo el punto donde nace el `valueMW` canónico: carry-forward con TTL (D-116), clamp de la invariante de dominio (D-125), freshness y observabilidad. Expone `source: 'meter' | null` en el payload WS.
+- ~~`scraper.js` — `PMEScraper` (Playwright)~~ — **eliminado en D-126**. Con él salió Playwright/Chromium del proyecto: ningún módulo lo importa (los scrapers de XM bajan sus archivos por HTTP con `undici`/`cheerio`).
 - `config.js` — `UNITS` con `{ id, label, maxMW, combine: 'single'|'sum', meters: [{host, user, password}], frontierType: 'input'|'output' }`. Validación fail-fast al cargar.
 
 **Topología de medidores:**
@@ -96,16 +96,15 @@ dashboard-gen-gec3/src/
 
 ### Hook `useRealtimeData.js`
 
-WebSocket cliente a `/ws`. El backend (ExtractorOrchestrator) envía cada unit con shape `{ id, label, valueMW, maxMW, source: 'meter' | 'pme' | null }`. **Se propaga tal cual (sin spread/map/filter)** — `setUnits(msg.units)` directo. Cualquier transformación rompe el contrato.
+WebSocket cliente a `/ws`. El backend (ExtractorOrchestrator) envía cada unit con shape `{ id, label, valueMW, maxMW, source: 'meter' | null }`. **Se propaga tal cual (sin spread/map/filter)** — `setUnits(msg.units)` directo. Cualquier transformación rompe el contrato.
 
-### Badge MEDIDOR/PME (M3)
+### Badge MEDIDOR (M3)
 
 En el header de cada `UnitCard`, un mini-badge:
 - `source === 'meter'` → "MEDIDOR" en verde (`C.green` / `C.greenDim` / `C.greenBorder`).
-- `source === 'pme'` → "PME" en ámbar (`C.amber` / `C.amberDim` / `C.amberBorder`).
 - `source === null` → no se renderiza nada (evita parpadeo durante warming).
 
-Si el orchestrator switchea meter→pme por fallo, el badge cambia en ≤6s (3 ticks de 2s = fallbackThreshold).
+El badge ámbar "PME" se retiró en D-126 junto con el fallback: `source` ya no puede valer `'pme'`.
 
 ### Estilos
 
@@ -214,7 +213,7 @@ curl -s http://localhost:3001/api/redespacho/national | node -e "process.stdin.o
 ```bash
 cd dashboard-gen-gec3/server && npm run dev       # backend 3001
 cd dashboard-gen-gec3 && npm run dev              # frontend (vite)
-# Browser http://localhost:5173 → cards muestran badge MEDIDOR/PME
+# Browser http://localhost:5173 → cards muestran badge MEDIDOR
 # F12 → Network → WS → frame con {units:[{source}]}
 curl http://localhost:3001/health | jq '.pme.perUnit'  # cross-check source
 ```

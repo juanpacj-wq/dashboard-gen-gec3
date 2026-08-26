@@ -17,13 +17,10 @@ async function loadConfig() {
   return await import('../config.js')
 }
 
-describe('config — flag PME_ENABLED (D-120)', () => {
+describe('config — sin fallback PME (D-126)', () => {
   beforeEach(() => {
-    // Env limpio y completo para los medidores: aísla la validación del caso PME.
     for (const [k, v] of Object.entries(METER_ENV)) vi.stubEnv(k, v)
     vi.stubEnv('CONFIG_SKIP_VALIDATION', '')
-    vi.stubEnv('PME_ENABLED', '')
-    vi.stubEnv('PME_PASSWORD', '')
     vi.stubEnv('METER_PROTOCOL', '')
   })
 
@@ -31,29 +28,34 @@ describe('config — flag PME_ENABLED (D-120)', () => {
     vi.unstubAllEnvs()
   })
 
-  it('sin PME_PASSWORD y sin PME_ENABLED el módulo carga (flag default apagado)', async () => {
+  it('el módulo carga solo con las variables de medidores', async () => {
     const cfg = await loadConfig()
-    expect(cfg.PME_ENABLED).toBe(false)
     expect(cfg.UNITS).toHaveLength(4)
   })
 
-  it('con PME_ENABLED=1 sin PME_PASSWORD la validación fail-fast lanza', async () => {
-    vi.stubEnv('PME_ENABLED', '1')
-    await expect(loadConfig()).rejects.toThrow(/PME_PASSWORD/)
-  })
-
-  it('con PME_ENABLED=1 y PME_PASSWORD presente carga y el flag queda encendido', async () => {
-    vi.stubEnv('PME_ENABLED', '1')
-    vi.stubEnv('PME_PASSWORD', 'secreto')
+  it('no exporta PME ni PME_ENABLED', async () => {
     const cfg = await loadConfig()
-    expect(cfg.PME_ENABLED).toBe(true)
+    expect(cfg.PME).toBeUndefined()
+    expect(cfg.PME_ENABLED).toBeUndefined()
   })
 
-  it('las 4 unidades conservan su config pme hardcodeada (rollback intacto)', async () => {
+  it('PME_ENABLED=1 en el env es inerte: ya no hay flag que encender', async () => {
+    vi.stubEnv('PME_ENABLED', '1')
+    const cfg = await loadConfig()   // no debe lanzar por PME_PASSWORD ausente
+    expect(cfg.UNITS).toHaveLength(4)
+    expect(cfg.PME_ENABLED).toBeUndefined()
+  })
+
+  it('las unidades ya no llevan config pme', async () => {
     const cfg = await loadConfig()
     for (const u of cfg.UNITS) {
-      expect(u.pme).toEqual({ referencia: expect.any(String), occurrence: expect.any(Number) })
+      expect(u).not.toHaveProperty('pme')
     }
+  })
+
+  it('faltando una IP de medidor la validación fail-fast sigue lanzando', async () => {
+    vi.stubEnv('IP_TGJ1', '')
+    await expect(loadConfig()).rejects.toThrow(/IP_TGJ1/)
   })
 })
 
@@ -61,8 +63,6 @@ describe('config — METER_PROTOCOL default modbus (D-120)', () => {
   beforeEach(() => {
     for (const [k, v] of Object.entries(METER_ENV)) vi.stubEnv(k, v)
     vi.stubEnv('CONFIG_SKIP_VALIDATION', '')
-    vi.stubEnv('PME_ENABLED', '')
-    vi.stubEnv('PME_PASSWORD', '')
   })
 
   afterEach(() => {

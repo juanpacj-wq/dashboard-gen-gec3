@@ -1,23 +1,3 @@
-// ─── Conexión PME (mantener para fallback) ────────────────────────────────────
-const DEFAULT_DIAGRAM_URL =
-  'https://gpme.gecelca.com.co/ion/default.aspx' +
-  '?dgm=x-pml%3a%2fdiagrams%2fud%2fbalance.dgm' +
-  '&node=' +
-  '&logServerName=QUERYSERVER.BQ-ENERGIA-07' +
-  '&logServerHandle=327952'
-
-export const PME = {
-  loginUrl:   process.env.PME_LOGIN_URL   || 'https://gpme.gecelca.com.co/web',
-  diagramUrl: process.env.PME_DIAGRAM_URL || DEFAULT_DIAGRAM_URL,
-  user:       process.env.PME_USER        || 'supervisor',
-  password:   process.env.PME_PASSWORD    || '',
-}
-
-// Fallback PME deshabilitado por default (D-120): con el flag apagado no se instancia el
-// PMEScraper (cero Playwright/Chromium) y la extracción queda solo con los medidores.
-// Reactivar = PME_ENABLED=1 explícito (+ PME_PASSWORD) y reiniciar.
-export const PME_ENABLED = process.env.PME_ENABLED === '1'
-
 // ─── Defaults del extractor de medidores ─────────────────────────────────────
 export const METER_DEFAULTS = {
   opPath:     process.env.METER_OP_PATH                  || '/Operation.html',
@@ -42,12 +22,10 @@ export const METER_DEFAULTS = {
 }
 
 // ─── Unidades de generación ──────────────────────────────────────────────────
-// Modelo unificado:
-//   meters[]        → para meterPoller (fuente primaria)
+// Modelo unificado (fuente ÚNICA desde D-126):
+//   meters[]        → para meterPoller (Modbus TCP; único origen de potencia)
 //   combine         → 'single' | 'sum' (GEC3 suma 2 medidores)
 //   frontierType    → 'output' (Guajira) | 'input' (Gecelca, signo invertido)
-//   pme.referencia  → para PMEScraper legacy (fallback). Etiqueta del DOM.
-//   pme.occurrence  → índice base 0 de la N-ésima aparición de la etiqueta.
 //
 // Variables de entorno por medidor:
 //   USER_MEDIDORES → usuario único compartido
@@ -57,13 +35,11 @@ export const UNITS = [
     id: 'TGJ1', label: 'GUAJIRA 1', maxMW: 145,
     frontierType: 'output',
     meterEnv: [{ ip: 'IP_TGJ1', psw: 'PSW_TGJ1' }],
-    pme: { referencia: 'kW tot', occurrence: 0 },
   }),
   unit({
     id: 'TGJ2', label: 'GUAJIRA 2', maxMW: 130,
     frontierType: 'output',
     meterEnv: [{ ip: 'IP_TGJ2', psw: 'PSW_TGJ2' }],
-    pme: { referencia: 'kW tot', occurrence: 1 },
   }),
   unit({
     id: 'GEC3', label: 'GECELCA 3', maxMW: 164,
@@ -72,26 +48,19 @@ export const UNITS = [
       { ip: 'IP_GEC3_1', psw: 'PSW_GEC3_1' },
       { ip: 'IP_GEC3_2', psw: 'PSW_GEC3_2' },
     ],
-    pme: { referencia: 'KWTOT_G3', occurrence: 0 },
   }),
   unit({
     id: 'GEC32', label: 'GECELCA 32', maxMW: 270,
     frontierType: 'input',
     meterEnv: [{ ip: 'IP_GEC32', psw: 'PSW_GEC32' }],
-    pme: { referencia: 'KWTOT_G32', occurrence: 0 },
   }),
 ]
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function unit({ id, label, maxMW, meterEnv, frontierType = 'output', pme }) {
+function unit({ id, label, maxMW, meterEnv, frontierType = 'output' }) {
   if (frontierType !== 'output' && frontierType !== 'input') {
     throw new Error(`config: unit ${id} frontierType inválido '${frontierType}'`)
-  }
-  // pme solo es obligatorio con el fallback habilitado (D-120); las 4 unidades lo
-  // conservan hardcodeado como vía de rollback.
-  if (PME_ENABLED && (!pme || !pme.referencia)) {
-    throw new Error(`config: unit ${id} requiere pme: { referencia, occurrence } con PME_ENABLED=1`)
   }
   const meters = meterEnv.map(({ ip, psw }) => meterFromEnv({ ipKey: ip, pswKey: psw, unitId: id }))
   return {
@@ -101,7 +70,6 @@ function unit({ id, label, maxMW, meterEnv, frontierType = 'output', pme }) {
     frontierType,
     combine: meters.length > 1 ? 'sum' : 'single',
     meters,
-    pme: pme ? { referencia: pme.referencia, occurrence: pme.occurrence ?? 0 } : null,
   }
 }
 
@@ -121,7 +89,7 @@ function meterFromEnv({ ipKey, pswKey, unitId }) {
 // importen la lista (ej. tests, scripts ad-hoc).
 if (process.env.CONFIG_SKIP_VALIDATION !== '1') {
   const missing = []
-  // Validación de medidores (fuente primaria)
+  // Validación de medidores (fuente ÚNICA desde D-126)
   for (const u of UNITS) {
     for (const m of u.meters) {
       if (!m.host) missing.push(`${m._ipKey}  (unit=${u.id})`)
@@ -129,8 +97,6 @@ if (process.env.CONFIG_SKIP_VALIDATION !== '1') {
       if (!m.password) missing.push(`${m._pswKey}  (unit=${u.id})`)
     }
   }
-  // Validación del PME (fallback) — solo obligatorio con el fallback habilitado (D-120)
-  if (PME_ENABLED && !PME.password) missing.push('PME_PASSWORD  (fallback PME, requerido con PME_ENABLED=1)')
 
   if (missing.length > 0) {
     const unique = [...new Set(missing)]

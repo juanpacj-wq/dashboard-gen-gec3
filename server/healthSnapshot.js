@@ -4,9 +4,9 @@
 
 /**
  * @param {object} deps
- * @param {object} [deps.scraper]            MeterPoller o PMEScraper top-level (.getStatus()).
+ * @param {object} [deps.scraper]            MeterPoller top-level (.getStatus()).
  *                                           En este codebase el top-level es ExtractorOrchestrator,
- *                                           que ya encapsula meter+pme — pasar null y usar `orchestrator`.
+ *                                           que ya encapsula el MeterPoller — pasar null y usar `orchestrator`.
  * @param {object} [deps.orchestrator]       ExtractorOrchestrator (.getStatus()). Su
  *                                           `perUnit[id]` incluye source/consecMeterErrors
  *                                           y, desde D-116, holding/heldTicks/lastHoldAt/

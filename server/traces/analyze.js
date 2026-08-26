@@ -39,6 +39,8 @@ function summarize(records) {
   const ts = records.map((r) => new Date(r.ts).getTime())
   const minTs = Math.min(...ts)
   const maxTs = Math.max(...ts)
+  // `pme` se conserva a propósito: los traces grabados ANTES de D-126 traen ese source y
+  // ese bloque, y este analizador debe seguir leyéndolos. En traces nuevos siempre da 0/—.
   const sources = { meter: 0, pme: 0, null: 0, other: 0 }
   const flagCounts = { negativeMw: 0, nullCoercedToZero: 0, sourceSwitched: 0, outlierDeviation: 0, periodBoundary: 0 }
   const transitions = []

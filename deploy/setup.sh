@@ -18,9 +18,8 @@ if ! command -v node &>/dev/null; then
 fi
 echo "  Node: $(node -v) | npm: $(npm -v)"
 
-# 2. Dependencias de Playwright (Chromium headless)
-echo "[2/8] Instalando dependencias de Playwright/Chromium..."
-sudo npx playwright install-deps chromium
+# 2. (D-126) Sin dependencias de navegador: el fallback PME se retiró y con él Playwright.
+echo "[2/8] Sin dependencias de navegador (D-126: extracción solo Modbus)."
 
 # 3. Directorio de la aplicacion
 echo "[3/8] Preparando directorio $APP_DIR..."
@@ -47,11 +46,10 @@ export APP_BASE_PATH="${APP_BASE_PATH:-}"
 echo "  base del build: '${APP_BASE_PATH:-/}'"
 npm run build
 
-# 6. Dependencias del servidor + Chromium
+# 6. Dependencias del servidor
 echo "[6/8] Instalando dependencias del servidor..."
 cd "$APP_DIR/server"
 npm ci
-npx playwright install chromium
 
 # 7. Archivo de entorno
 if [ ! -f "$APP_DIR/server/.env" ]; then

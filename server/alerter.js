@@ -10,11 +10,9 @@ const DEFAULTS = {
   // umbral opera sobre meterPoller.perMeter (no-op en prod) y es defensivo.
   ALERT_THRESH_METER_CONSEC_ERRORS: 90,
   ALERT_THRESH_METER_DOWN_MIN: 3,
-  // Global "todas sin medidor" (D-120, solo con PME deshabilitado). Independiente de
-  // ALERT_THRESH_PME_GLOBAL_MIN: semántica distinta, tuneo aparte.
+  // Global "todas sin medidor" (D-126): es EL CRITICAL de falla total de extracción.
+  // Ya no está condicionado a que el fallback PME esté apagado — no hay fallback.
   ALERT_THRESH_METER_DOWN_GLOBAL_MIN: 2,
-  ALERT_THRESH_PME_PERSIST_MIN: 10,
-  ALERT_THRESH_PME_GLOBAL_MIN: 2,
   ALERT_THRESH_EMAIL_STALE_MIN: 20,
   ALERT_THRESH_REDESP_STALE_MIN: 30,
   ALERT_THRESH_DESPACHO_STALE_MIN: 60,
@@ -58,10 +56,6 @@ export class Alerter {
   #interval = null
   // Map<incident_key, { severity, firstSeenAt, lastAlertedAt, active }>
   #incidents = new Map()
-  // Map<unitId, ts_first_seen_in_pme | null>
-  #pmeSwitchedAt = {}
-  // ts_first_seen_all_in_pme | null
-  #pmeGlobalSince = null
 
   constructor({ getSnapshot, dispatch, env = process.env, now = () => Date.now() }) {
     this.#cfg = readEnv(env)
@@ -115,29 +109,12 @@ export class Alerter {
       }
     }
 
-    // 2) Orchestrator per-unit en PME > M min + global
+    // 2) Orchestrator per-unit: medidor caído (fuente única desde D-126)
     const orch = s.orchestrator
     const perUnit = orch?.perUnit ?? {}
     const unitIds = Object.keys(perUnit)
-    const allInPme = unitIds.length > 0 && unitIds.every(u => perUnit[u].source === 'pme')
 
     for (const u of unitIds) {
-      const inPme = perUnit[u].source === 'pme'
-      const k = `orchestrator:pme:${u}`
-      if (inPme) {
-        if (!this.#pmeSwitchedAt[u]) this.#pmeSwitchedAt[u] = now
-        const sec = (now - this.#pmeSwitchedAt[u]) / 1000
-        if (sec > c.ALERT_THRESH_PME_PERSIST_MIN * 60) {
-          this.#open(k, 'WARN', {
-            title: `Unidad ${u} en PME por ${Math.round(sec / 60)} min`,
-            body: `source=pme persistente; consecMeterErrors=${perUnit[u].consecMeterErrors ?? '?'}`,
-          }, now)
-        }
-      } else {
-        this.#pmeSwitchedAt[u] = null
-        this.#close(k, now, /*emitRecovery*/ false)
-      }
-
       // 2b) Medidor caído ≥ N min (carry-forward agotado, D-116). El reloj
       // meterDownSince del orchestrator corre durante el hold (observabilidad
       // veraz); una sola alerta gracias al cooldown por incident_key.
@@ -153,37 +130,20 @@ export class Alerter {
       }
     }
 
-    // Global: todas las unidades en PME simultáneamente
-    const kGlobal = 'orchestrator:pme:GLOBAL'
-    if (allInPme) {
-      if (!this.#pmeGlobalSince) this.#pmeGlobalSince = now
-      const sec = (now - this.#pmeGlobalSince) / 1000
-      if (sec > c.ALERT_THRESH_PME_GLOBAL_MIN * 60) {
-        this.#open(kGlobal, 'CRITICAL', {
-          title: `TODAS las unidades en PME por ${Math.round(sec / 60)} min`,
-          body: 'Probable falla de LAN de medidores. Revisar conectividad meter hosts.',
-        }, now)
-      }
-    } else {
-      this.#pmeGlobalSince = null
-      this.#close(kGlobal, now, /*emitRecovery*/ true)   // CRITICAL = manda recovery
-    }
-
-    // Global: TODAS las unidades sin medidor — solo con el fallback PME deshabilitado
-    // (D-120; con PME on el CRITICAL global equivalente sigue siendo orchestrator:pme:GLOBAL).
-    // Gate estricto === false: snapshots legacy sin el campo no cambian de comportamiento.
+    // Global: TODAS las unidades sin medidor. Desde D-126 es EL CRITICAL de falla total
+    // de extracción — ya no está condicionado a `pmeEnabled === false` porque no hay
+    // segunda fuente, y su gemelo `orchestrator:pme:GLOBAL` desapareció con el fallback.
     // Sin reloj propio: meterDownSeconds del orchestrator ya corre durante el hold (D-116).
     // El !holding evita el falso positivo mientras el carry-forward todavía sirve valores;
     // en la práctica dispara en el primer tick tras agotarse el TTL.
     const kMeterGlobal = 'orchestrator:meterDown:GLOBAL'
-    const pmeOff = orch?.pmeEnabled === false
-    const allMetersDown = pmeOff && unitIds.length > 0 && unitIds.every(u =>
+    const allMetersDown = unitIds.length > 0 && unitIds.every(u =>
       !perUnit[u].holding &&
       (perUnit[u].meterDownSeconds ?? 0) >= c.ALERT_THRESH_METER_DOWN_GLOBAL_MIN * 60)
     if (allMetersDown) {
       this.#open(kMeterGlobal, 'CRITICAL', {
-        title: 'TODAS las unidades sin medidor (PME deshabilitado)',
-        body: 'Probable falla de LAN de medidores. Sin fallback activo: valores en null. Revisar conectividad meter hosts.',
+        title: 'TODAS las unidades sin medidor',
+        body: 'Probable falla de LAN de medidores. Fuente única (D-126): valores en null. Revisar conectividad meter hosts.',
       }, now)
     } else {
       this.#close(kMeterGlobal, now, /*emitRecovery*/ true)   // CRITICAL = manda recovery
@@ -304,8 +264,6 @@ export class Alerter {
   _stateForTest() {
     return {
       incidents: Array.from(this.#incidents.entries()),
-      pmeSwitchedAt: { ...this.#pmeSwitchedAt },
-      pmeGlobalSince: this.#pmeGlobalSince,
     }
   }
 }

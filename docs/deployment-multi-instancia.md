@@ -8,7 +8,7 @@ camino allanado para una futura migración a **Docker**.
 > Caso que motiva esta guía:
 > - **Instancia A (`gec3`, actual):** orden de unidades `GEC3, GEC32, TGJ1, TGJ2`; default `GEC3`.
 > - **Instancia B (`guajira`, nueva):** orden `TGJ1, TGJ2, GEC3, GEC32`; default `TGJ1`.
-> - Ambas monitorean **las mismas plantas físicas** (mismo PME, mismos medidores ION8650).
+> - Ambas monitorean **las mismas plantas físicas** (mismos medidores ION8650).
 > - Ambos servidores Ubuntu/Linux (se reutiliza `deploy/`). Decisión ADR: [D-117](./decisions.md).
 
 ---
@@ -26,7 +26,7 @@ Hay **dos capas de configuración**, con reglas opuestas de versionado:
 
 | Capa | Qué contiene | ¿Se commitea? | Dónde |
 |---|---|---|---|
-| **Secretos / runtime** | DB, credenciales PME, IPs y passwords de medidores, Graph API, puerto | **NO** (gitignored) | `server/.env` por servidor |
+| **Secretos / runtime** | DB, IPs y passwords de medidores, Graph API, puerto | **NO** (gitignored) | `server/.env` por servidor |
 | **UI / build-time→runtime** | Orden de unidades, unidad por defecto, plantas de bitácora, branding | **SÍ** (plantillas, sin secretos) | `instance/config.json` por servidor (sembrado desde `deploy/config.*.json`) |
 
 ---
@@ -59,7 +59,7 @@ archivo que monte cada servidor. Ver [D-117](./decisions.md).
   "unitOrder": ["TGJ1", "TGJ2", "GEC3", "GEC32"],
   "defaultUnit": "TGJ1",
   "bitacoraPlantas": ["GEC3", "GEC32"],
-  "branding": { "title": "Dashboard Generación", "logo": "/G3 blanco.png", "logoAlt": "Gecelca" }
+  "branding": { "title": "Dashboard Generación", "logo": "/logo-g3-blanco.png", "logoAlt": "Gecelca" }
 }
 ```
 
@@ -95,7 +95,7 @@ systemd `EnvironmentFile`). Cada servidor tiene su **propio** `server/.env`:
 
 - **Instancia A:** `DB_HOST`/`DB_NAME` actuales.
 - **Instancia B:** `DB_HOST` del **otro SQL Server** + su `DB_NAME`/credenciales; **mismas**
-  `PME_*`, `USER_MEDIDORES`, `IP_*`/`PSW_*`, `GRAPH_*` (credenciales compartidas — ver §3).
+  `USER_MEDIDORES`, `IP_*`/`PSW_*`, `GRAPH_*` (credenciales compartidas — ver §3).
 
 `server/db.js` autocrea el esquema `dashboard` y sus tablas con `CREATE IF NOT EXISTS` en el
 primer arranque. **Caveat:** no hace `ALTER`; cambios de columnas en releases futuros hay que
@@ -108,19 +108,19 @@ probarlos en una instancia antes que la otra.
 Como ambas instancias monitorean las mismas plantas **con las mismas credenciales**, los dos
 servidores van a, en paralelo:
 
-1. Loguearse al mismo PME (`PME_USER`) con Playwright.
-2. Leer los mismos medidores ION8650 (mismas IPs/credenciales) vía meterPoller.
-3. Descargar los mismos archivos XM y leer el mismo buzón Graph (inofensivo: idempotente).
+1. Leer los mismos medidores ION8650 (mismas IPs/credenciales) vía meterPoller.
+2. Descargar los mismos archivos XM y leer el mismo buzón Graph (inofensivo: idempotente).
 
-Los puntos 1-2 son los delicados: el ION8650 admite conexiones TCP limitadas, y el login PME
-concurrente con el mismo usuario puede invalidar la sesión más vieja.
+El punto 1 es el delicado: el ION8650 admite conexiones TCP limitadas (≤8 por medidor en :502).
+Desde **D-126** ya no hay login concurrente al PME que pueda invalidar sesiones — ese riesgo
+desapareció con el fallback.
 
 ### Opción A — Stacks independientes completos (máxima independencia)
 
-Cada servidor corre su stack completo (PME + meterPoller + XM + email) a su propia BD.
+Cada servidor corre su stack completo (meterPoller + XM + email) a su propia BD.
 
 - ✅ Instancias 100% independientes.
-- ⚠️ Doble carga sobre PME/medidores; posible contención.
+- ⚠️ Doble carga sobre los medidores; posible contención de conexiones Modbus.
 
 ### Opción B — Plano de adquisición único (sin contención)
 
@@ -136,11 +136,11 @@ Arrancar con **Opción A** y **pilotar la concurrencia** unas horas vigilando, *
 servidores**, `curl -s localhost/health/detailed` y `journalctl -u dashboard-ws -f`.
 
 - **Criterio de aceptación:** la tasa `source='meter'` se mantiene estable en AMBAS instancias
-  (B no degrada los medidores de A a `source='pme'`); sin tormenta de errores de medidor ni
-  desconexiones PME recurrentes. Runbook: `docs/runbooks/observability.md`.
-- **Si falla:** mover B a **Opción B** o gestionar credenciales dedicadas. Mitigante de fondo:
-  el medidor es primario y PME solo fallback (D-116), así que la contención PME tiene impacto
-  acotado.
+  (B no deja a los medidores de A en `holding` o en null); sin tormenta de errores de medidor.
+  Runbook: `docs/runbooks/observability.md`.
+- **Si falla:** mover B a **Opción B** o gestionar credenciales dedicadas. Atención: desde
+  **D-126** la fuente es única, así que la contención de medidores ya NO tiene red de
+  seguridad — su impacto es directo sobre el dato mostrado.
 - **Documentar el resultado** como ADR en `docs/decisions.md`.
 
 ---
@@ -185,7 +185,7 @@ el entrypoint.
 2. Clonar el repo en `/var/www/dashboard-gen` (rama `release`, ver §5.5).
 3. `sudo cp deploy/config.guajira.json instance/config.json`.
 4. Crear `server/.env` con `DB_*` del nuevo host y las credenciales compartidas.
-5. Correr `deploy/setup.sh` (instala Node/nginx/Playwright, build, nginx, systemd; siembra
+5. Correr `deploy/setup.sh` (instala Node/nginx, build, nginx, systemd; siembra
    `instance/config.json` con gec3 si no existe — sobreescribir con guajira como en el paso 3).
 
 ### 5.4 Actualización (idéntica en ambos servidores)
@@ -247,11 +247,11 @@ en runtime** (archivo externo), **backend 100% env-driven** (`--env-file` nativo
 de Docker), y `server.js` **no sirve estáticos** (separación limpia SPA/backend).
 
 Forma objetivo:
-- `Dockerfile` sobre `mcr.microsoft.com/playwright` (Chromium ya resuelto).
+- `Dockerfile` sobre una imagen `node:20-slim` (desde D-126 no hace falta navegador).
 - Entrypoint que **genera `instance/config.json` desde variables de entorno** (o se monta como
   volumen) → **una imagen, N instancias** vía `docker run --env-file instance.env`.
 - `docker-compose.yml` con dos servicios (gec3/guajira); cada `--env-file` configura **todo**
-  (DB + PME + medidores + UI). nginx en host o como contenedor.
+  (DB + medidores + UI). nginx en host o como contenedor.
 - **MSSQL queda externo** (no se dockeriza).
 - **Validar acceso de red** del contenedor a las IPs de los medidores (`network_mode: host` o
   ruta a la LAN corporativa).

@@ -1,24 +1,30 @@
 import { MeterPoller } from './meterPoller.js'
-import { PMEScraper } from './scraper.js'
 import { clampGenerationMw } from '../shared/domain/generation.js'
 
 const DEFAULT_POLL_MS = 2000
-const DEFAULT_RECOVERY_THRESHOLD = 2
 const DEFAULT_HOLD_TTL_MIN = 3       // carry-forward del último valor bueno del medidor (D-116)
 const FRESHNESS_MS = 30_000  // un dato es "fresco" si tiene <30s
 const HEARTBEAT_MS = 60_000
 
+/**
+ * Fuente ÚNICA de potencia: los medidores ION8650 por Modbus TCP (D-126).
+ *
+ * El fallback PME se retiró: raspaba el mismo dato de los mismos 5 medidores vía el
+ * servidor PME, así que compartía el punto único de falla con el primario (si el medidor
+ * o su red caen, caen los dos) y aportaba solo superficie de error propia.
+ *
+ * Lo que este orquestador SÍ sigue haciendo, y por eso no desapareció con el fallback:
+ *   - carry-forward del último valor bueno con TTL ante nulls transitorios (D-116),
+ *   - clamp de la invariante de dominio "la generación nunca es negativa" (D-125),
+ *   - merge por unidad + freshness + observabilidad (source/holding/heartbeat).
+ */
 export class ExtractorOrchestrator {
   #units
   #onData
   #pollMs
-  #recoveryThreshold
   #holdTtlMs
   #meterPoller
-  #pmeScraper       // null cuando pmeEnabled=false (D-120)
-  #pmeEnabled
   #meterCache       // Map<unitId, { value, updatedAt }>
-  #pmeCache         // Map<unitId, { value, updatedAt }>
   #unitState        // Map<unitId, { source, since, consecMeterErrors, consecMeterOk }>
   #running = false
   #pollTimer = null
@@ -31,23 +37,18 @@ export class ExtractorOrchestrator {
 
   constructor({
     units,
-    pme,
-    // Fallback PME (D-120). Default true = retrocompat con los llamadores/tests que no
-    // pasan el flag; el default APAGADO vive en config (PME_ENABLED), no acá.
-    pmeEnabled = true,
     onData,
     pollMs = DEFAULT_POLL_MS,
     timeoutMs,
     opPath,
-    // fallbackThreshold: obsoleto desde D-116 (decisión ahora time-based). Si una
-    // llamada aún lo pasa, se ignora sin romper (destructuring descarta extras).
-    recoveryThreshold = DEFAULT_RECOVERY_THRESHOLD,
+    // fallbackThreshold / recoveryThreshold / pme / pmeEnabled: obsoletos desde D-126
+    // (ya no hay segunda fuente que arbitrar). Si un llamador viejo aún los pasa, el
+    // destructuring los descarta sin romper.
     holdTtlMin = DEFAULT_HOLD_TTL_MIN,
     holdTtlMs,  // tests: gana sobre holdTtlMin si se pasa (precisión con fake timers)
     clientFactory,
-    // Inyectables para tests:
+    // Inyectable para tests:
     meterPollerCtor = MeterPoller,
-    pmeScraperCtor = PMEScraper,
   } = {}) {
     if (!Array.isArray(units) || units.length === 0) {
       throw new TypeError('ExtractorOrchestrator: units required')
@@ -55,21 +56,15 @@ export class ExtractorOrchestrator {
     if (typeof onData !== 'function') {
       throw new TypeError('ExtractorOrchestrator: onData must be a function')
     }
-    if (pmeEnabled && !pme) {
-      throw new TypeError('ExtractorOrchestrator: pme config required')
-    }
 
-    this.#pmeEnabled = pmeEnabled
     this.#units = units
     this.#onData = onData
     this.#pollMs = pollMs
-    this.#recoveryThreshold = recoveryThreshold
     this.#holdTtlMs = (holdTtlMs != null && Number.isFinite(holdTtlMs))
       ? holdTtlMs
       : holdTtlMin * 60_000
 
     this.#meterCache = new Map()
-    this.#pmeCache = new Map()
     this.#unitState = new Map()
 
     for (const u of units) {
@@ -98,16 +93,6 @@ export class ExtractorOrchestrator {
       opPath,
       clientFactory,
     })
-
-    // Con el fallback apagado no se instancia PMEScraper (cero Playwright/Chromium) ni
-    // se llama unitsForPME() (las units pueden traer pme: null).
-    this.#pmeScraper = pmeEnabled
-      ? new pmeScraperCtor({
-          pme,
-          units: unitsForPME(units),
-          onData: (payload) => this.#onPmeData(payload),
-        })
-      : null
   }
 
   async start() {
@@ -115,23 +100,14 @@ export class ExtractorOrchestrator {
     this.#running = true
     log('info',
       `ExtractorOrchestrator starting — holdTtlMin=${this.#holdTtlMs / 60_000} ` +
-      `recoveryThreshold=${this.#recoveryThreshold} pollMs=${this.#pollMs} ` +
-      `pmeEnabled=${this.#pmeEnabled}`,
+      `pollMs=${this.#pollMs} source=meter-only (D-126)`,
     )
 
-    // Kick off ambos sub-extractores fire-and-forget. PMEScraper.start() tiene
-    // un `while (running)` que nunca resuelve mientras el scraper está vivo
-    // (es su ciclo de observación). Si lo awaitáramos aquí, los setIntervals
-    // de #tick/#heartbeat nunca se programarían y onData jamás se llamaría.
-    // MeterPoller.start() sí resuelve, pero lo tratamos igual por simetría.
+    // Kick off fire-and-forget: MeterPoller.start() resuelve, pero no lo awaitamos
+    // para que los setIntervals de #tick/#heartbeat se programen sin depender de él.
     Promise.resolve(this.#meterPoller.start()).catch((e) =>
       log('error', `meterPoller.start failed: ${e?.message ?? e}`),
     )
-    if (this.#pmeScraper) {
-      Promise.resolve(this.#pmeScraper.start()).catch((e) =>
-        log('error', `pmeScraper.start failed: ${e?.message ?? e}`),
-      )
-    }
 
     this.#pollTimer = setInterval(() => {
       try { this.#tick() } catch (e) { log('error', `merge tick failed: ${e?.message ?? e}`) }
@@ -148,16 +124,12 @@ export class ExtractorOrchestrator {
     if (this.#pollTimer) { clearInterval(this.#pollTimer); this.#pollTimer = null }
     if (this.#heartbeatTimer) { clearInterval(this.#heartbeatTimer); this.#heartbeatTimer = null }
 
-    await Promise.allSettled([
-      Promise.resolve(this.#meterPoller.stop()),
-      ...(this.#pmeScraper ? [Promise.resolve(this.#pmeScraper.stop())] : []),
-    ])
+    await Promise.allSettled([Promise.resolve(this.#meterPoller.stop())])
   }
 
   getTickSnapshot(unitId) {
     const state = this.#unitState.get(unitId)
     const meter = this.#meterCache.get(unitId)
-    const pme = this.#pmeCache.get(unitId)
     const now = Date.now()
     let meterPreInversion = null
     try {
@@ -167,8 +139,6 @@ export class ExtractorOrchestrator {
       meterRaw: meter?.value ?? null,
       meterAgeMs: meter ? now - meter.updatedAt : null,
       meterPreInversion,
-      pmeRaw: pme?.value ?? null,
-      pmeAgeMs: pme ? now - pme.updatedAt : null,
       source: state?.source ?? null,
       sourceSince: state?.since ?? null,
       justSwitched: !!state?.justSwitched,
@@ -183,7 +153,6 @@ export class ExtractorOrchestrator {
 
   getStatus() {
     const meter = safeGetStatus(this.#meterPoller)
-    const pme = this.#pmeScraper ? safeGetStatus(this.#pmeScraper) : null
 
     const now = Date.now()
     const perUnit = {}
@@ -194,7 +163,6 @@ export class ExtractorOrchestrator {
         consecMeterErrors: state.consecMeterErrors,
         consecMeterOk: state.consecMeterOk,
         meterValue: this.#meterCache.get(unitId)?.value ?? null,
-        pmeValue:   this.#pmeCache.get(unitId)?.value   ?? null,
         holding: state.holding,
         heldTicks: state.heldTicks,
         lastHoldAt: state.lastHoldAt ? new Date(state.lastHoldAt).toISOString() : null,
@@ -213,9 +181,7 @@ export class ExtractorOrchestrator {
       errorCount: this.#errorCount,
       stale: this.#isStale(),
       valueStale: false,
-      pmeEnabled: this.#pmeEnabled,
       meter,
-      pme,
       perUnit,
     }
   }
@@ -230,14 +196,6 @@ export class ExtractorOrchestrator {
     }
   }
 
-  #onPmeData(payload) {
-    if (!payload?.units) return
-    const now = Date.now()
-    for (const u of payload.units) {
-      this.#pmeCache.set(u.id, { value: u.valueMW, updatedAt: now })
-    }
-  }
-
   #tick() {
     const now = Date.now()
     const mergedUnits = []
@@ -247,17 +205,12 @@ export class ExtractorOrchestrator {
       state.justSwitched = false
 
       const meter = this.#meterCache.get(unit.id)
-      const pme = this.#pmeCache.get(unit.id)
-
       const meterValid = isValid(meter, now)
-      // Con el fallback apagado el dato pme nunca es válido: la rama de conmutación
-      // meter→pme queda inalcanzable y tras el hold TTL la unidad emite null (D-120).
-      const pmeValid = this.#pmeEnabled ? isValid(pme, now) : false
 
       if (meterValid) {
         state.consecMeterOk++
         state.consecMeterErrors = 0
-        // 1c: lastGoodMeter solo se sella con lecturas válidas (post-inversión).
+        // lastGoodMeter solo se sella con lecturas válidas (post-inversión).
         state.lastGoodMeter = { value: meter.value, at: now }
       } else {
         state.consecMeterErrors++
@@ -275,33 +228,18 @@ export class ExtractorOrchestrator {
       else if (state.meterDownSince === null) state.meterDownSince = now
 
       if (meterValid) {
-        if (prevSource === 'pme') {
-          // recovery pme→meter: preserva recoveryThreshold (D-102)
-          if (state.consecMeterOk >= this.#recoveryThreshold) {
-            state.source = 'meter'; state.since = now; state.justSwitched = true
-            log('info', `[${unit.id}] switched: pme → meter (${state.consecMeterOk} consec OK)`)
-          }
-        } else {
-          if (prevSource !== 'meter') { state.source = 'meter'; state.since = now; state.justSwitched = true }
-          else state.source = 'meter'
-        }
+        if (prevSource !== 'meter') { state.source = 'meter'; state.since = now; state.justSwitched = true }
+        else state.source = 'meter'
         state.holding = false
       } else if (state.lastGoodMeter && !ttlExpired) {
-        // HOLD — prioridad sobre PME mientras el TTL no expire
+        // HOLD — se retiene el último valor bueno mientras el TTL no expire
         state.source = 'meter'
         state.holding = true
       } else {
-        // TTL expiró (o sin lastGoodMeter en arranque) → ceder a PME
+        // TTL expirado (o sin lastGoodMeter en arranque): nadie sirve. Se conserva el
+        // source previo por histéresis y el valor sale null — "sin lectura" nunca se
+        // convierte en "generando 0 MW" (D-105/D-116).
         state.holding = false
-        if (pmeValid && prevSource !== 'pme') {
-          state.source = 'pme'; state.since = now; state.justSwitched = true
-          if (prevSource === 'meter') {
-            log('warn', `[${unit.id}] switched: meter → pme (TTL ${this.#holdTtlMs / 60_000}min agotado)`)
-          } else {
-            log('warn', `[${unit.id}] init in fallback (meter invalid at startup)`)
-          }
-        }
-        // ambas muertas: mantener source previo (value será null); conserva histéresis
       }
 
       // ── Episodio de hold (log inicio/fin) ──────────────────────────────────
@@ -313,20 +251,19 @@ export class ExtractorOrchestrator {
           state.heldTicks++
         }
       } else if (wasHolding) {
-        const reason = meterValid ? 'meter recovered' : (pmeValid ? 'TTL→pme' : 'TTL→null')
+        const reason = meterValid ? 'meter recovered' : 'TTL→null'
         log('info', `[${unit.id}] HOLD end — ${state.heldTicks} ticks reason=${reason}`)
         state.heldTicks = 0
       }
 
       // ── Cálculo de valueMW ─────────────────────────────────────────────────
-      let valueMwRaw
-      if (state.source === 'meter')    valueMwRaw = meterValid ? meter.value : (state.holding ? state.lastGoodMeter.value : null)
-      else if (state.source === 'pme') valueMwRaw = pmeValid ? pme.value : null
-      else                             valueMwRaw = null
+      const valueMwRaw = meterValid
+        ? meter.value
+        : (state.holding ? state.lastGoodMeter.value : null)
 
       // Invariante de dominio (D-125): la generación nunca es negativa. Este es el único
-      // punto donde nace el valueMW canónico — fusiona medidor, PME y carry-forward —, así
-      // que un solo clamp acá cubre las tres procedencias y todo lo que va aguas abajo
+      // punto donde nace el valueMW canónico — fusiona lectura viva y carry-forward —, así
+      // que un solo clamp acá cubre ambas procedencias y todo lo que va aguas abajo
       // (accumulator, proyección, broadcast, BD). clampGenerationMw propaga null a
       // propósito: "sin lectura" nunca se convierte en "generando 0 MW" (D-105/D-116).
       // valueMwRaw viaja en el payload para que el clamp sea observable y no silencioso.
@@ -364,11 +301,11 @@ export class ExtractorOrchestrator {
   }
 
   #heartbeat() {
-    const counts = { meter: 0, pme: 0, none: 0 }
+    const counts = { meter: 0, none: 0 }
     for (const s of this.#unitState.values()) counts[s.source ?? 'none']++
     log('info',
       `heartbeat updates=${this.#updateCount} stale=${this.#isStale()} ` +
-      `sources={meter:${counts.meter}, pme:${counts.pme}, none:${counts.none}}`,
+      `sources={meter:${counts.meter}, none:${counts.none}}`,
     )
   }
 
@@ -376,19 +313,6 @@ export class ExtractorOrchestrator {
     if (this.#lastDataAt === null) return this.#updateCount > 5
     return Date.now() - this.#lastDataAt >= 60_000
   }
-}
-
-// Adapter: traduce el modelo unificado al shape que PMEScraper consume
-// (sin tocar PMEScraper). Líneas 401-406 de scraper.js solo leen
-// {id, label, referencia, occurrence, maxMW}.
-export function unitsForPME(units) {
-  return units.map((u) => ({
-    id: u.id,
-    label: u.label,
-    maxMW: u.maxMW,
-    referencia: u.pme.referencia,
-    occurrence: u.pme.occurrence ?? 0,
-  }))
 }
 
 function isValid(entry, now) {

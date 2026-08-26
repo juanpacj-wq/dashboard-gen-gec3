@@ -60,64 +60,30 @@ típicamente `EHOSTUNREACH`, `ECONNRESET`, `MeterFormatError`.
   `sudo systemctl restart dashboard-ws`.
 - Si el meter no responde, escalar a OT/automatización.
 
-### 2. `orchestrator:pme:{unitId}` — WARN
+### 2 y 3. `orchestrator:pme:{unitId}` y `orchestrator:pme:GLOBAL` — RETIRADAS (D-126)
 
-> Solo aplica con el fallback PME reactivado (`PME_ENABLED=1`, D-120). Con el flag
-> apagado (default) `source` nunca vale `'pme'` y esta alerta no puede disparar.
+Estas dos alertas **ya no existen**: se fueron con el fallback PME. `source` nunca vale
+`'pme'`, así que no había forma de que dispararan. Sus reemplazos son el escenario 1
+(`orchestrator:meterDown:{unitId}`, WARN per-unit) y el 3b (`orchestrator:meterDown:GLOBAL`,
+CRITICAL). Los umbrales `ALERT_THRESH_PME_PERSIST_MIN` / `ALERT_THRESH_PME_GLOBAL_MIN`
+también se retiraron: si quedan en un `.env` viejo son inertes.
 
-**Síntoma:** una unidad lleva > `ALERT_THRESH_PME_PERSIST_MIN` (default 10) min
-con `source='pme'`.
+### 3b. `orchestrator:meterDown:GLOBAL` — CRITICAL (con recovery, D-126)
 
-**Diagnóstico:**
-```bash
-curl -s http://localhost:3001/health/detailed | jq '.services.orchestrator.perUnit'
-```
-Confirmar `source: 'pme'` para esa unidad. El badge UI también lo muestra (D-103).
-
-**Causa:** el extractor de medidores falló para esa unidad lo suficiente como
-para que el orchestrator switchee a PME (D-102 fallbackThreshold=3). Persistencia
->10 min sugiere que el meter sigue caído.
-
-**Fix:** ir al escenario 1 (revisar meterPoller per-meter) para esa unidad. Una
-vez que el meter vuelve, el orchestrator hace recovery a `meter` (D-102
-recoveryThreshold=2 OK consecutivos).
-
-### 3. `orchestrator:pme:GLOBAL` — CRITICAL (con recovery)
-
-> Solo aplica con `PME_ENABLED=1` (D-120). Con el fallback apagado, el CRITICAL
-> global equivalente es `orchestrator:meterDown:GLOBAL` (escenario 3b).
-
-**Síntoma:** TODAS las unidades en PME simultáneamente durante >
-`ALERT_THRESH_PME_GLOBAL_MIN` (default 2) min.
-
-**Causa:** la LAN de medidores cayó. O el server perdió ruta a todos los meter
-hosts a la vez.
-
-**Fix:**
-- `ping` a cada meter host desde el server.
-- Si ninguno responde, escalar a infra (es un problema de red, no de Dashboard).
-- El dashboard sigue funcionando con datos PME mientras dura — operativo
-  transparente al usuario (badge UI lo marca per-unit).
-
-**Recovery:** cuando ≥ 1 unidad vuelve a `meter` ≥ 1 ciclo de polling del
-alerter, sale un `RECOVERED`.
-
-### 3b. `orchestrator:meterDown:GLOBAL` — CRITICAL (con recovery, D-120)
-
-**Síntoma:** con el fallback PME deshabilitado (default), TODAS las unidades llevan
-≥ `ALERT_THRESH_METER_DOWN_GLOBAL_MIN` (default 2) min con el medidor caído y sin
-carry-forward activo (`holding=false`). En la práctica dispara al primer tick del
-alerter tras agotarse el hold TTL (~3 min): las 4 unidades están emitiendo `null`.
+**Síntoma:** TODAS las unidades llevan ≥ `ALERT_THRESH_METER_DOWN_GLOBAL_MIN` (default 2)
+min con el medidor caído y sin carry-forward activo (`holding=false`). En la práctica
+dispara al primer tick del alerter tras agotarse el hold TTL (~3 min): las 4 unidades están
+emitiendo `null`. Desde D-126 es **LA** alerta de falla total de extracción — ya no está
+condicionada a ningún flag de fallback.
 
 **Causa:** la LAN de medidores cayó, o el server perdió ruta a todos los meter hosts
-a la vez. A diferencia del escenario 3, acá NO hay fuente secundaria: el dashboard
-muestra las unidades sin dato.
+a la vez. **NO hay fuente secundaria** (D-126): el dashboard muestra las unidades sin dato.
 
 **Fix:**
 - `ping` a cada meter host desde el server; revisar `conectividad-medidores.md`.
 - Si ninguno responde, escalar a infra (problema de red, no de Dashboard).
-- Paliativo mientras se repara la LAN (si el PME sí tiene datos): reactivar el
-  fallback con `PME_ENABLED=1` (ver `01-Medidores y PME/reactivar-pme.md`).
+- No hay paliativo por software: el PME leía los MISMOS medidores, así que en este
+  escenario también estaría caído. La reparación es de red/OT.
 
 **Recovery:** cuando ≥ 1 unidad vuelve a tener lectura del medidor, sale `RECOVERED`.
 

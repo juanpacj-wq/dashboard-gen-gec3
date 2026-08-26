@@ -4,7 +4,7 @@ import { WebSocketServer } from 'ws'
 import { ExtractorOrchestrator } from './extractorOrchestrator.js'
 import { createMeterClientFactory } from './meterClientFactory.js'
 import { DeviationTracer } from './deviationTracer.js'
-import { UNITS, PME, PME_ENABLED, METER_DEFAULTS } from './config.js'
+import { UNITS, METER_DEFAULTS } from './config.js'
 import {
   initDB,
   getTodayPeriods,
@@ -183,16 +183,20 @@ const httpServer = createServer(async (req, res) => {
 
   // Health check
   if (req.url === '/health') {
-    const pme = scraper.getStatus()
+    const extractor = scraper.getStatus()
     const emailGEC = emailDispatchGEC.getStatus()
     const emailTGJ = emailDispatchTGJ.getStatus()
-    const isDegraded = pme.stale || pme.valueStale || emailGEC.stale || emailTGJ.stale
+    const isDegraded = extractor.stale || extractor.valueStale || emailGEC.stale || emailTGJ.stale
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({
       status: isDegraded ? 'degraded' : 'ok',
       clients: clients.size,
       uptime: process.uptime(),
-      pme,
+      // La llave `pme` es el nombre HISTÓRICO del estado del extractor y sobrevive al
+      // retiro del scraper PME (D-126): la consumen ~8 runbooks con jq (.pme.perUnit,
+      // .pme.meter.perMeter, .pme.stale) y renombrarla es un cambio de contrato aparte.
+      // Su contenido es el ExtractorOrchestrator, hoy solo-medidores.
+      pme: extractor,
       emailDispatch: { gec: emailGEC, tgj: emailTGJ },
     }))
     return
@@ -526,11 +530,6 @@ function broadcast(payload) {
             consecErrors: orchSnap.consecMeterErrors,
             lastGoodMeterValue: orchSnap.lastGoodMeterValue,
           },
-          pme: {
-            valueMW_raw: orchSnap.pmeRaw,
-            freshAgeMs: orchSnap.pmeAgeMs,
-            stale: orchSnap.pmeAgeMs == null || orchSnap.pmeAgeMs >= 30_000,
-          },
           source: orchSnap.source,
           sourceSince: orchSnap.sourceSince ? new Date(orchSnap.sourceSince).toISOString() : null,
           sourceChanged: orchSnap.justSwitched,
@@ -649,13 +648,13 @@ const proyHistFlushInterval = setInterval(async () => {
   }
 }, PROY_FLUSH_MS)
 
-// ── Extractor (medidores primario; PME fallback opcional, apagado por default) ─
-// El orquestador wrapea MeterPoller y, solo con PME_ENABLED=1, PMEScraper (D-120).
+// ── Extractor (medidores ION8650: fuente ÚNICA desde D-126) ──────────────────
+// El orquestador wrapea MeterPoller. El fallback PME se retiró: leía el mismo dato de
+// los mismos medidores, así que compartía su punto único de falla.
 // Carry-forward con TTL (D-116): ante nulls transitorios del medidor retiene el último
-// valor bueno (holding) hasta METER_HOLD_TTL_MIN; al expirar cede a PME si está
-// habilitado, o emite null; 2 ticks meter OK → recovery.
+// valor bueno (holding) hasta METER_HOLD_TTL_MIN; al expirar emite null.
 // Ver extractorOrchestrator.js y EXTRACTION_BACKEND_MAP.md.
-// Fuente primaria seleccionable por METER_PROTOCOL (D-118; default modbus desde D-120):
+// Protocolo seleccionable por METER_PROTOCOL (D-118; default modbus desde D-120):
 // para 'http' el factory es undefined → MeterPoller usa su ION8650Client HTTP.
 const clientFactory = createMeterClientFactory({
   protocol: METER_DEFAULTS.protocol,
@@ -666,14 +665,8 @@ console.log(`[Server] Extracción primaria: ${METER_DEFAULTS.protocol.toUpperCas
   (METER_DEFAULTS.protocol === 'modbus'
     ? ` (reg=${METER_DEFAULTS.modbus.register} ${METER_DEFAULTS.modbus.decode}/${METER_DEFAULTS.modbus.scale} word=${METER_DEFAULTS.modbus.wordOrder})`
     : ''))
-console.log(PME_ENABLED
-  ? '[Server] Fallback PME: HABILITADO (PME_ENABLED=1)'
-  : '[Server] Fallback PME: DESHABILITADO (PME_ENABLED=1 para reactivar)')
-
 const scraper = new ExtractorOrchestrator({
   units: UNITS,
-  pme: PME,
-  pmeEnabled: PME_ENABLED,
   onData: broadcast,
   ...METER_DEFAULTS,
   clientFactory,
@@ -842,8 +835,8 @@ async function start() {
   despScraper.start()
 
   // Reconstruir periodos pasados que no quedaron en las tablas canónicas (típico
-  // tras un cuelgue del scraper que cruzó límites de hora). Se hace antes de
-  // levantar el scraper PME para evitar carrera con accumulator.update().
+  // tras un cuelgue del extractor que cruzó límites de hora). Se hace antes de
+  // levantar el extractor para evitar carrera con accumulator.update().
   if (dbOk) await recoverSkippedPeriods()
 
   scraper.start()

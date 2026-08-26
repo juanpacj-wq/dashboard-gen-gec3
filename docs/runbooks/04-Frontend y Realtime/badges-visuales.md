@@ -43,23 +43,24 @@ a la derecha:
 
 ## Estados alternativos
 
+> **D-126:** el badge ámbar **"PME" ya no existe** — el fallback se retiró y `source` solo
+> puede ser `"meter"` o `null`. El único badge posible es "MEDIDOR" verde.
+
 - 🟢 4 cards con **"MEDIDOR" verde** → estado ideal, todos los meters sirviendo.
-- 🟡 1+ cards con **"PME" ámbar** (color `#f59e0b`) → fallback activo. Solo puede
-  aparecer con `PME_ENABLED=1` (desde D-120 el fallback está apagado por default; si
-  aparece con el flag apagado es un bug). La card sigue funcionando pero está leyendo
-  del scraper, no del medidor físico. Es comportamiento correcto del hot-standby —
-  investigar el meter caído con `01-Medidores y PME/conectividad-medidores.md`.
 - 🟡 Sin badge en alguna card durante los primeros 5-10 seg post-load → warming up,
   todavía no hay decisión del orchestrator. Debería aparecer en breve.
+- 🟡 Card sin badge pero **con valor** → carry-forward activo (D-116): el medidor dio null
+  y se está reteniendo el último valor bueno. Transitorio; cruzar con
+  `01-Medidores y PME/orchestrator-fuente.md` (`holding: true`).
 - 🔴 **Ningún badge** después de 30s → el frontend no está recibiendo `units[].source`.
-  Probable: el bundle viejo está cacheado en el browser o M1 no se desplegó.
-- 🔴 Badge dice "MEDIDOR" pero los logs muestran que la unidad cayó a PME
-  → desincronización. Verificar `04-Frontend y Realtime/snapshots-refetch.md`
-  y refrescar con Ctrl+Shift+R.
+  Probable: el bundle viejo está cacheado en el browser o el build no se desplegó.
+- 🔴 Aparece un badge **"PME" ámbar** → el bundle desplegado es **anterior a D-126**.
+  Verificar la versión del build y redesplegar; el backend ya no emite `source: "pme"`.
 
 ## Verificación cruzada
 
-El badge UI debe coincidir con `/health.pme.perUnit[id].source`:
+El badge UI debe coincidir con `/health.pme.perUnit[id].source` (la llave `pme` del health
+es el nombre histórico del estado del extractor, no el scraper retirado):
 
 ```bash
 # Server
@@ -68,7 +69,7 @@ curl -s http://localhost:3001/health \
 ```
 
 Si UI dice "MEDIDOR" → `source: "meter"` en el JSON.
-Si UI dice "PME" → `source: "pme"` en el JSON.
+Si la card no tiene badge → `source: null` (warming) en el JSON.
 
 ## Si falla
 
