@@ -13,7 +13,8 @@ node_modules
 dist
 dist-ssr
 *.local
-*.claude
+.claude/*
+!.claude/settings.json
 graphify-out
 
 migration-prompts
@@ -48,3 +49,6 @@ deploy/DEPLOY-gec3.md
 deploy/DEPLOY-guajira.md
 # Python
 __pycache__/
+
+# Ajustes locales de Claude Code (settings.json con el deny de git SI se versiona)
+.claude/settings.local.json

@@ -1,0 +1,8 @@
+# Fin de linea LF en el repo (dev en Windows, prod en Ubuntu). Binarios sin conversion.
+* text=auto eol=lf
+*.xlsx binary
+*.xls binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary

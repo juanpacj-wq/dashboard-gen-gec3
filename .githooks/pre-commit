@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# Hook versionado (metodologia v2). Activar con: git config core.hooksPath .githooks
+exec node "$(dirname "$0")/pre-commit.mjs"
