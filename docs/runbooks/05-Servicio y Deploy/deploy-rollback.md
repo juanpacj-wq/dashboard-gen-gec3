@@ -112,3 +112,20 @@ git reset --hard <SHA>
 Esto **NO afecta** el código en local del desarrollo (es operación de
 producción solamente). El código local sigue igual y se puede re-deployar
 después de fixear el problema.
+
+## Retiro del fallback PME en producción (D-126) — se ejecuta en la Fase F del plan v2
+
+Prod (`capibara`) sigue con `PME_ENABLED=1` en `server/.env` y con el caché `.ms-playwright` mientras D-126 no
+se despliegue. Cuando toque (junto con el resto de implementaciones pendientes, no antes):
+
+```bash
+cd /var/www/dashboard-gen
+sudo sed -i '/^PME_/d; /^HEADLESS=/d' server/.env          # las variables quedan inertes con D-126, pero se retiran
+sudo rm -rf .ms-playwright                                  # caché huérfano de Chromium
+sudo ./deploy/update.sh                                     # pull del tag deploy/YYYY-MM-DD, build, npm ci, restart
+sudo journalctl -u dashboard-ws -n 50 --no-pager | grep -iE "extracci|meter|PME"   # no debe aparecer ningún scraper PME
+curl -s http://localhost:3001/health/detailed | node -e "process.stdin.on('data',d=>{const j=JSON.parse(d);console.log(Object.keys(j))})"
+```
+
+Rollback: `git checkout <PREV>` + build + restart (el `.env` sin `PME_*` sigue siendo válido para el código anterior
+porque D-120 ya lo dejaba apagado por default). Registrar rama, SHA y tag en `../../../../docs/deployment-unificado.md`.

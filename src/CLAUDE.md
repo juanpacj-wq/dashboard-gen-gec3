@@ -1,300 +1,93 @@
-# CLAUDE.md
+# CLAUDE.md — dashboard-gen-gec3
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guía para Claude Code en este repo. Corto a propósito (≤ 250 líneas): el detalle vive en `docs/`.
 
 ## Inicio rápido — qué leer
 
-- **Detalle de arquitectura** (capas, scrapers, BD, deploy): `docs/architecture.md`.
-- **Despliegue multi-instancia** (2ª instancia en otro servidor/BD, config de UI en runtime vía `/config.json`, camino a Docker): `docs/deployment-multi-instancia.md` (D-117).
-- **Decisiones** (ADR-lite, migración a meters, badge MEDIDOR, signos, retiro del PME, etc.): `docs/decisions.md`.
-- **Convención de signos crítica** (Gecelca frontier input vs Guajira output): `server/SIGN_CONVENTION.md`.
-- **Mapa de archivos del extractor** (meterClient, meterPoller, extractorOrchestrator): `server/EXTRACTION_BACKEND_MAP.md`.
-- **Subproyecto Python** (Fabric Lakehouse writer): `fabric-meter-sink/CLAUDE.md`.
-- **Contrato cross-repo** (cómo se consume Bit-cora-g3): `../docs/interfaces-cross-repo.md`.
+- **Arquitectura** (capas, scrapers, BD, deploy): `docs/architecture.md`.
+- **Referencia operativa** (endpoints, variables de entorno, tablas, despliegue, debugging, graphify): `docs/referencia-operativa.md`.
+- **Decisiones** (ADR-lite D-101…D-127): `docs/decisions.md`. **Runbooks** por área: `docs/runbooks/`.
+- **Despliegue multi-instancia** (`.env.gec3`/`.env.guajira`, `/config.json` en runtime): `docs/deployment-multi-instancia.md` (D-117).
+- **Convención de signos** (Gecelca frontera de entrada vs Guajira salida): `server/SIGN_CONVENTION.md`.
+- **Mapa del extractor** (meterClient, meterPoller, extractorOrchestrator): `server/EXTRACTION_BACKEND_MAP.md`.
+- **Subproyecto Python** (sink a Fabric + PostgreSQL, D-121/D-127): `fabric-meter-sink/CLAUDE.md`.
+- **Contrato cross-repo** (consumo de Bit-cora-g3): `../docs/interfaces-cross-repo.md`.
+- **Metodología de implementación v2** (olas de lotes en chats paralelos): `../metodología de implementación/README.md`.
 
-## Project Overview
+## Qué es
 
-Dashboard de generacion electrica para Gecelca (GEC3). Muestra datos de despacho/redespacho de unidades de generacion, graficas de control estadistico (CEP), y un ticker en tiempo real con el Top 10 de redespacho nacional extrayendo datos del archivo `rDECMMDD.txt` publicado por XM Colombia.
+Dashboard de generación eléctrica de Gecelca: despacho/redespacho por unidad (GEC3, GEC32, TGJ1, TGJ2),
+gráficas de control (CEP), generación en tiempo real desde 5 medidores ION8650 por Modbus TCP, y ticker
+con el Top 10 nacional del `rDECMMDD.txt` de XM. Repo git independiente dentro del umbrella
+`PORTAL GENERACIÓN/`; `fabric-meter-sink/` vive adentro sin `.git` propio.
 
-**Repo git independiente** dentro del workspace umbrella `PORTAL GENERACIÓN/`. Hermano de `Bit-cora-g3/`. Subproyecto Python `fabric-meter-sink/` vive adentro de este repo (sin `.git/` propio).
+## Comandos
 
-## Commands
+- `npm run dev` — Vite (5173) con proxies a 3001/3002. `npm run build` — `dist/`. `npm run lint` — eslint (debe dar 0).
+- `cd server && npm run dev` — backend en watch (`.env` de la raíz); `dev:gec3` / `dev:guajira` cargan la instancia. `npm start` — producción.
+- `cd server && npm test` — vitest (`--singleFork`), ~1,3 s. `cd fabric-meter-sink && .venv/Scripts/python -m pytest` y `-m ruff check .`.
+- Hooks de git versionados: `git config core.hooksPath .githooks` (una vez por clon). Ver `.githooks/README.md`.
 
-- `npm run dev` — Start Vite dev server (includes proxy to backend)
-- `npm run build` — Production build to `dist/`
-- `npm run lint` — Run ESLint
-- `npm run preview` — Preview production build locally
-- `cd server && npm run dev` — Start backend server in watch mode (reads `.env` from project root)
-- `cd server && npm start` — Start backend server in production mode
+## Arquitectura en una pantalla
 
-## Architecture
+SPA React 19 + Vite, sin router ni CSS framework (estilos inline). Backend Node HTTP + WebSocket en 3001
+que orquesta cinco servicios: extractor de medidores (`ExtractorOrchestrator` + `MeterPoller`, cada 2 s,
+**fuente única desde D-126**), `EnergyAccumulator` (MWh por periodo, checkpoint en MSSQL), `EmailDispatchService`
+(despacho final por Graph API con fallback XM al minuto 55), `RedespachoscraperService` (rDEC cada 5 min, con
+auditoría) y `DespachoscraperService` (dDEC una vez al día). El front funciona sin servidor con datos simulados.
 
-Single-page React 19 app built with Vite. No router, no state management library, no CSS framework — all styling is inline via JS objects.
+Archivos clave — front: `src/Dashboard.jsx` (layout raíz), `src/hooks/useRealtimeData.js` (WS `/ws` +
+`/api/periods/today` + `/api/despacho-final/today`), `useXmDispatch.js`, `useXmGeneration.js`,
+`src/components/{Chart,Table,UnitCards,MiniGauge,GenerationTicker}.jsx`, `src/config/paths.js`, `src/theme.js`.
+Backend: `server/server.js` (cableado), `extractorOrchestrator.js`, `config.js` (`UNITS`, `METER_DEFAULTS`,
+fail-fast), `accumulator.js`, `emailDispatch.js`, `redespachoscraper.js`, `despachoscraper.js`, `db.js`,
+`healthSnapshot.js`, `alerter.js`. Dominio compartido: `shared/domain/generation.js` (D-125).
 
-### Key files
+Flujo de datos: dDEC → `despacho_programado` → `/api/despacho/today`; rDEC → `redespacho_programado` (+
+`redespacho_historico`) → `/api/redespacho/today|national`; correos → `despacho_final` →
+`/api/despacho-final/today`; medidores → WS `{ type: "update", units: [...] }` → acumulador → `generacion_periodos`.
 
-#### Frontend (`src/`)
+### Sub-path y proxies
 
-- **`src/Dashboard.jsx`** — Main layout: nav, footer, and composition of all child components.
-- **`src/theme.js`** — Color palette (`C`), font stacks (`FONT`, `MONO`).
-- **`src/data/units.js`** — Unit definitions (`UNITS`), seeded PRNG (`seedRng`), mock data generator (`genUnitData`), precomputed data (`ALL_DATA`), stats helper (`calcStats`).
-- **`src/data/plantNames.js`** — XM plant code → name mapping (`PLANT_NAME_MAP`).
-- **`src/hooks/useXmGeneration.js`** — Hook that fetches national redespacho data from `/api/redespacho/national` (backed by `rDECMMDD.txt` file scraper). Shows Top 10 plants by current-hour MW. Falls back to simulated data on error, marked with "SIMULADO" badge.
-- **`src/hooks/useXmDispatch.js`** — Hook that fetches despacho from `/api/despacho/today` (dDEC scraper) and redespacho from `/api/redespacho/today` (rDEC scraper). Both refresh every 5 min. Each fetch has independent `.catch()` so one failing doesn't kill the other.
-- **`src/hooks/useRealtimeData.js`** — Hook that connects via WebSocket (`/ws`) to the backend for real-time unit generation data. Also fetches `/api/periods/today` and `/api/despacho-final/today` on mount. Falls back gracefully to simulated data when the server is offline.
-- **`src/components/GenerationTicker.jsx`** — Scrolling ticker showing Top 10 national redespacho (from rDEC file, NOT XM API).
-- **`src/components/MiniGauge.jsx`** — Animated SVG gauge for capacity percentage.
-- **`src/components/UnitCards.jsx`** — Selectable unit cards with stats summary.
-- **`src/components/Chart.jsx`** — CEP control chart (deviation % with UCL/LCL).
-- **`src/components/Table.jsx`** — 24h dispatch table with current-hour highlight.
-- **`src/main.jsx`** — Entry point, renders `<Dashboard />` (not `<App />`).
-- **`src/App.jsx`** — Vite template boilerplate, currently unused by the app.
+El servidor unificado sirve el app bajo `/dashboard/` (nginx quita el prefijo antes de 3001; `eventos-dashboard`
+va a Bitácora 3002). `APP_BASE_PATH` gobierna `base` en `vite.config.js` (default raíz `/`), y
+`src/config/paths.js` (`apiUrl`, `wsUrl`, `assetUrl`) construye toda URL. En dev Vite sirve en `/` y los
+proxies van sin strip: `/api/xm/*` → XM, `/ws` → 3001, `/api/eventos-dashboard` → 3002, `/api/*` → 3001.
+`vite.config.js` además sirve `/config.json` desde `deploy/config.<instancia>.json` (`?instance=` / `INSTANCE`).
 
-#### Backend (`server/`)
+## Convenciones críticas (no obvias)
 
-- **`server/server.js`** — Node.js HTTP + WebSocket server (port 3001). Orchestrates all backend services and exposes REST endpoints. Broadcasts real-time meter data to all connected dashboard clients.
-- **`server/extractorOrchestrator.js`** — Envuelve al `MeterPoller`. **Fuente única desde D-126** (el fallback `PMEScraper` se eliminó). Aplica carry-forward con TTL (D-116) y el clamp de la invariante de generación (D-125); emite `source: 'meter' | null`.
-- **`server/config.js`** — `UNITS` (id, label, maxMW, `meters[]`, `combine`, `frontierType`) y `METER_DEFAULTS`. Validación fail-fast al cargar el módulo.
-- **`server/despachoscraper.js`** — Despacho scraper service. Downloads the daily `dDECMMDD_TIES.txt` file from XM's portal API (`api-portalxm.xm.com.co`), parses it, and exposes 24 hourly MW values per unit (GEC3, GEC32, TGJ1, TGJ2). Retries every 5 min until file found, then stops for the day. Persists to DB; loads from DB only as fallback. Path: `Energia y Mercado/DESPACHO/TIES/Despachos/YYYY-MM/dDECMMDD_TIES.txt`.
-- **`server/redespachoscraper.js`** — Redespacho scraper service. Downloads the daily `rDECMMDD.txt` file from XM's portal API, parses CSV-like content for our 4 units + all national plants. Refreshes every 5 minutes. Persists to DB with audit trail (detects changes, logs to `redespacho_historico`). Also exposes national plant data for the GenerationTicker via `getNational()`. Path: `M:/InformacionAgentes/Usuarios/Publico/Redespacho/YYYY-MM/rDECMMDD.txt`.
-- **`server/emailDispatch.js`** — Email-based despacho final service. Uses Microsoft Graph API to read redespacho notification emails from a shared mailbox, parses MW values per unit/period, and stores them in MSSQL. Falls back to XM API (`GeneProgRedesp`) at minute 55 of each hour for missing periods. Runs every 5 minutes. Email filter starts at `T01:00:00Z` (8 PM Colombia previous day) to capture early period emails (periods 1, 2).
-- **`server/accumulator.js`** — Energy accumulator. Integrates real-time MW readings over time to compute MWh per hourly period. Persists state to MSSQL for recovery across restarts. Tracks completed periods and per-minute averages.
-- **`server/db.js`** — MSSQL database connection and schema management. Creates all tables in `dashboard` schema. Supports named instances via `DB_HOST`.
+1. **Cero MW es dato válido** (Guajira 1 sin despacho): los `save*` usan `if (valor == null) continue`, nunca `=== 0`.
+2. **Invariante de generación (D-125)**: generación ≥ 0 y desviación ≥ −100 %, definida **una sola vez** en `shared/domain/generation.js`; el clamp canónico está en `ExtractorOrchestrator.#tick()` y 10 `CHECK` en BD lo hacen imposible de violar. Los helpers son **null-safe a propósito**: `null` es "sin lectura", no cero — un `Math.max(0, null)` apagaría la detección de medidor caído (D-105/D-116). Desviación `NULL` = "sin denominador", se pinta `–`. Runbook: `docs/runbooks/99-Diagnostico/invariante-generacion.md`.
+3. **Signo por frontera de medición es dominio físico** y vive en `meterPoller.js` (Gecelca entrada: negativo con la unidad parada es correcto). La invariante de negocio se aplica aguas abajo. No mezclarlos (`server/SIGN_CONVENTION.md`, D-118).
+4. **Jerarquía de "Despacho Final" (D-124)**: email > bitácora REDESP > `xm_fallback` > rDEC. `despFinalSource` es procedencia pura; las señales visuales van en `isRedespBitacora`/`hasEmailFinal`.
+5. **Fuente única desde D-126**: no existe fallback PME ni navegador. `source` es `'meter' | null`. Los guards de `config.test.js` y `extractorOrchestrator.test.js` fallan si el fallback vuelve por la puerta de atrás. `PME_*` en un `.env` viejo son inertes.
+6. **Carry-forward con TTL (D-116)**: ante nulls transitorios del ION8650 la unidad sigue `source='meter'` con el último valor bueno (`holding`) hasta `METER_HOLD_TTL_MIN`; después emite `null`, nunca 0.
+7. **Rehidratación de periodos cerrados tras restart**: el mapa `#completed` se repuebla desde `generacion_periodos` al arrancar (antes cada restart dejaba en 0.0 la fila GENERACION de periodos anteriores). El front hace merge REST/WS; verificar "Periodos cerrados rehidratados" en `journalctl` tras cada restart.
+8. **Colombia = UTC−5 sin DST** en todo cálculo. El filtro de correos arranca en `T01:00:00Z` (20:00 del día anterior) para capturar los periodos 1 y 2.
+9. **XM**: los archivos se bajan por `api-portalxm.xm.com.co/administracion-archivos/ficheros/mostrar-url` (`nombreBlobContainer=storageportalxm`) → SAS URL → blob. La línea `TOTAL` del rDEC se filtra en `parseAllPlants()`. Nombres de planta se normalizan en mayúsculas sin espacios (`"GECELCA 3"` → `"GECELCA3"`).
+10. **URLs del front solo con `src/config/paths.js`**, nunca literales `/api` o `/ws`: un solo código sirve raíz y `/dashboard`.
+11. **Endpoints nuevos no tocan el proxy** (bloque general `/api/*` en Vite y nginx); solo las excepciones llevan regla. Vite resuelve por prefijo **más largo**, no por orden.
+12. **Multi-instancia**: todo cambio en `config.js`/`UNITS`/`.env.example` se verifica arrancando `dev:gec3` y `dev:guajira` (`/health` responde). El `.env` de cada instancia es gitignored; `.env.example` es la única plantilla versionada.
+13. **Sink Python (D-121/D-127)** escribe kW **crudos con signo** a Fabric y a PostgreSQL `dl_captura`: es telemetría, no dominio; no aplica la invariante D-125 a propósito.
+14. **Sin firmas de IA en commits** y `git commit -- <rutas>` (nunca `add -A`) mientras haya una ola abierta; los hooks de `.githooks/` lo hacen cumplir. Un commit que rompe `npm run lint` o `node --check` no entra.
+15. **ESLint**: `no-unused-vars` ignora identificadores que empiezan por mayúscula o `_`; flat config en `eslint.config.js`; `server/**` con globals de Node. Debe estar en 0 errores (baseline 2026-08-26).
 
-#### Deployment (`deploy/`)
+## Notas
 
-- **`deploy/nginx.conf`** — Nginx config for production. Serves static `dist/` for the SPA, proxies `/ws` (WebSocket), `/api/xm/` (XM CORS), `/api/periods/`, `/api/redespacho/`, `/api/despacho/`, `/api/despacho-final/`, and `/health` to the Node.js backend on port 3001.
-- **`deploy/dashboard-ws.service`** — systemd unit file for the WebSocket server. Runs as `www-data`, reads env from `/var/www/dashboard-gen/server/.env`.
-- **`deploy/setup.sh`** — Full production setup script: installs Node.js 20 and Nginx, builds frontend, configures Nginx and systemd. (Ya no instala Playwright/Chromium — D-126.)
-
-### Data flow
-
-1. **Simulated unit data**: `genUnitData()` in `src/data/units.js` generates deterministic mock data for 4 units (GEC3, GEC32, TGJ1, TGJ2) using a seeded PRNG. Each unit has 24 hourly periods with despacho/redespacho/final values. Used as fallback when server is offline.
-2. **Despacho programado (dDEC scraper)**: `DespachoscraperService` downloads `dDECMMDD_TIES.txt` from XM portal once per day (retries every 5 min until found, then stops). Parsed values are exposed via `/api/despacho/today` and persisted to `dashboard.despacho_programado`. `useXmDispatch()` fetches this every 5 min.
-3. **Redespacho programado (rDEC scraper)**: `RedespachoscraperService` downloads `rDECMMDD.txt` from XM portal every 5 minutes. Parses our 4 units + all national plants. Exposed via `/api/redespacho/today` (our units) and `/api/redespacho/national` (all plants for ticker). Persists to `dashboard.redespacho_programado` with change detection and audit log in `dashboard.redespacho_historico`. `useXmDispatch()` fetches this every 5 min.
-4. **Despacho final (email + XM fallback)**: `EmailDispatchService` reads redespacho notification emails via Microsoft Graph API from a shared mailbox, parses MW values per unit/period, and stores them in `dashboard.despacho_final`. At minute 55, fills missing periods with XM `GeneProgRedesp` as fallback. Runs every 5 min. Email filter starts at 01:00 UTC (8 PM Colombia previous day) to capture early-period emails.
-5. **Real-time meter data**: `useRealtimeData()` hook connects to `/ws` (proxied to `ws://localhost:3001`). The server polls the 5 ION8650 meters over Modbus TCP (D-118), converts to MW, and broadcasts via WebSocket. The `EnergyAccumulator` integrates readings into MWh per period. Dashboard gauges and unit cards update in real time; falls back to simulated data when the server is offline.
-6. **National redespacho ticker**: `useXmGeneration()` hook fetches `/api/redespacho/national` (all plants from rDEC file). Shows Top 10 plants sorted by current-hour MW. Uses full plant names from the rDEC file, mapped via `Nombre_unidades_y_su_código.json`. Falls back to simulated data on error, marked with "SIMULADO" badge.
-7. **Plant name mapping**: `Nombre_unidades_y_su_código.json` maps XM plant codes (`codsic_planta`) to human-readable names (`recurso_ofei`). Used by both `src/data/plantNames.js` (frontend fallback) and `server/redespachoscraper.js` (national ticker). Plant name normalization: uppercase, remove spaces, for matching.
-
-### REST Endpoints
-
-All served by `server/server.js` on port 3001:
-
-| Endpoint | Method | Description | Response format |
-|---|---|---|---|
-| `/health` | GET | Health check | `{ status, clients }` |
-| `/api/periods/today` | GET | Completed hourly energy periods | `[{ unit_id, hora, energia_mwh }]` |
-| `/api/despacho-final/today` | GET | Despacho final from EmailDispatchService state | `{ GEC3: { 1: {valor_mw, source}, ... }, GEC32: {...} }` (object keyed by unit then period) |
-| `/api/despacho/today` | GET | Despacho programado from dDEC scraper | `{ GEC3: [24 MW], GEC32: [24], TGJ1: [24], TGJ2: [24] }` |
-| `/api/redespacho/today` | GET | Redespacho programado from rDEC scraper (our units) | `{ GEC3: [24 MW], GEC32: [24], TGJ1: [24], TGJ2: [24] }` |
-| `/api/redespacho/national` | GET | All national plants from rDEC file (for ticker) | `[{ code, name, values: [24 MW] }]` |
-
-### Sub-path de despliegue (`APP_BASE_PATH`)
-
-El servidor UNIFICADO (gecelca3, el ya desplegado que ahora también aloja Bitácora) sirve este app
-bajo **`/dashboard/`** detrás de un reverse proxy que convive con Bitácora (`/bitacora`). El
-sub-path es **configurable por env** e independiente de la instancia: el **default es la raíz `/`**
-(preserva el comportamiento actual; la instancia por defecto es **gecelca3**). Guajira es la 2ª
-instancia (otro servidor/BD) y también puede quedar en raíz.
-- `vite.config.js` toma `base` de `process.env.APP_BASE_PATH` (default `/`). El servidor unificado
-  construye con `APP_BASE_PATH=/dashboard`; un despliegue root lo deja vacío. Vite llena
-  `import.meta.env.BASE_URL`. `update.sh` lo lee de `server/.env` (por-servidor).
-- **`src/config/paths.js`** centraliza el prefijo: `apiUrl(p)`, `wsUrl()`, `assetUrl(p)`. Todo el
-  frontend construye URLs con estos helpers en vez de literales `/api`, `/ws` — un solo código
-  sirve cualquier base.
-- En prod, **nginx quita el prefijo `/dashboard`** (barra final en `proxy_pass`) antes del backend,
-  que hace match por string exacto (`/api/...`, `/ws`). El backend NO cambia.
-- `eventos-dashboard` se enruta a Bitácora (3002); el resto de `/dashboard/api/*` a 3001.
-- `deploy/nginx.conf` es la topología del servidor unificado; Guajira usa su propio nginx (root).
-
-### Vite Dev Proxies
-
-Dev sirve en la raíz (base `/` por defecto), así que el frontend pide `/api`, `/ws`, `/config.json`
-y estos proxies van **sin strip** (el strip del sub-path lo hace nginx en prod, no Vite):
-- `/api/xm/*` → `https://servapibi.xm.com.co` (rewrite quita `/api/xm`)
-- `/ws` → WebSocket upgrade a 3001
-- `/api/eventos-dashboard` → 3002 (Bitácora)
-- `/api/*` → 3001 (regla general)
-
-Como todo `/api/*` va a 3001 con un solo bloque y el backend hace match exacto, ya **no** importa
-el orden `despacho-final` vs `despacho` (antes sí, cuando había un proxy por endpoint).
-
-### WebSocket Server
-
-`server/server.js` runs a Node.js HTTP + WebSocket server on port 3001. It orchestrates five backend services:
-1. **Extractor de medidores** — `ExtractorOrchestrator` + `MeterPoller` leen los 5 ION8650 por Modbus TCP cada 2 s y emiten `{ type: "update", units: [...] }` enriquecido con acumulación, periodos completados, promedios por minuto y despacho final. Fuente única desde D-126 (sin fallback PME, sin navegador).
-2. **Energy Accumulator** — Integrates MW readings over time to compute MWh per hourly period, persists to MSSQL for restart recovery.
-3. **Email Dispatch** — Reads redespacho emails via Graph API, stores despacho final values, falls back to XM API at minute 55.
-4. **Redespacho Scraper** — Downloads and parses `rDECMMDD.txt` from XM portal every 5 minutes. Also parses all national plants for ticker.
-5. **Despacho Scraper** — Downloads and parses `dDECMMDD_TIES.txt` from XM portal. Retries every 5 min until found, then stops for the day.
-
-The dashboard nav shows connection status (En vivo / Reconectando / Conectando). The server is optional — the dashboard works without it using simulated data.
-
-### Database
-
-MSSQL database (`dashboard_gen` by default). Six tables in `dashboard` schema:
-
-| Table | Purpose |
-|---|---|
-| `generacion_periodos` | Completed hourly energy periods (unit, date, hour, MWh) |
-| `generacion_acumulado` | Live accumulation checkpoint per unit (for restart recovery) |
-| `despacho_final` | Dispatch final values per unit/period, sourced from email or `xm_fallback`. Constraint: `source IN ('email', 'xm_fallback')` |
-| `despacho_programado` | Despacho from dDEC file — INSERT only, one write per unit/date/period |
-| `redespacho_programado` | Redespacho from rDEC file — UPSERT, tracks current `version` per record |
-| `redespacho_historico` | Audit log of redespacho changes — one row per detected change with `valor_mw_prev` and `valor_mw_new` |
-
-Key design decisions:
-- Zero MW is valid data (e.g., Guajira 1 not dispatched). Save functions use `if (valor == null) continue`, NOT `if (valor === 0) continue`.
-- `saveRedespachoProgBulk` detects changes with threshold `Math.abs(existing - new) > 0.01` and logs to `redespacho_historico`.
-- `saveDespachoProgBulk` is INSERT-only (ignores existing records).
-- Indexed: `IX_redesp_hist_fecha` on `(fecha, unit_id, periodo)` for audit queries.
-
-### Environment Variables
-
-The server reads from `.env` (via `--env-file`):
-- `WS_PORT` — WebSocket server port (default 3001)
-- ~~`PME_ENABLED`, `PME_LOGIN_URL`, `PME_DIAGRAM_URL`, `PME_USER`, `PME_PASSWORD`, `PME_DIAGNOSE`, `HEADLESS`~~ — **retiradas en D-126** junto con el fallback PME. Si quedan en un `.env` viejo son inertes; se pueden borrar.
-- `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_PORT` — MSSQL connection (supports named instances via `DB_HOST=host\instance`)
-- `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET`, `GRAPH_MAILBOX` — Microsoft Graph API for email dispatch
-- `METER_PROTOCOL` — protocolo de la fuente primaria de medidores: `modbus` (default desde D-120; Modbus TCP FC03, D-118) o `http` (legacy, raspa `Operation.html`, rollback). El boundary es `fetchKwTotal()`: `meterClientFactory.js` elige `ION8650Client` (HTTP) o `ION8650ModbusClient` (Modbus) y lo inyecta vía `clientFactory`. Bloque `METER_MODBUS_*` (reg/unitId/wordOrder/decode/scale) configura el lector Modbus. Validado en sombra (`scripts/probe-modbus.js`, `shadow-modbus-watch.js`). Rollback = `http` + restart. Runbook: `docs/runbooks/01-Medidores y PME/cutover-modbus.md`.
-- `METER_HOLD_TTL_MIN` — carry-forward del último valor bueno del medidor ante nulls transitorios del ION8650 (D-116). Mientras el TTL no expire la unidad sigue `source='meter'` emitiendo el último MW bueno (`holding`); tras N min sin lectura válida emite null — desde D-126 no hay a quién ceder, la fuente es única. Default 3. Reemplaza el viejo fallback por conteo (3 ticks/6s).
-- `ALERT_WEBHOOK_URL`, `ALERT_TARGET`, `ALERT_POLL_INTERVAL_SEC`, `ALERT_COOLDOWN_MIN`, `ALERT_THRESH_*` (incl. `ALERT_THRESH_METER_DOWN_MIN`, alerta per-unit de medidor caído ≥ N min) — alerter in-process (D-115/D-116). Endpoint `GET /health/detailed` expone snapshot canónico per-service. Runbook completo en `docs/runbooks/observability.md`.
-- `TRACE_DEVIATION` — CSV de unit IDs para activar `DeviationTracer` (server/deviationTracer.js). Vacío = off (zero overhead). Escribe JSONL por tick a `server/traces/trace-<unit>-YYYY-MM-DD-HH.jsonl` para diagnóstico de valles en el chart de Desviación %. Analizar con `node server/traces/analyze.js <archivo>`.
-
-**Important**: GRAPH_* variables must be present in **both** the local `.env` and the deployed server's `/var/www/dashboard-gen/server/.env` for email dispatch to work.
-
-### Production Deployment
-
-Deployed on Ubuntu server at `/var/www/dashboard-gen/`. Uses:
-- **Nginx** — Serves static `dist/`, reverse-proxies all `/api/*` and `/ws` to Node.js backend (config: `deploy/nginx.conf` → `/etc/nginx/sites-enabled/dashboard-gen`)
-- **systemd** — Manages the WebSocket server process (unit: `deploy/dashboard-ws.service` → `dashboard-ws.service`)
-- **`deploy/setup.sh`** — Automated setup: installs deps, builds frontend, configures Nginx + systemd
-
-Standard deploy command:
-```bash
-cd /var/www/dashboard-gen && git pull && npm run build && cd server && npm ci && sudo systemctl restart dashboard-ws
-```
-
-If nginx.conf changed:
-```bash
-sudo cp deploy/nginx.conf /etc/nginx/sites-enabled/dashboard-gen
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-### Debugging
-
-Useful commands for debugging the backend on the deployed server:
-
-```bash
-# Check backend service logs
-sudo journalctl -u dashboard-ws -f
-
-# Check if backend is responding
-curl -s http://localhost:3001/health
-
-# Inspect despacho final endpoint (returns object, NOT array)
-curl -s http://localhost:3001/api/despacho-final/today | node -e "process.stdin.on('data',d=>console.log(JSON.parse(d)))"
-
-# Check despacho scraper
-curl -s http://localhost:3001/api/despacho/today | node -e "process.stdin.on('data',d=>console.log(JSON.parse(d)))"
-
-# Check redespacho scraper
-curl -s http://localhost:3001/api/redespacho/today | node -e "process.stdin.on('data',d=>console.log(JSON.parse(d)))"
-
-# Check national plants (for ticker)
-curl -s http://localhost:3001/api/redespacho/national | node -e "process.stdin.on('data',d=>{const j=JSON.parse(d);console.log(j.length,'plants');console.log(j.slice(0,3))})"
-```
-
-### Design system
-
-Color palette and typography constants are defined in `src/theme.js` as `C` (colors) and `FONT`/`MONO` (font stacks). The theme is dark with green/cyan/blue accents.
-
-## ESLint
-
-- `no-unused-vars` ignores variables starting with uppercase or underscore (`varsIgnorePattern: '^[A-Z_]'`)
-- Uses flat config format (`eslint.config.js`)
-
-## Notes
-
-- No test framework is configured.
-- No TypeScript — plain JSX only.
-- All frontend hooks poll every 5 minutes (300000ms) by default.
-- The redespacho scraper refreshes every 5 minutes (server-side). The despacho scraper retries every 5 min until found, then stops.
-- The server depends on `mssql`, `modbus-serial`, `undici`, `cheerio` and `ws` (see `server/package.json`). **Playwright/Chromium salió del proyecto en D-126** (era exclusivo del `PMEScraper`; los scrapers de XM bajan sus archivos por HTTP). The frontend has no runtime dependencies beyond React 19.
-- Nuevos endpoints `/api/*` del backend **no** requieren tocar el proxy: tanto `vite.config.js`
-  (dev) como `deploy/nginx.conf` (prod) tienen un bloque general `/dashboard/api/*` → 3001 con
-  strip del prefijo. Solo hay que agregar reglas específicas para excepciones (XM, o endpoints
-  que van a otro backend como `eventos-dashboard` → 3002).
-- En el frontend, construir URLs con los helpers de `src/config/paths.js` (`apiUrl`/`wsUrl`),
-  nunca con literales `/api` o `/ws`, para que el sub-path `/dashboard` se aplique solo.
-- Colombia timezone is UTC-5 with no DST. All date/time calculations must account for this. The email dispatch filter uses `T01:00:00Z` (8 PM Colombia previous day) to capture early-period emails.
-- XM file scraping uses `api-portalxm.xm.com.co/administracion-archivos/ficheros/mostrar-url` with `nombreBlobContainer=storageportalxm`. The API returns a SAS URL to the blob, which is then fetched for the actual file content.
-- The `TOTAL` line in rDEC files is filtered out in `parseAllPlants()` to prevent it from appearing in the Top 10 ticker.
-- Plant name normalization for matching: uppercase + remove all spaces (e.g., `"GECELCA 3"` → `"GECELCA3"`).
-- **Invariante de generación (D-125)**: la generación nunca es negativa y la desviación nunca baja de −100%. La definición vive **una sola vez** en `shared/domain/generation.js` (raíz del repo, la importan `server/` y `src/`); el clamp canónico se aplica en `ExtractorOrchestrator.#tick()` y la BD lo hace cumplir con 10 CHECK constraints. Los helpers son **null-safe a propósito**: `null` es "sin lectura", no "cero" — un `Math.max(0, null)` daría 0 y apagaría la detección de medidor caído (D-105/D-116). El front sigue clampando como defensa en profundidad porque hace cálculos locales propios. Una desviación `NULL` es válida ("sin denominador") y se pinta `–`, no `-100%`. Detalle en `docs/decisions.md` D-125 y runbook en `docs/runbooks/99-Diagnostico/invariante-generacion.md`.
-- **Jerarquía de "Despacho Final" (D-124)**: el valor mostrado por celda es **email > bitácora REDESP > xm_fallback > rDEC**; el correo parseado es la fuente definitiva del número. La bitácora conserva sus señales (💾 + celda ámbar SIEMPRE que exista el evento, con su MW en el tooltip del 💾) aunque el valor venga del correo. `despFinalSource` es procedencia pura del valor — las señales visuales van en `isRedespBitacora`/`hasEmailFinal`. Detalle en `docs/decisions.md` D-124.
+- Sin TypeScript (JSX plano). Sin framework de tests de front todavía (candidato D-128); el backend usa vitest.
+- Los hooks del front refrescan cada 5 min; el rDEC se refresca cada 5 min server-side; el dDEC reintenta cada 5 min hasta encontrar el archivo del día.
+- Dependencias del server: `mssql`, `modbus-serial`, `undici`, `cheerio`, `ws`. Front: solo React 19.
+- Paleta y tipografía en `src/theme.js` (`C`, `FONT`, `MONO`); tema oscuro con acentos verde/cian/azul.
 
 ## Cómo evolucionar este archivo
 
-**Agregá una entrada SOLO cuando:**
-- Tomaste una decisión arquitectónica no-obvia (qué + por qué, máximo 3 líneas).
-- Encontraste un gotcha que va a morder a alguien en el futuro (ej. orden de proxies en `vite.config.js`, `despacho-final` antes de `despacho`).
-- Cambió un contrato externo (endpoint, schema BD, env var, formato de archivo XM, contrato WS).
-- Cambió un invariante del dominio (nueva unidad, nuevo source para extractor, nueva tabla).
+**Agrega una entrada SOLO cuando:** tomaste una decisión arquitectónica no obvia (qué + por qué, ≤ 3 líneas);
+encontraste un gotcha que va a morder; cambió un contrato externo (endpoint, schema, env var, formato XM,
+contrato WS); cambió un invariante del dominio. Las convenciones nuevas se numeran a continuación de la
+última (el número se **reserva** en la fase de planificación de la implementación) y enlazan su ADR.
 
-**NO agreges:**
-- Qué hace el código (eso ya lo dice el código bien nombrado).
-- Cambios pequeños (refactor, rename, bugfix puntual) — `git log` es suficiente.
-- Decisiones grandes — esas van a `docs/decisions.md` con formato ADR-lite y acá solo resumen + link.
-- Transcripciones de discusiones.
+**NO agregues:** qué hace el código, cambios pequeños (`git log` basta), decisiones grandes (van a
+`docs/decisions.md` con formato ADR-lite y acá solo resumen + link), transcripciones.
 
-**Reglas de tamaño:**
-- 1-3 frases por entrada acá; detalle a `docs/`.
-- Si este archivo supera ~400 líneas, mover secciones largas (e.g. tablas de endpoints, env vars, comandos debug) a `docs/architecture.md` y dejar resumen + link.
-
-**Para decisiones grandes**: `docs/decisions.md` con formato ADR-lite (Contexto / Decisión / Consecuencias, 4-8 líneas). Numerá la decisión (D-1NN siguiendo la secuencia).
-
----
-
-## graphify
-
-This project has a graphify knowledge graph at graphify-out/ (209 nodes, 271 edges, 30 communities). **Nota:** generado pre-migración a medidores ION8650; las god nodes y comunidades pueden estar parcialmente obsoletas. Tratar como referencia, no fuente de verdad.
-
-Rules:
-- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
-- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
-- After modifying code files in this session, run `python3 -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"` to keep the graph current
-- Open graphify-out/graph.html in a browser for interactive visual exploration
-
-### God Nodes (most connected abstractions)
-
-1. `getDB()` — 22 edges (central to all persistence)
-2. `EmailDispatchService` — 11 edges
-3. `PMEScraper` — 10 edges
-4. `PME Balance de Potencia Diagram` — 10 edges
-5. `EnergyAccumulator` — 9 edges
-6. `Unit Selection Cards Bar` — 9 edges
-7. `scrapeDespacho()` / `scrapeRedespacho()` — 7 edges each
-8. `RedespachoscraperService` — 7 edges
-
-### Key Communities
-
-| Community | Cohesion | Key Nodes |
-|---|---|---|
-| Database Layer | 0.17 | getDB(), save/get functions (22 nodes) |
-| UI Components & Metrics | 0.17 | Chart.jsx, MiniGauge, UnitCards, theme (19 nodes) |
-| Redespacho Scraper | 0.20 | parseAllPlants(), downloadFile(), RedespachoscraperService (10 nodes) |
-| PME & Brand Assets | 0.13 | Logos, PWA config, PME diagram (18 nodes) |
-| Email Dispatch Service | 0.22 | EmailDispatchService, fetchXmRedespacho(), getGraphToken() (5 nodes) |
-| Data Flow Documentation | 0.16 | Architecture docs, timezone, clamping rationale (16 nodes) |
-| Despacho Scraper | 0.23 | DespachoscraperService, parseItems(), downloadFile() (9 nodes) |
-| Architecture Documentation | 0.15 | SPA arch, backend layer, MSSQL schema, deployment (13 nodes) |
-| Server Core | 0.47 | broadcast(), colombiaNow(), getMergedDespachoFinal() |
-| Projection Calculator | 0.67 | colombiaSecondsInHour(), computeLive() |
-
-### Hyperedges (cross-cutting group relationships)
-
-- **Five Backend Services Orchestrated by server.js** — PME scraper, energy accumulator, despacho final, redespacho, despacho programado
-- **Data Flow Pipeline (XM Files → Frontend)** — XM file scraping → despacho/redespacho parsing → database → REST endpoints → frontend
-- **Generation Units Tracked Across All Sources** — GEC3/GEC32/TGJ1/TGJ2 appear in despacho, redespacho, despacho final, and realtime PME
+**Tamaño:** ≤ 250 líneas. Si crece, mover detalle a `docs/referencia-operativa.md` o `docs/architecture.md`.
