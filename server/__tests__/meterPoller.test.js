@@ -183,7 +183,7 @@ describe('MeterPoller — failure semantics', () => {
   })
 
   it('zero kW is preserved (unit not despachada, NOT treated as null) y −0 se normaliza a 0', async () => {
-    const factory = ({ host }) => {
+    const factory = () => {
       const c = makeFakeClient()
       c.fetchKwTotal.mockResolvedValue({ kw: 0, fetchedAt: '', latencyMs: 0 })
       return c
@@ -205,7 +205,7 @@ describe('MeterPoller.getStatus', () => {
   it('returns shape compatible with PMEScraper.getStatus()', async () => {
     vi.useFakeTimers()
     const onData = vi.fn()
-    const factory = ({ host }) => {
+    const factory = () => {
       const c = makeFakeClient()
       c.fetchKwTotal.mockResolvedValue({ kw: 100, fetchedAt: '', latencyMs: 0 })
       return c
@@ -312,7 +312,7 @@ describe('MeterPoller — lifecycle', () => {
   it('stop() prevents further ticks', async () => {
     vi.useFakeTimers()
     const onData = vi.fn()
-    const factory = ({ host }) => {
+    const factory = () => {
       const c = makeFakeClient()
       c.fetchKwTotal.mockResolvedValue({ kw: 100, fetchedAt: '', latencyMs: 0 })
       return c

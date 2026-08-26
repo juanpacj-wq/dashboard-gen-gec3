@@ -46,3 +46,5 @@ server/debug-dom.json
 # Runbooks de despliegue con credenciales reales — uso interno, NO versionar (evitar pushes).
 deploy/DEPLOY-gec3.md
 deploy/DEPLOY-guajira.md
+# Python
+__pycache__/
