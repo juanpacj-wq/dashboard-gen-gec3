@@ -92,6 +92,19 @@ FABRIC_LAKEHOUSE_SCHEMA = _strip_quotes(os.environ.get("FABRIC_LAKEHOUSE_SCHEMA"
 FABRIC_TABLE_NAME = _strip_quotes(os.environ.get("FABRIC_TABLE_NAME", ""))
 FABRIC_SQL_ENDPOINT_ID = _strip_quotes(os.environ.get("FABRIC_SQL_ENDPOINT_ID", "")) or None
 
+# ─── Azure PostgreSQL dl_captura (sink espejo, opcional) ──────────────────────
+# Segundo destino del mismo buffer: generacion.brc_pgn_generacion_medidores.
+# Se habilita solo si las 4 variables están presentes; si están a medias,
+# _validate_dl_pg falla con la lista completa de faltantes.
+DL_PG_HOST = _strip_quotes(os.environ.get("HOSTDL", ""))
+DL_PG_DB = _strip_quotes(os.environ.get("DB", ""))
+DL_PG_USER = _strip_quotes(os.environ.get("USERDL", ""))
+DL_PG_PASSWORD = os.environ.get("PSWDL", "")
+DL_PG_PORT = int(_strip_quotes(os.environ.get("PORT", "")) or "5432")
+DL_PG_SCHEMA = _strip_quotes(os.environ.get("DL_PG_SCHEMA", "")) or "generacion"
+DL_PG_TABLE = _strip_quotes(os.environ.get("DL_PG_TABLE", "")) or "brc_pgn_generacion_medidores"
+DL_PG_ENABLED = bool(DL_PG_HOST and DL_PG_DB and DL_PG_USER and DL_PG_PASSWORD)
+
 # ─── Heartbeat / logs ─────────────────────────────────────────────────────────
 # En Linux apuntamos al tmpfs estándar de systemd; en Windows / dev usamos un
 # path local relativo al proyecto para evitar permisos elevados.
@@ -189,7 +202,29 @@ def _validate(units: list[Unit], protocol: str = METER_PROTOCOL) -> None:
         )
 
 
+def _validate_dl_pg() -> None:
+    # El sink Postgres es opcional: sin NINGUNA variable definida queda apagado.
+    # Pero una configuración parcial es casi seguro un typo en el .env — fail-fast.
+    values = {
+        "HOSTDL": DL_PG_HOST,
+        "DB": DL_PG_DB,
+        "USERDL": DL_PG_USER,
+        "PSWDL": DL_PG_PASSWORD,
+    }
+    if not any(values.values()):
+        return
+    missing = [name for name, value in values.items() if not value]
+    if missing:
+        raise ValueError(
+            "Sink Postgres (dl_captura) configurado a medias — faltan:\n  - "
+            + "\n  - ".join(missing)
+            + "\n\nDefinirlas en fabric-meter-sink/.env (o borrar todas para "
+              "deshabilitar el sink). Para saltar la validación: CONFIG_SKIP_VALIDATION=1"
+        )
+
+
 UNITS: list[Unit] = _build_units()
 
 if os.environ.get("CONFIG_SKIP_VALIDATION") != "1":
     _validate(UNITS)
+    _validate_dl_pg()

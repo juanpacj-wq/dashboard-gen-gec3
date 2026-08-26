@@ -24,8 +24,9 @@ Medidores ION8650 (5)
 MeterPoller (15 s, ThreadPoolExecutor)
     ↓ sumar GEC3 + invertir signo (Gecelca)
 Buffer rotativo en memoria (últimas 3 filas)
-    ↓ overwrite cada 15 s con deltalake (delta-rs)
-Fabric Lakehouse Delta — BRC_PGN_GENERACION_MEDIDORES
+    ↓ overwrite cada 15 s con deltalake (delta-rs)      ↓ mismo buffer, cada 15 s (best-effort)
+Fabric Lakehouse Delta —                        Azure PostgreSQL dl_captura —
+BRC_PGN_GENERACION_MEDIDORES                    generacion.brc_pgn_generacion_medidores
     ↓ Direct Lake
 Power BI report
 ```
@@ -35,6 +36,12 @@ los cinco en paralelo, los combina/invierte por unidad, los acumula en un
 buffer rotativo de 3 filas, y escribe ese buffer completo a Fabric en modo
 `overwrite` — la tabla siempre refleja los últimos 3 registros, ordenables por
 `ts_concat`.
+
+Si el sink espejo Postgres está configurado (variables `HOSTDL`/`DB`/`USERDL`/
+`PSWDL`), el **mismo buffer** se escribe además a
+`generacion.brc_pgn_generacion_medidores` en la BD `dl_captura` con la misma
+semántica de overwrite. Fabric sigue siendo el sink primario: un fallo en
+Postgres se loggea pero no frena el loop ni cuenta para la escalación a exit 1.
 
 ## Topología
 
@@ -96,21 +103,24 @@ fabric-meter-sink/
 │   ├── meter_client_factory.py  # make_client_factory(protocol) → cliente por METER_PROTOCOL
 │   ├── meter_poller.py          # MeterPoller (poll concurrente + sign flip)
 │   ├── fabric_writer.py         # FabricWriter + build_row + now_bogota_utc5
+│   ├── pg_writer.py             # PostgresWriter (sink espejo dl_captura)
 │   ├── service.py               # FabricMeterSinkService (loop principal)
 │   └── main.py                  # entry point — `python -m src.main`
 ├── scripts/
 │   ├── probe_modbus.py          # probe Modbus puntual a los 5 medidores
 │   ├── probe_meters.py          # probe HTTP puntual a los 5 medidores
 │   ├── probe_workspace.py       # lista items del workspace Fabric
-│   └── probe_fabric.py          # write+read 1 fila dummy (validación E2E)
-├── tests/                       # 70 tests (pytest)
+│   ├── probe_fabric.py          # write+read 1 fila dummy (validación E2E)
+│   └── probe_dl_pg.py           # write+read 1 fila dummy en Postgres dl_captura
+├── tests/                       # 87 tests (pytest)
 │   ├── conftest.py              # CONFIG_SKIP_VALIDATION=1 para tests
 │   ├── fixtures/ion8650_op.html # HTML real ION8650V409 capturado del medidor
 │   ├── test_meter_modbus_client.py # 21 tests del cliente Modbus (fake pymodbus)
 │   ├── test_meter_client_factory.py # 7 tests del factory + validate protocol-aware
 │   ├── test_meter_client.py     # 20 tests del cliente HTTP + parser
 │   ├── test_sign_convention.py  # 10 tests de convención de signos
-│   └── test_service.py          # 12 tests del loop con mocks
+│   ├── test_pg_writer.py        # 13 tests del sink Postgres (fake psycopg)
+│   └── test_service.py          # 16 tests del loop con mocks
 └── deploy/
     ├── fabric-meter-sink.service    # systemd unit
     └── install.sh                   # instalador idempotente Linux
@@ -199,6 +209,26 @@ El cliente HTTP se conserva como **rollback** (`METER_PROTOCOL=http`):
 - Devuelve un `datetime` en zona Bogotá (UTC−5, sin DST). Usa offset fijo
   para evitar dependencia de `tzdata` en Windows.
 
+### 2b. Sink espejo Postgres (dl_captura)
+
+`src/pg_writer.py` — **`PostgresWriter`**:
+
+- Cliente `psycopg` (v3) contra Azure PostgreSQL, `sslmode=require`.
+- Destino: `generacion.brc_pgn_generacion_medidores` (schema y tabla se crean
+  con `IF NOT EXISTS` al conectar — DDL idempotente).
+- **Mismas filas que Fabric**: recibe el output de `build_row` tal cual,
+  incluida la columna `ge32` sin C y los kW crudos con signo (D-125 aplica
+  igual acá — es telemetría, no dominio).
+- `write_overwrite(rows)` — `DELETE FROM` + `INSERT` del buffer completo en
+  una sola transacción (DELETE y no TRUNCATE: sin lock exclusivo, los
+  lectores nunca ven la tabla vacía a mitad de escritura).
+- **Self-heal de conexión**: ante cualquier error cierra la conexión y el
+  próximo ciclo reconecta desde cero (mismo patrón que el cliente Modbus,
+  D-123).
+- Es **opcional y best-effort**: sin las env `HOSTDL`/`DB`/`USERDL`/`PSWDL`
+  el sink queda apagado; con ellas, un fallo se loggea con su propio contador
+  pero nunca frena el flujo a Fabric.
+
 ### 3. Loop principal (servicio continuo)
 
 `src/service.py` — **`FabricMeterSinkService`**:
@@ -209,10 +239,12 @@ Una iteración del loop:
 2. Si al menos una unidad reportó valor, `build_row(...)` y push al buffer.
    Si todas dieron `None`, no hay push (loggea WARN/ERROR).
 3. `writer.write_overwrite(list(buffer))` — escribe el buffer completo.
-4. Cada 60 s, refresh del SQL endpoint (best-effort).
-5. Cada 3 h, dispatch de VACUUM en thread separado (no bloquea el loop).
-6. `Path.touch` al `HEARTBEAT_PATH`.
-7. Sleep `max(0, 15 - elapsed)` — drift compensation.
+4. Si hay `pg_writer`, `pg_writer.write_overwrite(...)` con el mismo buffer
+   (best-effort, no cuenta para `MAX_CONSECUTIVE_WRITE_FAILURES`).
+5. Cada 60 s, refresh del SQL endpoint (best-effort).
+6. Cada 3 h, dispatch de VACUUM en thread separado (no bloquea el loop).
+7. `Path.touch` al `HEARTBEAT_PATH`.
+8. Sleep `max(0, 15 - elapsed)` — drift compensation.
 
 `src/main.py` — **entry point** (`python -m src.main`):
 
@@ -284,6 +316,20 @@ las inyecta al proceso.
 | `FABRIC_TABLE_NAME` | `BRC_PGN_GENERACION_MEDIDORES` |
 | `FABRIC_SQL_ENDPOINT_ID` | GUID del SQL Analytics Endpoint (vacío para saltar refresh) |
 
+### Postgres dl_captura (sink espejo, opcional)
+
+| Var | Descripción |
+|---|---|
+| `HOSTDL` | Host del Azure PostgreSQL (p. ej. `*.postgres.database.azure.com`) |
+| `DB` | Base de datos (`dl_captura`) |
+| `USERDL`, `PSWDL` | Credenciales |
+| `PORT` | Puerto (default `5432`) |
+| `DL_PG_SCHEMA` | Schema destino (default `generacion`) |
+| `DL_PG_TABLE` | Tabla destino (default `brc_pgn_generacion_medidores`) |
+
+Con las 4 primeras vacías el sink queda **deshabilitado** (el servicio arranca
+solo con Fabric). Definidas a medias, el arranque falla listando las faltantes.
+
 ### Loop / scheduling
 
 | Var | Default | Descripción |
@@ -335,6 +381,10 @@ python scripts/probe_workspace.py
 
 # 3. Validar end-to-end: escribe 1 fila dummy a la tabla Delta y la lee de vuelta
 python scripts/probe_fabric.py
+
+# 4. Validar el sink espejo Postgres: escribe 1 fila dummy en
+#    generacion.brc_pgn_generacion_medidores (crea schema/tabla si no existen)
+python -m scripts.probe_dl_pg
 ```
 
 `probe_fabric.py` reintenta automáticamente sin schema si el path con `/dbo/`
@@ -348,7 +398,7 @@ pytest -v
 ruff check src tests scripts
 ```
 
-70 tests, ~2 s. **No** necesitan medidores reales ni credenciales Fabric:
+87 tests, ~5 s. **No** necesitan medidores reales ni credenciales Fabric/Postgres:
 
 - `test_meter_modbus_client.py` (21 tests) — decode int32/float32 × word order
   high/low, escala, y mapeo de errores (timeout/protocolo/formato) con un fake
@@ -359,12 +409,16 @@ ruff check src tests scripts
   de `httpx.MockTransport` para 200/401/500/timeout/format errors.
 - `test_sign_convention.py` (10 tests) — función pura + integración con
   poller, incluye `−0 → 0`, suma+invertir GEC3 (398.05+347.01 = −745.06).
-- `test_service.py` (12 tests) — loop con `FakePoller`/`FakeWriter`:
+- `test_pg_writer.py` (13 tests) — sink Postgres con conexión fake: DDL
+  idempotente, DELETE+INSERT en orden de columnas, self-heal al fallar,
+  validación de identificadores.
+- `test_service.py` (16 tests) — loop con `FakePoller`/`FakeWriter`:
   buffer rotativo, fila con `0.0` cuando hay None, dispatch de VACUUM,
-  shutdown limpio, escalación a exit 1, drift compensation.
+  shutdown limpio, escalación a exit 1, drift compensation, sink dual
+  Fabric+PG (mismas filas, fallos independientes).
 
-La escritura real a Fabric **no** se mockea — validación end-to-end es
-manual vía `probe_fabric.py` con credenciales reales.
+La escritura real a Fabric/Postgres **no** se mockea — validación end-to-end
+es manual vía `probe_fabric.py` / `probe_dl_pg.py` con credenciales reales.
 
 ## Despliegue Linux con systemd
 

@@ -30,6 +30,7 @@ from src import config  # noqa: E402
 from src.fabric_writer import FabricWriter  # noqa: E402
 from src.meter_client_factory import make_client_factory  # noqa: E402
 from src.meter_poller import MeterPoller  # noqa: E402
+from src.pg_writer import PostgresWriter  # noqa: E402
 from src.service import FabricMeterSinkService  # noqa: E402
 
 LOG_FORMAT = "[%(asctime)s] %(levelname)-5s %(name)s — %(message)s"
@@ -98,9 +99,28 @@ def main() -> int:
         table_name=config.FABRIC_TABLE_NAME,
         schema=config.FABRIC_LAKEHOUSE_SCHEMA,
     )
+    pg_writer = None
+    if config.DL_PG_ENABLED:
+        pg_writer = PostgresWriter(
+            host=config.DL_PG_HOST,
+            port=config.DL_PG_PORT,
+            dbname=config.DL_PG_DB,
+            user=config.DL_PG_USER,
+            password=config.DL_PG_PASSWORD,
+            schema=config.DL_PG_SCHEMA,
+            table=config.DL_PG_TABLE,
+        )
+        log.info(
+            "Sink espejo Postgres habilitado: %s:%d/%s → %s.%s",
+            config.DL_PG_HOST, config.DL_PG_PORT, config.DL_PG_DB,
+            config.DL_PG_SCHEMA, config.DL_PG_TABLE,
+        )
+    else:
+        log.info("Sink espejo Postgres deshabilitado (HOSTDL/DB/USERDL/PSWDL sin definir)")
     service = FabricMeterSinkService(
         poller=poller,
         writer=writer,
+        pg_writer=pg_writer,
         sql_endpoint_id=config.FABRIC_SQL_ENDPOINT_ID,
         poll_interval_s=config.POLL_INTERVAL_S,
         buffer_size=config.BUFFER_SIZE,
@@ -147,6 +167,11 @@ def main() -> int:
             poller.close()
         except Exception:
             pass
+        if pg_writer is not None:
+            try:
+                pg_writer.close()
+            except Exception:
+                pass
         if shutdown_timer is not None:
             shutdown_timer.cancel()
         log.info("Fabric Meter Sink — stopped (exit_code=%d)", exit_code)

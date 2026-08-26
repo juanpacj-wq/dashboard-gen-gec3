@@ -1,6 +1,6 @@
 # CLAUDE.md — fabric-meter-sink
 
-Servicio Python on-prem que extrae lecturas de potencia (`kW total`) de los 5 medidores Schneider PowerLogic ION8650 de las 4 unidades de Gecelca y las escribe a una tabla Delta en Microsoft Fabric Lakehouse cada 15 segundos.
+Servicio Python on-prem que extrae lecturas de potencia (`kW total`) de los 5 medidores Schneider PowerLogic ION8650 de las 4 unidades de Gecelca y las escribe cada 15 segundos a una tabla Delta en Microsoft Fabric Lakehouse y, en espejo, a Azure PostgreSQL `dl_captura` (`generacion.brc_pgn_generacion_medidores`, sink opcional best-effort — D-127).
 
 **Es un subproyecto Python independiente** que vive dentro del repo `dashboard-gen-gec3/`. Replica la lógica de extracción del Node backend (`server/meterPoller.js`) en Python, pero su destino es Microsoft Fabric (no la BD MSSQL del dashboard). Ambas extracciones corren en paralelo en el mismo server on-prem.
 
@@ -27,6 +27,7 @@ Reemplaza el notebook de Fabric (`../notebook.py` o `notebook.py` en raíz Fabri
 - **BeautifulSoup** — parser HTML del firmware ION 8650V409, solo en el rollback HTTP.
 - **deltalake** (delta-rs) — escritura Delta sin Spark.
 - **pyarrow** — Arrow Tables para `write_deltalake`.
+- **psycopg** (v3) — sink espejo a Azure PostgreSQL `dl_captura` (opcional).
 - **azure-identity** — auth para OneLake/Fabric (DefaultAzureCredential + cache propio de tokens).
 - **pytest** — 70 tests: cliente Modbus, factory, cliente HTTP, signos, loop principal.
 
@@ -43,12 +44,14 @@ fabric-meter-sink/
 │   ├── meter_client.py        ION8650Client + parse_kw_total + excepciones tipadas
 │   ├── meter_poller.py        MeterPoller (poll concurrente con ThreadPoolExecutor + sign flip)
 │   ├── fabric_writer.py       FabricWriter + build_row + now_bogota_utc5
+│   ├── pg_writer.py           PostgresWriter (sink espejo dl_captura, D-127)
 │   ├── service.py             FabricMeterSinkService (loop principal)
 │   └── main.py                Entry: `python -m src.main`
 ├── scripts/
 │   ├── probe_meters.py        Probe puntual a los 5 medidores
 │   ├── probe_workspace.py     Lista items del workspace Fabric
-│   └── probe_fabric.py        Write+read 1 fila dummy (validación E2E)
+│   ├── probe_fabric.py        Write+read 1 fila dummy (validación E2E)
+│   └── probe_dl_pg.py         Write+read 1 fila dummy en Postgres dl_captura
 ├── tests/                     42 tests (pytest)
 │   ├── conftest.py            CONFIG_SKIP_VALIDATION=1 para tests
 │   ├── fixtures/ion8650_op.html   HTML real ION8650V409 capturado
@@ -100,6 +103,8 @@ Misma topología que `../server/config.js`. Si una cambia, la otra también. Det
 
 11. **Toggle `METER_PROTOCOL` (default `modbus`).** La lectura es Modbus TCP (`ION8650ModbusClient`, FC03, registro 40204/int32/high/scale 1000, unit 1, puerto 502) replicando el combo del Node. `make_client_factory` (`meter_client_factory.py`) elige cliente por protocolo y lo inyecta en `MeterPoller`; con `http` vuelve al scraping sin tocar código (rollback). El poller/service son agnósticos del protocolo. Detalle en `../docs/decisions.md` **D-121** (espejo de `[[D-118]]`).
 
+12. **Sink espejo Postgres `dl_captura` (opcional, best-effort).** `pg_writer.py` escribe el MISMO buffer a `generacion.brc_pgn_generacion_medidores` (Azure PG, `psycopg`, `sslmode=require`) cada ciclo: mismas columnas (incluida `ge32` sin C), mismos kW crudos con signo, overwrite como `DELETE`+`INSERT` transaccional. Se enciende solo si `HOSTDL`/`DB`/`USERDL`/`PSWDL` están en `.env` (parcial = fail-fast); su fallo NO cuenta para `MAX_CONSECUTIVE_WRITE_FAILURES` — Fabric sigue siendo el sink primario. La tabla PG es un espejo del snapshot (últimas 3 filas), NO un histórico. Detalle en `../docs/decisions.md` **D-127**.
+
 ## Loop principal (`service.py`)
 
 Una iteración:
@@ -107,9 +112,10 @@ Una iteración:
 1. `units = poller.poll()` — paralelo, 4-5s peor caso. ThreadPoolExecutor sobre los 5 medidores.
 2. Si al menos una unidad reportó valor: `build_row(units, now_bogota)` y push al buffer.
 3. `writer.write_overwrite(list(buffer))` — escribe buffer completo a Delta.
-4. Cada 60s: refresh del SQL endpoint (best-effort, nunca lanza).
-5. Cada 3h: dispatch de VACUUM en thread separado (no bloquea el loop).
-6. `Path.touch` al `HEARTBEAT_PATH`.
+4. Si hay `pg_writer`: mismo buffer a Postgres dl_captura (best-effort, no fatal).
+5. Cada 60s: refresh del SQL endpoint (best-effort, nunca lanza).
+6. Cada 3h: dispatch de VACUUM en thread separado (no bloquea el loop).
+7. `Path.touch` al `HEARTBEAT_PATH`.
 
 ## Comandos
 
@@ -152,6 +158,7 @@ Definidas en `.env` (ver `.env.example`). Validación fail-fast **protocol-aware
 - **Credenciales HTTP** (solo requeridas con `METER_PROTOCOL=http`): `USER_MEDIDORES` (usuario compartido) + `PSW_TGJ1`, `PSW_TGJ2`, `PSW_GEC3_1`, `PSW_GEC3_2`, `PSW_GEC32`.
 - **Defaults de lectura**: `METER_OP_PATH` (rollback HTTP), `METER_TIMEOUT_S`, `POLL_INTERVAL_S=15`, `BUFFER_SIZE=3`.
 - **Fabric**: `TENANT_ID`, `CLIENT_ID`, `CLIENT_SECRET` (service principal), `FABRIC_WORKSPACE_ID`, `FABRIC_LAKEHOUSE_NAME` (GUID o displayName), `FABRIC_LAKEHOUSE_SCHEMA` (opcional), `FABRIC_TABLE_NAME` (`BRC_PGN_GENERACION_MEDIDORES`), `FABRIC_SQL_ENDPOINT_ID` (opcional).
+- **Postgres dl_captura** (sink espejo, opcional): `HOSTDL`, `DB`, `USERDL`, `PSWDL`, `PORT` (default 5432), `DL_PG_SCHEMA` (default `generacion`), `DL_PG_TABLE` (default `brc_pgn_generacion_medidores`). Las 4 primeras vacías = sink apagado; a medias = fail-fast.
 - **Operación**: `HEARTBEAT_PATH`, `LOG_DIR`, `LOG_LEVEL`, `MAX_CONSECUTIVE_WRITE_FAILURES=5`, `SHUTDOWN_TIMEOUT_S=30`.
 
 `CONFIG_SKIP_VALIDATION=1` salta la validación (uso solo en tests/scripts).

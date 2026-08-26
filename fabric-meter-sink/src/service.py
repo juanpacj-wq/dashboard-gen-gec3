@@ -8,6 +8,10 @@ Cadencia y semántica resumida:
   con `0.0` para las unidades fallidas.
 - Cada ciclo (después del poll) escribe el buffer **completo** en modo
   `overwrite` — la tabla siempre refleja los últimos N registros.
+- Si hay `pg_writer` (sink espejo a Postgres dl_captura), escribe el MISMO
+  buffer con la misma semántica, best-effort: un fallo en Postgres se loggea
+  pero NO cuenta para `max_consecutive_write_failures` ni frena el flujo a
+  Fabric (Fabric sigue siendo el sink primario).
 - VACUUM cada `vacuum_interval_s` (default 3 h, retain 0) en thread separado.
 - Refresh del SQL endpoint cada `refresh_interval_s` (default 60 s), best-effort.
 - Heartbeat: `Path.touch` al `heartbeat_path` cada ciclo.
@@ -40,6 +44,7 @@ class FabricMeterSinkService:
         *,
         poller: Any,
         writer: Any,
+        pg_writer: Any | None = None,
         sql_endpoint_id: str | None = None,
         poll_interval_s: float = 15.0,
         buffer_size: int = 3,
@@ -51,6 +56,7 @@ class FabricMeterSinkService:
     ) -> None:
         self.poller = poller
         self.writer = writer
+        self.pg_writer = pg_writer
         self.sql_endpoint_id = sql_endpoint_id
         self.poll_interval_s = float(poll_interval_s)
         self.buffer_size = int(buffer_size)
@@ -67,6 +73,7 @@ class FabricMeterSinkService:
         self._last_vacuum_t = time.monotonic()
         self._last_refresh_t = time.monotonic()
         self._consecutive_write_failures = 0
+        self._consecutive_pg_write_failures = 0
         self._consecutive_empty_polls = 0
         self._heartbeat_warned = False
         self._vacuum_thread: threading.Thread | None = None
@@ -115,11 +122,18 @@ class FabricMeterSinkService:
             logger.info("flush: buffer vacío, nada que escribir")
             return
         logger.info("flush: writing final buffer (%d rows)", len(self.buffer))
+        rows = list(self.buffer)
         try:
-            self.writer.write_overwrite(list(self.buffer))
-            logger.info("flush: OK")
+            self.writer.write_overwrite(rows)
+            logger.info("flush: Fabric OK")
         except Exception:
-            logger.exception("flush failed")
+            logger.exception("flush a Fabric failed")
+        if self.pg_writer is not None:
+            try:
+                self.pg_writer.write_overwrite(rows)
+                logger.info("flush: PG OK")
+            except Exception:
+                logger.exception("flush a Postgres failed")
 
     def _run_one_cycle(self) -> None:
         units = self.poller.poll()
@@ -140,9 +154,11 @@ class FabricMeterSinkService:
                 logger.warning("cycle %d: ninguna unidad reportó valor", self._cycle)
 
         write_ok = True
+        pg_ok = True
         if self.buffer:
+            rows = list(self.buffer)
             try:
-                self.writer.write_overwrite(list(self.buffer))
+                self.writer.write_overwrite(rows)
                 self._consecutive_write_failures = 0
             except Exception as exc:
                 self._consecutive_write_failures += 1
@@ -153,6 +169,19 @@ class FabricMeterSinkService:
                     exc_info=True,
                 )
                 write_ok = False
+            if self.pg_writer is not None:
+                # Best-effort: el sink Postgres nunca frena el flujo a Fabric.
+                try:
+                    self.pg_writer.write_overwrite(rows)
+                    self._consecutive_pg_write_failures = 0
+                except Exception as exc:
+                    self._consecutive_pg_write_failures += 1
+                    logger.error(
+                        "cycle %d: write a Postgres dl_captura falló (%d consecutivos): %s: %s",
+                        self._cycle, self._consecutive_pg_write_failures,
+                        type(exc).__name__, exc,
+                    )
+                    pg_ok = False
 
         # Resumen del ciclo (1 línea, formato spec)
         parts = [f"cycle={self._cycle}"]
@@ -162,10 +191,14 @@ class FabricMeterSinkService:
             parts.append(f"{u.get('id')}={value_str}")
         if not self.buffer:
             parts.append("(buffer vacío, no se escribió)")
-        elif write_ok:
-            parts.append(f"→ wrote {len(self.buffer)} rows to Fabric")
+        elif write_ok and pg_ok:
+            dest = "Fabric+PG" if self.pg_writer is not None else "Fabric"
+            parts.append(f"→ wrote {len(self.buffer)} rows to {dest}")
         else:
-            parts.append("→ write FAILED")
+            status = ["Fabric OK" if write_ok else "Fabric FAILED"]
+            if self.pg_writer is not None:
+                status.append("PG OK" if pg_ok else "PG FAILED")
+            parts.append("→ " + ", ".join(status))
         logger.info(" ".join(parts))
 
         self._maybe_refresh()

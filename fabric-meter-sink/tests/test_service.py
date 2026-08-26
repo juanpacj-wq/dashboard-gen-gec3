@@ -257,3 +257,63 @@ def test_heartbeat_file_is_touched(tmp_path):
 def test_drift_parametric(tmp_path, elapsed, expected):
     service, _, _ = _make_service(tmp_path, poll_interval_s=15.0)
     assert service._sleep_duration(elapsed) == expected
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 10. Sink espejo Postgres: recibe el MISMO buffer que Fabric, cada ciclo
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def test_pg_writer_receives_same_rows_as_fabric(tmp_path):
+    pg_writer = FakeWriter()
+    service, _, writer = _make_service(tmp_path, pg_writer=pg_writer)
+    service._run_one_cycle()
+    service._run_one_cycle()
+
+    assert len(pg_writer.write_calls) == 2
+    assert pg_writer.write_calls == writer.write_calls
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 11. Fallo en Postgres es best-effort: no cuenta para el exit fatal
+#     y no afecta el flujo a Fabric
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def test_pg_failure_does_not_count_toward_fatal_failures(tmp_path):
+    pg_writer = FakeWriter()
+    pg_writer.write_should_fail = True
+    service, _, writer = _make_service(tmp_path, pg_writer=pg_writer)
+    for _ in range(6):
+        service._run_one_cycle()
+
+    assert service._consecutive_write_failures == 0
+    assert service._consecutive_pg_write_failures == 6
+    assert len(writer.write_calls) == 6, "Fabric sigue escribiendo normal"
+
+
+def test_fabric_failure_does_not_skip_pg_write(tmp_path):
+    pg_writer = FakeWriter()
+    writer = FakeWriter()
+    writer.write_should_fail = True
+    service, _, _ = _make_service(tmp_path, writer=writer, pg_writer=pg_writer)
+    service._run_one_cycle()
+
+    assert service._consecutive_write_failures == 1
+    assert len(pg_writer.write_calls) == 1, "PG escribe aunque Fabric falle"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 12. flush() escribe a ambos sinks
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def test_flush_writes_both_sinks(tmp_path):
+    pg_writer = FakeWriter()
+    service, _, writer = _make_service(tmp_path, pg_writer=pg_writer)
+    service._run_one_cycle()
+
+    fabric_before, pg_before = len(writer.write_calls), len(pg_writer.write_calls)
+    service.flush()
+    assert len(writer.write_calls) == fabric_before + 1
+    assert len(pg_writer.write_calls) == pg_before + 1
