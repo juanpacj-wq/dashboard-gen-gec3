@@ -215,6 +215,18 @@ export async function initDB() {
     );
   `)
 
+  // Despacho recibido — el hecho de que XM ya publicó el despacho del día siguiente (D-064).
+  // Una fila por fecha anunciada: la PK es la que da la idempotencia y la que hace que
+  // `detectado_en` conserve la PRIMERA detección, la que se parece a la hora real de
+  // publicación. Bitácora la lee para armar el renglón del GENE-F03; acá solo se escribe.
+  await db.request().query(`
+    IF OBJECT_ID('dashboard.despacho_recibido', 'U') IS NULL
+    CREATE TABLE dashboard.despacho_recibido (
+      fecha_despacho DATE      NOT NULL PRIMARY KEY,
+      detectado_en   DATETIME2 NOT NULL DEFAULT GETDATE()
+    );
+  `)
+
   console.log('[DB] Schema y tablas verificadas')
 
   await applyInvariantConstraints(db)
@@ -433,6 +445,35 @@ export async function loadDespachoProg(fecha) {
     data[row.unit_id][row.periodo - 1] = row.valor_mw
   }
   return data
+}
+
+// ── Despacho recibido (llegada del dDEC de mañana, D-064) ───────────────────
+
+/**
+ * Deja constancia de que XM publicó el despacho de `fechaDespacho` ('YYYY-MM-DD').
+ *
+ * Escribe una sola vez por fecha y no toca un `detectado_en` ya guardado: la primera
+ * detección es la buena, porque es la que se parece a la hora real en que XM publicó.
+ * Un reintento, o un reinicio del servicio que vuelve a encontrar el archivo, pasan por
+ * acá y no cambian nada.
+ *
+ * La hora la pone la BD (`DEFAULT GETDATE()`, hora Bogotá) y no el reloj de Node: así no
+ * se mezclan los dos relojes. Quien la lea convierte a UTC una sola vez.
+ *
+ * @returns {Promise<boolean>} true si fue esta llamada la que creó la fila.
+ */
+export async function saveDespachoRecibido(fechaDespacho) {
+  const db = await getDB()
+  const result = await db.request()
+    .input('fecha', sql.Date, fechaDespacho)
+    .query(`
+      INSERT INTO dashboard.despacho_recibido (fecha_despacho)
+      SELECT @fecha
+      WHERE NOT EXISTS (
+        SELECT 1 FROM dashboard.despacho_recibido WHERE fecha_despacho = @fecha
+      );
+    `)
+  return (result.rowsAffected[0] || 0) > 0
 }
 
 // ── Redespacho programado (scraper) ─────────────────────────────────────────

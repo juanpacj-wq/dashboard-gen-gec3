@@ -1,11 +1,15 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { readFileSync } from 'node:fs'
+
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 
 vi.mock('../db.js', () => ({
   saveDespachoProgBulk: vi.fn().mockResolvedValue(undefined),
   loadDespachoProg: vi.fn().mockResolvedValue(null),
+  saveDespachoRecibido: vi.fn().mockResolvedValue(true),
 }))
 
 const { DespachoscraperService } = await import('../despachoscraper.js')
+const { saveDespachoRecibido } = await import('../db.js')
 
 const VALID_ROW = '"GECELCA 3", ' + Array(24).fill('100.0').join(', ') + '\n'
 
@@ -79,5 +83,100 @@ describe('DespachoscraperService.getStatus()', () => {
     expect(s.lastErrorAt).not.toBeNull()
     expect(s.foundForToday).toBe(false)
     expect(s.lastSuccessAt).toBeNull()
+  })
+})
+
+// ── Llegada del despacho de mañana (D-064) ──────────────────────────────────
+//
+// El hecho tiene que quedar ESCRITO: es de donde Bitácora arma el renglón del GENE-F03.
+// Antes solo prendía un flag en memoria y un reinicio lo perdía.
+
+/** La fecha de mañana en Bogotá, derivada aparte de como la calcula el scraper. */
+function fechaMananaBogota() {
+  const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date())
+  const d = new Date(`${hoy}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
+/** Las líneas de `saveDespachoRecibido`, tal como están escritas hoy en `db.js`. */
+function fuenteDeSaveDespachoRecibido() {
+  const src = readFileSync(new URL('../db.js', import.meta.url), 'utf8')
+  const lineas = src.split(/\r?\n/)
+  const desde = lineas.findIndex((l) => l.startsWith('export async function saveDespachoRecibido'))
+  if (desde === -1) throw new Error('saveDespachoRecibido no existe en db.js')
+  const largo = lineas.slice(desde).findIndex((l, i) => i > 0 && l.trimEnd() === '}')
+  if (largo === -1) throw new Error('no encontré el cierre de saveDespachoRecibido')
+  return lineas.slice(desde, desde + largo + 1).join(' ')
+}
+
+describe('DespachoscraperService — llegada del despacho (D-064)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    saveDespachoRecibido.mockResolvedValue(true)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('persiste la llegada del despacho de mañana', async () => {
+    vi.stubGlobal('fetch', mockFetchSuccess(VALID_ROW))
+    const svc = new DespachoscraperService()
+    await svc.init(true)
+
+    expect(saveDespachoRecibido).toHaveBeenCalledTimes(1)
+    expect(saveDespachoRecibido).toHaveBeenCalledWith(fechaMananaBogota())
+    expect(svc.getStateTomorrow()).not.toBeNull()
+  })
+
+  it('sin archivo no escribe nada', async () => {
+    vi.stubGlobal('fetch', mockFetchNotFound())
+    const svc = new DespachoscraperService()
+    await svc.init(true)
+
+    expect(saveDespachoRecibido).not.toHaveBeenCalled()
+    expect(svc.getStateTomorrow()).toBeNull()
+  })
+
+  it('no escribe si el servicio arrancó sin BD', async () => {
+    vi.stubGlobal('fetch', mockFetchSuccess(VALID_ROW))
+    const svc = new DespachoscraperService()
+    await svc.init(false)
+
+    expect(saveDespachoRecibido).not.toHaveBeenCalled()
+  })
+
+  it('no pisa la primera detección', async () => {
+    vi.stubGlobal('fetch', mockFetchSuccess(VALID_ROW))
+
+    const svc = new DespachoscraperService()
+    await svc.init(true)
+    await svc.init(true) // segundo tick del mismo proceso: el guard en memoria ya la vio
+    expect(saveDespachoRecibido).toHaveBeenCalledTimes(1)
+
+    // Un reinicio sí vuelve a intentarlo, porque el guard en memoria se perdió. Por eso la
+    // defensa real es el SQL: inserta solo si no existe y nunca toca `detectado_en`.
+    const trasReinicio = new DespachoscraperService()
+    await trasReinicio.init(true)
+    expect(saveDespachoRecibido).toHaveBeenCalledTimes(2)
+    expect(saveDespachoRecibido).toHaveBeenLastCalledWith(fechaMananaBogota())
+
+    const fuente = fuenteDeSaveDespachoRecibido()
+    expect(fuente).toMatch(/NOT EXISTS/)
+    expect(fuente).not.toMatch(/UPDATE|MERGE|DELETE/i)
+  })
+
+  it('degrada si la BD falla', async () => {
+    vi.stubGlobal('fetch', mockFetchSuccess(VALID_ROW))
+    saveDespachoRecibido.mockRejectedValueOnce(
+      new Error("Invalid object name 'dashboard.despacho_recibido'."),
+    )
+
+    const svc = new DespachoscraperService()
+    await expect(svc.init(true)).resolves.toBeUndefined()
+
+    expect(saveDespachoRecibido).toHaveBeenCalledTimes(1)
+    expect(svc.getStateTomorrow()).not.toBeNull() // el scraper sigue sirviendo el dato
   })
 })

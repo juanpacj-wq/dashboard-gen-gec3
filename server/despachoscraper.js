@@ -2,9 +2,10 @@
  * Servicio de despacho diario XM
  * Descarga dDECMMDD_TIES.txt del portal XM, lo parsea y expone los 24 valores horarios por unidad.
  * Persiste en dashboard.despacho_programado (una sola escritura por día).
+ * Registra en dashboard.despacho_recibido la llegada del despacho de mañana (D-064).
  */
 
-import { saveDespachoProgBulk, loadDespachoProg } from './db.js'
+import { saveDespachoProgBulk, loadDespachoProg, saveDespachoRecibido } from './db.js'
 
 const API_BASE = 'https://api-portalxm.xm.com.co/administracion-archivos/ficheros/mostrar-url'
 const BLOB_CONTAINER = 'storageportalxm'
@@ -317,6 +318,31 @@ export class DespachoscraperService {
       this.#cacheTomorrow = parseItems(raw.Items)
       this.#foundTomorrow = true
       console.log(`[DespScraper] Archivo de mañana encontrado para ${tomorrowStr}`)
+      await this.#registrarLlegada(tomorrowStr)
+    }
+  }
+
+  /**
+   * Deja en la BD el hecho "XM publicó el despacho de <fecha>", que es de donde Bitácora
+   * arma el renglón del GENE-F03 (D-064). Hasta acá el dato solo vivía en memoria: un
+   * reinicio del servicio lo perdía.
+   *
+   * Solo cuenta la PRIMERA detección de cada fecha. El guard #foundTomorrow evita repetir
+   * la escritura mientras el proceso viva; tras un reinicio se vuelve a intentar y es la
+   * PK de la tabla la que impide pisar el `detectado_en` original.
+   *
+   * Nunca lanza: este servicio vigila el portal de XM y no se puede caer porque la BD esté
+   * abajo o porque la tabla todavía no exista — que es un estado válido y esperado.
+   */
+  async #registrarLlegada(fechaDespacho) {
+    if (!this.#dbAvailable) return
+    try {
+      const creada = await saveDespachoRecibido(fechaDespacho)
+      console.log(creada
+        ? `[DespScraper] Llegada del despacho de ${fechaDespacho} registrada en BD`
+        : `[DespScraper] Llegada del despacho de ${fechaDespacho} ya estaba registrada`)
+    } catch (e) {
+      console.error(`[DespScraper] Error registrando la llegada del despacho de ${fechaDespacho}:`, e.message)
     }
   }
 }
