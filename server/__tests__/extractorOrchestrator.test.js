@@ -28,9 +28,16 @@ function buildUnits() {
 }
 
 // Fake MeterPoller que el test controla manualmente.
+//
+// La implementación del spy es una `function`, NO una flecha: el orquestador lo invoca con
+// `new meterPollerCtor({...})` (D-126) y una flecha no tiene [[Construct]] — el doble reventaba
+// con "is not a constructor" antes de que el test llegara a su primer assert. Se apoya en la
+// semántica de que un constructor que devuelve un objeto devuelve ESE objeto, así que el cuerpo
+// sigue siendo el mismo literal de siempre. El sustituto de un `class` tiene que ser
+// construible: si mañana `MeterPoller` dejara de serlo, es este doble el que debe cambiar.
 function makeFakeSubExtractor() {
   let storedOnData = null
-  const ctor = vi.fn(({ onData }) => {
+  const ctor = vi.fn(function ({ onData }) {
     storedOnData = onData
     return {
       start: vi.fn().mockResolvedValue(undefined),
@@ -399,7 +406,8 @@ describe('ExtractorOrchestrator — start no bloquea si el sub-extractor no resu
 
     let storedOnData = null
     let startResolver
-    const meterCtor = vi.fn(({ onData: cb }) => {
+    // `function` y no flecha, por la misma razón que el doble de `makeFakeSubExtractor`.
+    const meterCtor = vi.fn(function ({ onData: cb }) {
       storedOnData = cb
       return {
         start: vi.fn(() => new Promise((resolve) => { startResolver = resolve })),
