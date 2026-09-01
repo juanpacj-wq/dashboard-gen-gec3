@@ -612,3 +612,67 @@ acumulado, eso es otra tabla/decisión. (b) Un outage de Azure PG pasa desaperci
 para Fabric/Power BI, pero deja `PG FAILED` en el log de cada ciclo. (c) Validación
 E2E con `scripts/probe_dl_pg.py` (crea schema/tabla y hace write+read dummy).
 Cross-ref: [[D-112]], [[D-121]], [[D-123]], [[D-125]].
+
+## D-128 — Persistir la llegada del despacho del día siguiente: el dashboard pasa a ser ESCRITOR de un contrato cross-repo
+
+**Fecha:** 2026-08-31
+
+**Contexto:** `despachoscraper.js#refreshTomorrow()` ya detectaba, cada `RETRY_MS` (5 min), que XM
+publicó el despacho económico del día siguiente — pero solo prendía un flag **en memoria**
+(`this.#foundTomorrow = true`) y escribía un `console.log`. Al reiniciar el servicio el dato se
+perdía, y ningún otro proceso podía verlo. Del otro lado del workspace, Bitácora necesitaba
+exactamente ese hecho —con su hora— para dejar automáticamente el renglón
+`Se recibe del XM despacho económico de G3.0 y G3.2 para el DD-MM-AAAA` en las bitácoras de Sala y en
+el libro GENE-F03, que hoy escribe una persona a mano. Es el lado escritor de **D-064** de
+`Bit-cora-g3` (Contrato 4 del workspace).
+
+**Decisión:** persistir **el hecho, y nada más que el hecho**, en `dashboard.despacho_recibido`
+(`fecha_despacho DATE NOT NULL PRIMARY KEY`, `detectado_en DATETIME2 NOT NULL DEFAULT GETDATE()`),
+creada por el `initDB()` de este repo con el patrón de siempre (`IF OBJECT_ID … IS NULL`, sin tabla
+de flags de migración). `saveDespachoRecibido(fechaDespacho)` inserta con `WHERE NOT EXISTS` y
+devuelve `true` solo si esa llamada creó la fila.
+
+- **La PK es la idempotencia, y `detectado_en` NO se pisa nunca.** Un reintento del scraper, un
+  reinicio del proceso que vuelve a encontrar el archivo o un segundo tick pasan por ahí y no cambian
+  nada: **la primera detección es la buena**, porque es la que se parece a la hora en que XM publicó
+  de verdad. *Descartado:* `MERGE` o `UPDATE` — reescribirían la hora con la del reintento, que es
+  justo el dato que hay que conservar. Hay un guard estático sobre el SQL que lo fija.
+- **La hora la pone la BD (`GETDATE()`), no el reloj de Node.** El motor corre en hora Bogotá; mezclar
+  los dos relojes es el modo clásico de que el renglón salga corrido. Quien lea convierte a UTC **una
+  sola vez** — y eso pasa del otro lado, en el lector de Bitácora.
+- **No se toca `dashboard.despacho_programado`** (detenida desde el 2026-07-19 y, además, guarda el
+  archivo de HOY, no el de mañana): no es la fuente de este contrato. Tampoco `emailDispatch.js`.
+- **Este repo no escribe una sola fila en el esquema `bitacora`**, aunque la conexión lo permita: los
+  dos repos comparten base con esquemas distintos y **cada uno escribe solo en el suyo**.
+- **La escritura va en `try/catch` y respeta `#dbAvailable`.** El scraper vigila el portal de XM: no
+  puede caerse porque una tabla no esté o porque la BD se haya ido.
+
+**Consecuencias:**
+
+- **Es el primer contrato en el que este repo es el ESCRITOR y Bitácora el lector**, y el primero que
+  viaja por la **BD compartida** en vez de por HTTP. No hay endpoint nuevo, ni token de
+  servicio-a-servicio, ni notificación: si Bitácora está caída cuando llega el despacho, lo asienta
+  cuando vuelva, porque el hecho quedó **escrito**.
+- **Por lo mismo, el orden de despliegue se invierte respecto de todo lo anterior: este repo va
+  PRIMERO.** La tabla nace con **su** `initDB()`; hasta que arranque en esta rama, la consulta de
+  Bitácora falla con `Invalid object name` y su lector degrada a vacío — correcto, pero **silencioso**:
+  el único rastro es una línea en `journalctl`, así que nadie nota que el renglón no sale. Runbook:
+  `Bit-cora-g3/deploy/DEPLOY.md` §9.
+- **Ventana ciega conocida, y se decidió NO arreglarla:** `#foundTomorrow = true` se prende **antes**
+  de intentar la escritura, así que el tick siguiente ya no vuelve a pasar por ahí. Si la BD está
+  caída justo en el instante de la detección y el servicio no se reinicia en lo que queda del día, la
+  fecha nunca llega a la tabla. Mover el flag después de la escritura dejaría el scraper **bajando el
+  archivo de XM cada 5 minutos** mientras la BD esté abajo; separar los dos guards le cambiaría el
+  significado a `detectado_en`, que pasaría a ser la hora del reintento y no la de la publicación. Lo
+  mitigan cualquier reinicio antes de medianoche y el relleno del mes de Bitácora, que asienta esos
+  días con hora estimada. **Corolario: la ausencia de una fila no prueba que no llegó el despacho.**
+- **El bug de `getColombiaDate()` + `.toISOString()` sigue vivo y fuera de alcance.** Medido:
+  `#refreshTomorrow` arma su fecha con `getFullYear/getMonth/getDate`, **sin** `.toISOString()`, así
+  que este camino **no** lo tiene. No se arregló acá, y tampoco se construyó nada que suponga que
+  ningún `Date` de este repo lo sufre.
+- Verificado con 5 casos nuevos en `server/__tests__/despachoscraper.test.js` (vitest, sin BD): dos
+  ticks producen una sola escritura, el guard estático de que el SQL no tiene `MERGE`/`UPDATE`, con el
+  portal en 404 no se escribe nada y `getStateTomorrow()` sigue en `null`, y el scraper no cae ni con
+  la BD abajo ni sin la tabla. Suite del repo al cerrar D-064: **236/236**.
+- Cross-ref: `Bit-cora-g3/docs/decisions.md` **D-064** (el lector y el asiento), y
+  `<umbrella>/docs/interfaces-cross-repo.md` **Contrato 4** (la fuente de verdad del contrato).

@@ -44,10 +44,17 @@ Los endpoints `/api/*` nuevos **no** requieren tocar el proxy: `vite.config.js` 
 | `redespacho_programado` | rDEC — UPSERT con `version` |
 | `redespacho_historico` | Auditoría de cambios de redespacho (`valor_mw_prev`, `valor_mw_new`), índice `IX_redesp_hist_fecha` |
 | `proyeccion_periodos`, `proyeccion_historico`, `desviacion_periodos`, `correccion_d125` | Proyección/desviación (D-124/D-125) y rastro del backfill |
+| `despacho_recibido` | **Bitácora la LEE** (D-128 / Contrato 4). Una fila por fecha anunciada: `fecha_despacho DATE PK`, `detectado_en DATETIME2 DEFAULT GETDATE()` (**hora Bogotá**). La escribe `#refreshTomorrow()` con `WHERE NOT EXISTS`: la **primera** detección es la buena y un reintento **no la pisa** |
 
 Diez `CHECK` constraints (D-125) hacen imposible persistir generación negativa; `/health/detailed`
 expone `invariantes.{constraintsAplicadas, constraintsFaltantes, ok}`. Modelo completo: `docs/modelo-datos.md`
 (pendiente, ver plan de adopción v2).
+
+> **`despacho_recibido` es el único objeto de este esquema que otro repo lee** (Bitácora, para armar el
+> asiento del despacho en el libro GENE-F03). Cada repo escribe **solo en su propio esquema**, aunque
+> las credenciales vean el del otro. Por eso, **al desplegar, este repo va PRIMERO**: la tabla nace con
+> su `initDB()` y hasta entonces el lector de Bitácora degrada en silencio. Ver D-128,
+> `<umbrella>/docs/interfaces-cross-repo.md` (Contrato 4) y `Bit-cora-g3/deploy/DEPLOY.md` §9.
 
 ## Despliegue (servidor Ubuntu `capibara`, `/var/www/dashboard-gen/`)
 
